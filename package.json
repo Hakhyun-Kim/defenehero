@@ -1,0 +1,19 @@
+{
+  "name": "defenehero",
+  "version": "2.0.0",
+  "description": "용사 수학 디펜스 - 수학 문제를 풀수록 강해지는 어린이 디펜스 게임",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/main.js --bundle --outfile=dist/game.js --format=iife --minify-whitespace",
+    "watch": "esbuild src/main.js --bundle --outfile=dist/game.js --format=iife --watch",
+    "balance": "node scripts/balance-bot.mjs",
+    "serve": "python -m http.server 8642"
+  },
+  "dependencies": {
+    "three": "^0.166.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.23.0"
+  }
+}

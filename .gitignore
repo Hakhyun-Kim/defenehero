@@ -1,0 +1,14 @@
+# 의존성
+node_modules/
+
+# 로그/캐시
+npm-debug.log*
+*.log
+.DS_Store
+Thumbs.db
+
+# 에디터
+.vscode/
+.idea/
+
+# dist/game.js 는 커밋합니다 (빌드 없이 index.html 더블클릭만으로 실행되도록)

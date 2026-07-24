@@ -1,0 +1,249 @@
+/* =====================================================
+ * 난이도 밸런스 봇
+ * 실제 게임 엔진(src/engine.js)을 그대로 사용해
+ * 가상 플레이어(초보/보통/고수)로 수백 판을 시뮬레이션한다.
+ *
+ * 사용법:  node scripts/balance-bot.mjs [runs] [difficulty]
+ *   예)    node scripts/balance-bot.mjs 200 normal
+ * ===================================================== */
+import * as D from '../src/data.js';
+import * as E from '../src/engine.js';
+
+/* 결정적 난수 (mulberry32) */
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------- 가상 플레이어 프로필 ---------- */
+const PROFILES = {
+  /* 초보: 문제를 거의 안 풀고, 조합도 잘 모름, 뽑는 대로 배치 */
+  '초보': {
+    acc: 0.45, grade: 3, problemsPerPrep: 1,
+    combineChance: 0.15, reserve: 0, upgradeOver: Infinity,
+    useCastle: false, midWave: false, sloppy: 0.5,
+  },
+  /* 보통: 가끔 문제 풀고 조합도 하지만 최적은 아님 */
+  '보통': {
+    acc: 0.7, grade: 4, problemsPerPrep: 3,
+    combineChance: 0.7, reserve: 50, upgradeOver: 200,
+    useCastle: 'repairOnly', midWave: false, sloppy: 0.3,
+  },
+  /* 고수: 수학 열심히, 조합/강화/포탑 풀활용 */
+  '고수': {
+    acc: 0.9, grade: 6, problemsPerPrep: 6,
+    combineChance: 1.0, reserve: 100, upgradeOver: 120,
+    useCastle: true, midWave: true,
+  },
+};
+
+/* ---------- 배치 정책 ----------
+ * 근접(검사/방패병)은 앞줄(col 5), 원거리는 중간(col 3), 마법사는 뒤(col 2).
+ * 커버되지 않은 줄부터 채운다. */
+function placeAll(state, sloppy = 0) {
+  const frontCol = 5, midCol = 3, backCol = 2;
+  const rows = [...Array(D.ROWS).keys()];
+
+  const covered = (col) => rows.filter(r => state.field.some(h => h.row === r && h.col === col));
+  const bench = () => [...state.bench].sort((a, b) => b.tier - a.tier || b.level - a.level);
+
+  for (const h of bench()) {
+    /* 미숙한 플레이어: 일정 확률로 아무 빈 칸에 놓는다 */
+    if (sloppy && state.rng() < sloppy) {
+      const empties = [];
+      for (let c = 0; c < D.COLS; c++) for (const r of rows) {
+        if (!state.field.some(v => v.row === r && v.col === c)) empties.push([r, c]);
+      }
+      if (empties.length) {
+        const [r, c] = empties[Math.floor(state.rng() * empties.length)];
+        E.placeHero(state, h.id, r, c);
+      }
+      continue;
+    }
+    const C = D.CLASSES[h.cls];
+    let col = C.type === 'melee' ? frontCol : (h.cls === 'mage' ? backCol : midCol);
+    /* 그 열에서 비어있는 줄 중, 근접이 없는 줄 우선 */
+    let target = -1;
+    const frontRows = covered(frontCol);
+    const order = [...rows].sort((a, b) => {
+      const aFront = frontRows.includes(a) ? 1 : 0;
+      const bFront = frontRows.includes(b) ? 1 : 0;
+      if (C.type === 'melee') return aFront - bFront;        // 근접: 비어있는 앞줄 먼저
+      return bFront - aFront;                               // 원거리: 탱커 있는 줄 먼저
+    });
+    for (const r of order) {
+      if (!state.field.some(v => v.row === r && v.col === col)) { target = r; break; }
+    }
+    if (target < 0) {
+      /* 자리가 없으면 아무 빈 칸 */
+      outer: for (let c = frontCol; c >= 0; c--) {
+        for (const r of rows) {
+          if (!state.field.some(v => v.row === r && v.col === c)) { col = c; target = r; break outer; }
+        }
+      }
+    }
+    if (target >= 0) E.placeHero(state, h.id, target, col);
+  }
+}
+
+/* ---------- 준비 페이즈 정책 ---------- */
+function prepActions(state, P) {
+  /* 1) 수학 문제 풀기 */
+  for (let i = 0; i < P.problemsPerPrep; i++) {
+    E.applyMathResult(state, state.rng() < P.acc, P.grade);
+  }
+  /* 2) 소환 */
+  while (state.gold >= D.SUMMON_COST + P.reserve && state.bench.length < D.BENCH_MAX) {
+    if (!summonOk(state)) break;
+  }
+  /* 3) 조합 (수학 문제 통과 필요: 정답률만큼 성공, 실패 시 최대 3회 재도전) */
+  for (let tier = 0; tier < 3; tier++) {
+    while (E.benchCountByTier(state, tier) >= 2 && state.rng() < P.combineChance) {
+      let passed = false;
+      for (let tryN = 0; tryN < 3; tryN++) {
+        const ok = state.rng() < P.acc;
+        E.applyMathResult(state, ok, P.grade);
+        if (ok) { passed = true; break; }
+      }
+      if (passed) E.combine(state, tier);
+      else break;
+    }
+  }
+  /* 4) 배치 */
+  placeAll(state, P.sloppy || 0);
+  /* 5) 성 관리 */
+  if (P.useCastle) {
+    if (state.castleHp < state.castleMax * 0.5 && state.gold > 100) E.castleUpgrade(state, 'repair');
+    if (P.useCastle === true) {
+      if (state.wave >= 4 && state.castle.tower < 1 && state.gold > 250) E.castleUpgrade(state, 'tower');
+      if (state.wave >= 8 && state.castle.tower < 2 && state.gold > 400) E.castleUpgrade(state, 'tower');
+      if (state.wave >= 6 && state.castle.fortify < 3 && state.gold > 350) E.castleUpgrade(state, 'fortify');
+    }
+  }
+  /* 6) 용사 강화: 여유 골드로 최고 등급 용사부터 */
+  const heroes = [...state.field].sort((a, b) => b.tier - a.tier || b.level - a.level);
+  for (const h of heroes) {
+    if (state.gold <= P.upgradeOver) break;
+    E.upgradeHero(state, h.id);
+  }
+}
+
+function summonOk(state) {
+  return E.summon(state).ok;
+}
+
+/* ---------- 한 판 실행 ---------- */
+function playRun(profileName, difficulty, seed, waveCap = 40) {
+  const P = PROFILES[profileName];
+  const state = E.createGame({ rng: mulberry32(seed), difficulty });
+  /* 시작 용사 2명 (게임 본체와 동일) */
+  state.bench.push(E.makeHero(state, 'knight', 0));
+  state.bench.push(E.makeHero(state, 'archer', 0));
+
+  const castleLog = [];
+  let stalemate = false;
+  while (state.phase !== 'over' && state.wave <= waveCap && !stalemate) {
+    prepActions(state, P);
+    E.startWave(state);
+    let midTimer = 0, waveClock = 0;
+    while (state.phase === 'wave') {
+      E.tick(state, 0.05);
+      midTimer += 0.05;
+      waveClock += 0.05;
+      if (waveClock > 900) {   // 15분 넘게 안 끝나는 웨이브 = 교착
+        stalemate = true;
+        console.warn(`  ⚠ 교착 감지: seed=${seed} wave=${state.wave} 적=${state.enemies.length} 용사=${state.field.length}`);
+        break;
+      }
+      if (P.midWave && midTimer >= 2) {
+        midTimer = 0;
+        if (state.gold >= D.SUMMON_COST && state.bench.length < D.BENCH_MAX) {
+          if (summonOk(state)) placeAll(state);
+        }
+      }
+    }
+    castleLog.push(state.castleHp);
+  }
+  return {
+    wave: Math.min(state.wave, waveCap + 1),
+    survived: state.wave > waveCap,
+    kills: state.kills,
+    castleLog,
+    solved: state.solved,
+  };
+}
+
+/* ---------- 통계 ---------- */
+const pct = (arr, p) => {
+  const s = [...arr].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.floor(p * s.length))];
+};
+const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+
+function runProfile(profileName, difficulty, runs) {
+  const waves = [], survived = [];
+  for (let i = 0; i < runs; i++) {
+    const r = playRun(profileName, difficulty, i * 7919 + 13);
+    waves.push(r.wave);
+    survived.push(r.survived ? 1 : 0);
+  }
+  return {
+    profile: profileName,
+    difficulty,
+    mean: avg(waves).toFixed(1),
+    p25: pct(waves, 0.25), p50: pct(waves, 0.5), p75: pct(waves, 0.75),
+    min: Math.min(...waves), max: Math.max(...waves),
+    survivedPct: (avg(survived) * 100).toFixed(0) + '%',
+  };
+}
+
+/* ---------- 메인 ---------- */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const args = process.argv.slice(2);
+const checkMode = args.includes('check');
+const nums = args.filter(a => /^\d+$/.test(a));
+const runs = Number(nums[0]) || 150;
+const diffArg = args.find(a => ['easy', 'normal', 'hard'].includes(a));
+const diffs = diffArg ? [diffArg] : ['easy', 'normal', 'hard'];
+
+console.log(`\n=== 용사 수학 디펜스 밸런스 봇 (판수: ${runs}${checkMode ? ', 기준선 검증 모드' : ''}) ===\n`);
+
+let baseline = null;
+if (checkMode) {
+  const p = join(dirname(fileURLToPath(import.meta.url)), 'balance-baseline.json');
+  baseline = JSON.parse(readFileSync(p, 'utf8'));
+}
+
+let drift = false;
+for (const d of diffs) {
+  for (const p of Object.keys(PROFILES)) {
+    const r = runProfile(p, d, runs);
+    let flag = '';
+    if (baseline) {
+      const key = `${d}/${p}`;
+      const base = baseline.medians[key];
+      if (base != null && Math.abs(r.p50 - base) > baseline.tolerance) {
+        flag = `  ⚠ 기준선 이탈! (기준 중앙값 ${base}, 허용 ±${baseline.tolerance})`;
+        drift = true;
+      } else if (base != null) {
+        flag = `  ✓ 기준선 OK (${base}±${baseline.tolerance})`;
+      }
+    }
+    console.log(
+      `[${D.DIFFICULTIES[d].name}] ${r.profile}  평균 ${r.mean}웨이브` +
+      `  (p25 ${r.p25} / 중앙값 ${r.p50} / p75 ${r.p75})  범위 ${r.min}~${r.max}  40웨이브 생존 ${r.survivedPct}${flag}`
+    );
+  }
+  console.log('');
+}
+if (checkMode) {
+  console.log(drift ? '❌ 밸런스가 기준선에서 벗어났습니다. 수치를 확인하세요.' : '✅ 모든 항목이 기준선 안에 있습니다.');
+  if (drift) process.exitCode = 1;
+}

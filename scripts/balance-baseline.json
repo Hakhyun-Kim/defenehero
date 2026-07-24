@@ -1,0 +1,17 @@
+{
+  "comment": "밸런스 회귀 기준선. node scripts/balance-bot.mjs 120 check 로 검증. 중앙값이 tolerance 이상 벗어나면 경고.",
+  "date": "2026-07-24",
+  "runs": 150,
+  "tolerance": 3,
+  "medians": {
+    "easy/초보": 8,
+    "easy/보통": 24,
+    "easy/고수": 30,
+    "normal/초보": 5,
+    "normal/보통": 20,
+    "normal/고수": 26,
+    "hard/초보": 5,
+    "hard/보통": 17,
+    "hard/고수": 23
+  }
+}
