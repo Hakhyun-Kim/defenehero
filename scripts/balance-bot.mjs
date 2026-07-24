@@ -42,51 +42,30 @@ const PROFILES = {
 };
 
 /* ---------- 배치 정책 ----------
- * 근접(검사/방패병)은 앞줄(col 5), 원거리는 중간(col 3), 마법사는 뒤(col 2).
- * 커버되지 않은 줄부터 채운다. */
+ * 각 패드가 해당 직업 사거리로 덮는 "길의 길이"를 계산해
+ * 커버리지가 가장 큰 빈 패드부터 채운다. */
+const coverageCache = new Map();
+function rankedPads(range) {
+  if (!coverageCache.has(range)) {
+    const scored = D.PADS.map((pad, i) => ({ i, cover: D.padCoverage(pad, range) }))
+      .sort((a, b) => b.cover - a.cover);
+    coverageCache.set(range, scored);
+  }
+  return coverageCache.get(range);
+}
+
 function placeAll(state, sloppy = 0) {
-  const frontCol = 5, midCol = 3, backCol = 2;
-  const rows = [...Array(D.ROWS).keys()];
-
-  const covered = (col) => rows.filter(r => state.field.some(h => h.row === r && h.col === col));
   const bench = () => [...state.bench].sort((a, b) => b.tier - a.tier || b.level - a.level);
-
+  const free = (i) => !state.field.some(v => v.padIndex === i);
   for (const h of bench()) {
-    /* 미숙한 플레이어: 일정 확률로 아무 빈 칸에 놓는다 */
+    /* 미숙한 플레이어: 일정 확률로 아무 빈 패드에 놓는다 */
     if (sloppy && state.rng() < sloppy) {
-      const empties = [];
-      for (let c = 0; c < D.COLS; c++) for (const r of rows) {
-        if (!state.field.some(v => v.row === r && v.col === c)) empties.push([r, c]);
-      }
-      if (empties.length) {
-        const [r, c] = empties[Math.floor(state.rng() * empties.length)];
-        E.placeHero(state, h.id, r, c);
-      }
+      const empties = D.PADS.map((_, i) => i).filter(free);
+      if (empties.length) E.placeHero(state, h.id, empties[Math.floor(state.rng() * empties.length)]);
       continue;
     }
-    const C = D.CLASSES[h.cls];
-    let col = C.type === 'melee' ? frontCol : (h.cls === 'mage' ? backCol : midCol);
-    /* 그 열에서 비어있는 줄 중, 근접이 없는 줄 우선 */
-    let target = -1;
-    const frontRows = covered(frontCol);
-    const order = [...rows].sort((a, b) => {
-      const aFront = frontRows.includes(a) ? 1 : 0;
-      const bFront = frontRows.includes(b) ? 1 : 0;
-      if (C.type === 'melee') return aFront - bFront;        // 근접: 비어있는 앞줄 먼저
-      return bFront - aFront;                               // 원거리: 탱커 있는 줄 먼저
-    });
-    for (const r of order) {
-      if (!state.field.some(v => v.row === r && v.col === col)) { target = r; break; }
-    }
-    if (target < 0) {
-      /* 자리가 없으면 아무 빈 칸 */
-      outer: for (let c = frontCol; c >= 0; c--) {
-        for (const r of rows) {
-          if (!state.field.some(v => v.row === r && v.col === c)) { col = c; target = r; break outer; }
-        }
-      }
-    }
-    if (target >= 0) E.placeHero(state, h.id, target, col);
+    const slot = rankedPads(D.CLASSES[h.cls].range).find(r => free(r.i));
+    if (slot) E.placeHero(state, h.id, slot.i);
   }
 }
 

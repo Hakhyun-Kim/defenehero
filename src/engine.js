@@ -1,15 +1,36 @@
 /* =====================================================
  * 게임 엔진 (순수 로직, DOM/렌더링 없음)
- * 브라우저 게임 본체와 밸런스 봇(Node)이 함께 사용한다.
- * tick()은 이벤트 배열을 반환하고, 렌더러/사운드가 이를 소비한다.
+ * v3: 경로 기반 타워 디펜스
+ *  - 몬스터는 길(PATH)을 따라 진행도 s로 이동
+ *  - 용사는 지정 패드에 배치, 사거리 안 "최전방" 적을 자동 공격
+ *  - 용사는 탑처럼 파괴되지 않는다 (성 체력만 관리)
  * ===================================================== */
 import * as D from './data.js';
 
 const riFor = (rng) => (a, b) => Math.floor(rng() * (b - a + 1)) + a;
 const pickFor = (rng) => (arr) => arr[Math.floor(rng() * arr.length)];
 
-export const cellX = (col) => D.GRID_X + col * D.CELL + D.CELL / 2;
-export const cellY = (row) => D.GRID_Y + row * D.CELL + D.CELL / 2;
+/* 진행도 s → 좌표 + 진행 방향 (측면 오프셋 적용용) */
+function pathPosDir(s) {
+  const segs = D.PATH_SEGS;
+  if (s <= 0) {
+    const g = segs[0];
+    return { x: g.x1, y: g.y1, dx: (g.x2 - g.x1) / g.len, dy: (g.y2 - g.y1) / g.len };
+  }
+  for (const seg of segs) {
+    if (s <= seg.start + seg.len) {
+      const t = (s - seg.start) / seg.len;
+      return {
+        x: seg.x1 + (seg.x2 - seg.x1) * t,
+        y: seg.y1 + (seg.y2 - seg.y1) * t,
+        dx: (seg.x2 - seg.x1) / seg.len,
+        dy: (seg.y2 - seg.y1) / seg.len,
+      };
+    }
+  }
+  const last = segs[segs.length - 1];
+  return { x: last.x2, y: last.y2, dx: (last.x2 - last.x1) / last.len, dy: (last.y2 - last.y1) / last.len };
+}
 
 /* ---------- 생성 ---------- */
 export function createGame(opts = {}) {
@@ -33,26 +54,27 @@ export function createGame(opts = {}) {
     knowledge: 0,
 
     nextId: 1,
-    bench: [], field: [],
+    bench: [], field: [],          // field 용사는 padIndex를 가진다
     enemies: [], projectiles: [],
     spawnQueue: [], waveT: 0,
+    pendingWave: null,             // 다음 웨이브 스폰 목록 (미리보기용)
 
     kills: 0, bossKills: 0, summons: 0, combos: 0,
-    solved: 0, correct: 0, goldEarned: 0, upgrades: 0,
+    solved: 0, correct: 0, goldEarned: 0, upgrades: 0, hints: 0,
     shardsEarned: 0,
     combo: { count: 0, timer: 0 },
     time: 0,
   };
+  state.pendingWave = buildWave(state);
   return state;
 }
 
 export function makeHero(state, cls, tier, level = 1) {
   const s = D.heroStats(cls, tier, level);
-  const dmg = Math.round(s.dmg * state.dmgMul);
   return {
     id: state.nextId++, cls, tier, level,
-    dmg, maxHp: s.hp, hp: s.hp,
-    row: -1, col: -1, x: 0, y: 0, cd: 0,
+    dmg: Math.round(s.dmg * state.dmgMul),
+    padIndex: -1, x: 0, y: 0, cd: 0,
   };
 }
 
@@ -84,7 +106,6 @@ export function combine(state, tier) {
   if (targets.length < 2 || tier >= 3) return { ok: false };
   state.bench = state.bench.filter(h => !targets.includes(h));
   const cls = state.pick(D.CLASS_KEYS);
-  /* 조합 결과는 재료 중 높은 레벨을 물려받는다 */
   const level = Math.max(targets[0].level, targets[1].level);
   const hero = makeHero(state, cls, tier + 1, level);
   state.bench.push(hero);
@@ -93,14 +114,18 @@ export function combine(state, tier) {
 }
 
 /* ---------- 배치 / 회수 / 판매 / 강화 ---------- */
-export function placeHero(state, heroId, row, col) {
+export const padOccupant = (state, padIndex) => state.field.find(h => h.padIndex === padIndex);
+
+export function placeHero(state, heroId, padIndex) {
   const idx = state.bench.findIndex(h => h.id === heroId);
   if (idx < 0) return { ok: false };
-  if (state.field.some(h => h.row === row && h.col === col)) return { ok: false, reason: 'occupied' };
+  if (padIndex < 0 || padIndex >= D.PADS.length) return { ok: false };
+  if (padOccupant(state, padIndex)) return { ok: false, reason: 'occupied' };
   const h = state.bench[idx];
   state.bench.splice(idx, 1);
-  h.row = row; h.col = col;
-  h.x = cellX(col); h.y = cellY(row);
+  h.padIndex = padIndex;
+  h.x = D.PADS[padIndex].x;
+  h.y = D.PADS[padIndex].y;
   h.cd = 0;
   state.field.push(h);
   return { ok: true, hero: h };
@@ -111,15 +136,13 @@ export function recallHero(state, heroId) {
   if (!h) return { ok: false };
   if (state.bench.length >= D.BENCH_MAX) return { ok: false, reason: 'bench' };
   state.field = state.field.filter(v => v !== h);
-  h.row = -1; h.col = -1;
+  h.padIndex = -1;
   state.bench.push(h);
   return { ok: true };
 }
 
 export function sellHero(state, heroId) {
-  const inField = state.field.find(v => v.id === heroId);
-  const inBench = state.bench.find(v => v.id === heroId);
-  const h = inField || inBench;
+  const h = state.field.find(v => v.id === heroId) || state.bench.find(v => v.id === heroId);
   if (!h) return { ok: false };
   state.field = state.field.filter(v => v !== h);
   state.bench = state.bench.filter(v => v !== h);
@@ -135,12 +158,8 @@ export function upgradeHero(state, heroId) {
   const cost = D.levelCost(h.tier, h.level);
   if (state.gold < cost) return { ok: false, reason: 'gold', cost };
   state.gold -= cost;
-  const ratio = h.hp / h.maxHp;
   h.level++;
-  const s = D.heroStats(h.cls, h.tier, h.level);
-  h.dmg = Math.round(s.dmg * state.dmgMul);
-  h.maxHp = s.hp;
-  h.hp = Math.round(s.hp * ratio);
+  h.dmg = Math.round(D.heroStats(h.cls, h.tier, h.level).dmg * state.dmgMul);
   state.upgrades++;
   return { ok: true, hero: h, cost };
 }
@@ -167,7 +186,7 @@ export function castleUpgrade(state, key) {
   return { ok: true, cost };
 }
 
-/* ---------- 수학 결과 ---------- */
+/* ---------- 수학 결과 / 힌트 ---------- */
 export function applyMathResult(state, correct, grade) {
   state.solved++;
   if (correct) {
@@ -181,6 +200,13 @@ export function applyMathResult(state, correct, grade) {
   }
   state.knowledge = Math.max(0, state.knowledge + D.WRONG_KP);
   return { gold: 0, kp: D.WRONG_KP };
+}
+
+/* 힌트: 소환 희귀도(지식)를 대가로 지불 */
+export function useHint(state) {
+  state.hints++;
+  state.knowledge = Math.max(0, state.knowledge - D.HINT_COST);
+  return { knowledge: state.knowledge };
 }
 
 /* ---------- 웨이브 ---------- */
@@ -200,37 +226,47 @@ export function buildWave(state) {
   const list = [];
   let t = 1.2;
   for (let i = 0; i < count; i++) {
-    list.push({ t, type: pickWeighted(state, mix), row: state.ri(0, D.ROWS - 1) });
+    list.push({ t, type: pickWeighted(state, mix) });
     t += interval * (0.7 + state.rng() * 0.6);
   }
-  if (D.isBossWave(w)) list.push({ t: t + 1.5, type: 'boss', row: 2 });
+  if (D.isBossWave(w)) list.push({ t: t + 1.5, type: 'boss' });
   return list;
+}
+
+/* 다음 웨이브 미리보기: 종류별 마릿수 */
+export function waveSummary(state) {
+  const counts = {};
+  for (const s of (state.pendingWave || [])) counts[s.type] = (counts[s.type] || 0) + 1;
+  return counts;
 }
 
 export function startWave(state) {
   if (state.phase !== 'prep') return { ok: false };
   state.phase = 'wave';
-  state.spawnQueue = buildWave(state);
+  state.spawnQueue = [...(state.pendingWave || buildWave(state))];
   state.waveT = 0;
   return { ok: true, boss: D.isBossWave(state.wave) };
 }
 
-function spawnEnemy(state, type, row, events) {
+function spawnEnemy(state, type, events) {
   const E = D.ENEMY_TYPES[type];
   const w = state.wave;
   const hp = Math.round(E.hp * D.hpScale(w) * state.diff.hpMul);
+  const start = pathPosDir(0);
   const e = {
-    id: state.nextId++, type, row,
+    id: state.nextId++, type,
     hp, maxHp: hp,
-    x: D.FIELD_W + 20 + state.ri(0, 26),
-    y: cellY(row) + state.ri(-10, 10),
+    s: 0,                                          // 길 진행도
+    off: state.ri(-10, 10),                        // 길 중심에서의 측면 오프셋
+    x: start.x, y: start.y,
     spd: E.spd * (0.92 + state.rng() * 0.16),
-    dmg: Math.round(E.dmg * D.enemyDmgScale(w)),
     gold: Math.round(E.gold * D.enemyGoldScale(w) * state.diff.goldMul),
     castleDmg: E.castleDmg,
     size: E.size, boss: !!E.boss,
     heal: E.heal || 0, healPeriod: E.healPeriod || 0, healRange: E.healRange || 0,
-    atkCd: 0, healCd: E.healPeriod || 0, dead: false,
+    healCd: E.healPeriod || 0,
+    slowT: 0, slowMul: 1, aura: false,
+    dead: false,
   };
   state.enemies.push(e);
   events.push({ type: 'spawn', etype: type, x: e.x, y: e.y, boss: e.boss });
@@ -246,7 +282,6 @@ function damageEnemy(state, e, dmg, events, kind = 'hit') {
     e.dead = true;
     state.kills++;
     if (e.boss) state.bossKills++;
-    /* 킬 콤보: 3초 안에 이어서 처치하면 골드 배율 상승 */
     state.combo.count++;
     state.combo.timer = D.COMBO.window;
     const mul = state.combo.count >= D.COMBO.x3At ? 3 : state.combo.count >= D.COMBO.x2At ? 2 : 1;
@@ -257,9 +292,16 @@ function damageEnemy(state, e, dmg, events, kind = 'hit') {
   }
 }
 
-function killHero(state, h, events) {
-  state.field = state.field.filter(v => v !== h);
-  events.push({ type: 'heroDead', x: h.x, y: h.y, heroId: h.id });
+/* 사거리 안 최전방(진행도 최대) 적 — 일반적인 TD의 'first' 타겟팅 */
+function firstInRange(state, x, y, range) {
+  let target = null, best = -1;
+  for (const e of state.enemies) {
+    if (e.dead) continue;
+    if (Math.hypot(e.x - x, e.y - y) <= range) {
+      if (e.s > best) { best = e.s; target = e; }
+    }
+  }
+  return target;
 }
 
 function updateHeroes(state, dt, events) {
@@ -267,62 +309,45 @@ function updateHeroes(state, dt, events) {
     h.cd -= dt;
     if (h.cd > 0) continue;
     const C = D.CLASSES[h.cls];
-    let target = null, best = Infinity;
-
     const legend = h.tier === 3;
+    const target = firstInRange(state, h.x, h.y, C.range);
+    if (!target) continue;
+    h.cd = 1 / C.spd;
 
-    if (C.type === 'melee') {
-      for (const e of state.enemies) {
-        if (e.dead || e.row !== h.row) continue;
-        const dx = e.x - h.x;
-        if (dx >= -D.MELEE_BEHIND && dx <= D.MELEE_RANGE && dx < best) { best = dx; target = e; }
-      }
-      if (target) {
-        h.cd = 1 / C.spd;
-        if (legend && h.cls === 'knight') {
-          /* 전설 검사: 회전베기 — 사거리 안 모든 적 타격 */
-          for (const e of [...state.enemies]) {
-            if (e.dead || e.row !== h.row) continue;
-            const dx = e.x - h.x;
-            if (dx >= -D.MELEE_BEHIND && dx <= D.MELEE_RANGE) damageEnemy(state, e, h.dmg, events);
-          }
-          events.push({ type: 'meleeHit', x: h.x, y: h.y, cls: h.cls, cleave: true });
-        } else {
-          damageEnemy(state, target, h.dmg, events);
-          events.push({ type: 'meleeHit', x: target.x, y: target.y, cls: h.cls });
+    if (h.cls === 'knight') {
+      if (legend) {
+        for (const e of [...state.enemies]) {
+          if (e.dead) continue;
+          if (Math.hypot(e.x - h.x, e.y - h.y) <= C.range) damageEnemy(state, e, h.dmg, events);
         }
+        events.push({ type: 'meleeHit', x: h.x, y: h.y, cls: 'knight', heroId: h.id, cleave: true, tx: target.x, ty: target.y });
+      } else {
+        damageEnemy(state, target, h.dmg, events);
+        events.push({ type: 'meleeHit', x: target.x, y: target.y, cls: 'knight', heroId: h.id, tx: target.x, ty: target.y });
       }
-    } else if (C.type === 'lane') {
-      for (const e of state.enemies) {
-        if (e.dead || e.row !== h.row) continue;
-        const dx = e.x - h.x;
-        if (dx >= -20 && dx < best) { best = dx; target = e; }
+    } else if (h.cls === 'guard') {
+      damageEnemy(state, target, h.dmg, events);
+      if (!target.dead) {
+        target.slowT = C.slowDur;
+        target.slowMul = C.slow;
       }
-      if (target) {
-        h.cd = 1 / C.spd;
-        state.projectiles.push({
-          id: state.nextId++, kind: 'arrow', x: h.x + 16, y: h.y - 6, target,
-          dmg: h.dmg, spd: D.ARROW_SPEED, dead: false,
-          pierce: legend ? D.PIERCE_COUNT : 1, row: h.row,   /* 전설 궁수: 관통 화살 */
-        });
-        events.push({ type: 'shoot', kind: 'arrow', x: h.x, y: h.y });
-      }
-    } else { // radius
-      for (const e of state.enemies) {
-        if (e.dead) continue;
-        const d = Math.hypot(e.x - h.x, e.y - h.y);
-        if (d <= C.radius && d < best) { best = d; target = e; }
-      }
-      if (target) {
-        h.cd = 1 / C.spd;
-        state.projectiles.push({
-          id: state.nextId++, kind: 'orb', x: h.x, y: h.y - 10, target,
-          dmg: h.dmg, spd: D.ORB_SPEED, dead: false,
-          splash: C.splash * (legend ? D.LEGEND_SPLASH_MUL : 1),
-          burn: legend,                                        /* 전설 마법사: 화염 폭발 */
-        });
-        events.push({ type: 'shoot', kind: 'orb', x: h.x, y: h.y });
-      }
+      events.push({ type: 'meleeHit', x: target.x, y: target.y, cls: 'guard', heroId: h.id, tx: target.x, ty: target.y, slow: true });
+    } else if (h.cls === 'archer') {
+      state.projectiles.push({
+        id: state.nextId++, kind: 'arrow', x: h.x, y: h.y - 20, target,
+        dmg: h.dmg, spd: D.ARROW_SPEED, dead: false,
+        pierce: legend ? D.PIERCE_COUNT : 1,
+        srcX: h.x, srcY: h.y,
+      });
+      events.push({ type: 'shoot', kind: 'arrow', x: h.x, y: h.y, heroId: h.id, tx: target.x, ty: target.y });
+    } else { // mage
+      state.projectiles.push({
+        id: state.nextId++, kind: 'orb', x: h.x, y: h.y - 24, target,
+        dmg: h.dmg, spd: D.ORB_SPEED, dead: false,
+        splash: C.splash * (legend ? D.LEGEND_SPLASH_MUL : 1),
+        burn: legend,
+      });
+      events.push({ type: 'shoot', kind: 'orb', x: h.x, y: h.y, heroId: h.id, tx: target.x, ty: target.y });
     }
   }
 }
@@ -332,26 +357,33 @@ function updateTower(state, dt, events) {
   if (lv <= 0) return;
   state.towerCd -= dt;
   if (state.towerCd > 0) return;
-  let target = null, best = Infinity;
-  for (const e of state.enemies) {
-    if (e.dead) continue;
-    if (e.x <= D.CASTLE_HIT_X + D.TOWER_RANGE && e.x < best) { best = e.x; target = e; }
-  }
+  const target = firstInRange(state, D.CASTLE_POS.x, D.CASTLE_POS.y, D.TOWER_RANGE);
   if (!target) return;
   state.towerCd = D.TOWER_PERIOD(lv);
   state.projectiles.push({
     id: state.nextId++, kind: 'bolt',
-    x: 60, y: D.FIELD_H / 2 - 40,
+    x: D.CASTLE_POS.x - 40, y: D.CASTLE_POS.y - 60,
     target, dmg: D.TOWER_DMG(lv), spd: 420, dead: false,
   });
-  events.push({ type: 'shoot', kind: 'bolt', x: 60, y: D.FIELD_H / 2 - 40 });
+  events.push({ type: 'shoot', kind: 'bolt', x: D.CASTLE_POS.x - 40, y: D.CASTLE_POS.y - 60 });
 }
 
 function updateEnemies(state, dt, events) {
+  /* 전설 수호병의 서리 결계: 사거리 안 모든 적을 계속 감속 */
+  const auraGuards = state.field.filter(h => h.cls === 'guard' && h.tier === 3);
+  for (const e of state.enemies) e.aura = false;
+  for (const g of auraGuards) {
+    const range = D.CLASSES.guard.range;
+    for (const e of state.enemies) {
+      if (e.dead || e.aura) continue;
+      if (Math.hypot(e.x - g.x, e.y - g.y) <= range) e.aura = true;
+    }
+  }
+
   for (const e of state.enemies) {
     if (e.dead) continue;
 
-    /* 화상(전설 마법사): 초당 지속 피해 */
+    /* 화상 */
     if (e.burn) {
       e.burn.t -= dt;
       e.burnAcc = (e.burnAcc || 0) + e.burn.dps * dt;
@@ -364,7 +396,7 @@ function updateEnemies(state, dt, events) {
       if (e.burn && e.burn.t <= 0) delete e.burn;
     }
 
-    /* 주술사: 주변 아군 회복 */
+    /* 주술사 회복 */
     if (e.heal) {
       e.healCd -= dt;
       if (e.healCd <= 0) {
@@ -382,42 +414,31 @@ function updateEnemies(state, dt, events) {
       }
     }
 
-    /* 앞을 막는 용사 */
-    let blocker = null;
-    for (const h of state.field) {
-      if (h.row !== e.row) continue;
-      const dx = e.x - h.x;
-      if (dx >= -6 && dx <= D.BLOCK_DIST && (!blocker || h.x > blocker.x)) blocker = h;
-    }
-    if (blocker) {
-      e.atkCd -= dt;
-      if (e.atkCd <= 0) {
-        e.atkCd = D.ENEMY_ATK_PERIOD;
-        blocker.hp -= e.dmg;
-        events.push({ type: 'heroHurt', x: blocker.x, y: blocker.y, dmg: e.dmg, heroId: blocker.id });
-        /* 전설 방패병: 가시 갑옷 반사 */
-        if (blocker.tier === 3 && blocker.cls === 'guard') {
-          const reflect = Math.round(e.dmg * D.THORNS_RATIO);
-          if (reflect > 0) {
-            damageEnemy(state, e, reflect, events, 'thorns');
-            events.push({ type: 'thorns', x: e.x, y: e.y });
-          }
-        }
-        if (blocker.hp <= 0) killHero(state, blocker, events);
+    /* 감속 계산 */
+    if (e.slowT > 0) e.slowT -= dt;
+    let mul = 1;
+    if (e.slowT > 0) mul = Math.min(mul, e.slowMul);
+    if (e.aura) mul = Math.min(mul, D.LEGEND_AURA_SLOW);
+    e.slowed = mul < 1;
+
+    /* 길을 따라 이동 */
+    e.s += e.spd * mul * dt;
+    if (e.s >= D.PATH_LEN) {
+      e.dead = true;
+      const dmg = Math.round(e.castleDmg * D.castleDmgScale(state.wave));
+      state.castleHp = Math.max(0, state.castleHp - dmg);
+      events.push({ type: 'castleHit', dmg, y: e.y });
+      if (state.castleHp <= 0) {
+        gameOver(state, events);
+        return;
       }
-    } else {
-      e.x -= e.spd * dt;
-      if (e.x <= D.CASTLE_HIT_X) {
-        e.dead = true;
-        const dmg = Math.round(e.castleDmg * D.castleDmgScale(state.wave));
-        state.castleHp = Math.max(0, state.castleHp - dmg);
-        events.push({ type: 'castleHit', dmg, y: e.y });
-        if (state.castleHp <= 0) {
-          gameOver(state, events);
-          return;
-        }
-      }
+      continue;
     }
+    const p = pathPosDir(e.s);
+    /* 진행 방향의 수직으로 살짝 흩어져 걷는다 */
+    e.x = p.x + (-p.dy) * e.off;
+    e.y = p.y + (p.dx) * e.off;
+    e.dirX = p.dx; e.dirY = p.dy;
   }
 }
 
@@ -452,13 +473,27 @@ function updateProjectiles(state, dt, events) {
       } else {
         damageEnemy(state, t, p.dmg, events);
         if (p.kind === 'bolt') events.push({ type: 'boltHit', x: t.x, y: t.y });
-        /* 전설 궁수: 관통 — 뚫고 지나가며 뒤쪽 적도 타격 */
+        /* 전설 궁수: 관통 — 화살 진행 방향의 일직선상 적 추가 타격 */
         if (p.pierce > 1) {
+          const ux = (t.x - p.srcX), uy = (t.y - p.srcY);
+          const ul = Math.hypot(ux, uy) || 1;
+          const nx = ux / ul, ny = uy / ul;
           let remaining = p.pierce - 1;
-          const others = state.enemies
-            .filter(e => !e.dead && e.row === p.row && e !== t && e.x > t.x - 10 && e.x < t.x + 170)
-            .sort((a, b) => a.x - b.x);
-          for (const e of others) {
+          const cands = state.enemies
+            .filter(e => {
+              if (e.dead || e === t) return false;
+              const rx = e.x - t.x, ry = e.y - t.y;
+              const along = rx * nx + ry * ny;           // 관통 방향으로 앞쪽
+              if (along < 0 || along > 180) return false;
+              const side = Math.abs(rx * -ny + ry * nx); // 직선에서 벗어난 거리
+              return side <= D.PIERCE_WIDTH;
+            })
+            .sort((a, b) => {
+              const da = (a.x - t.x) * nx + (a.y - t.y) * ny;
+              const db = (b.x - t.x) * nx + (b.y - t.y) * ny;
+              return da - db;
+            });
+          for (const e of cands) {
             if (remaining <= 0) break;
             damageEnemy(state, e, p.dmg, events, 'pierce');
             events.push({ type: 'pierceHit', x: e.x, y: e.y });
@@ -485,11 +520,10 @@ function endWave(state, events) {
   state.goldEarned += bonus;
   state.combo.count = 0;
   state.combo.timer = 0;
-  state.field.forEach(h => h.hp = h.maxHp);
-  state.bench.forEach(h => h.hp = h.maxHp);
   events.push({ type: 'waveEnd', wave: state.wave, bonus });
   state.wave++;
   state.phase = 'prep';
+  state.pendingWave = buildWave(state);   // 다음 웨이브 미리 생성 (미리보기용)
 }
 
 /* ---------- 틱 ---------- */
@@ -498,7 +532,6 @@ export function tick(state, dt) {
   state.time += dt;
   if (state.phase !== 'wave') return events;
 
-  /* 킬 콤보 타이머 */
   if (state.combo.timer > 0) {
     state.combo.timer -= dt;
     if (state.combo.timer <= 0) state.combo.count = 0;
@@ -507,13 +540,13 @@ export function tick(state, dt) {
   state.waveT += dt;
   while (state.spawnQueue.length && state.spawnQueue[0].t <= state.waveT) {
     const s = state.spawnQueue.shift();
-    spawnEnemy(state, s.type, s.row, events);
+    spawnEnemy(state, s.type, events);
   }
 
   updateHeroes(state, dt, events);
   updateTower(state, dt, events);
   updateEnemies(state, dt, events);
-  if (state.phase !== 'wave') return events;   // 성 함락으로 중단
+  if (state.phase !== 'wave') return events;
   updateProjectiles(state, dt, events);
 
   state.enemies = state.enemies.filter(e => !e.dead);

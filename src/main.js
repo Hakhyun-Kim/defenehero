@@ -67,6 +67,7 @@ function refreshAll() {
   refreshPanels();
   ui.updateHud(state, store.shards, store.best(state.difficulty));
   ui.setWaveUI(state);
+  ui.renderWavePreview(state, E.waveSummary(state));
 }
 
 /* ---------- 수학 모달 ---------- */
@@ -129,10 +130,10 @@ function doSummon() {
   refreshAll();
 }
 
-function doPlace(cell) {
-  const r = E.placeHero(state, selBench, cell.row, cell.col);
+function doPlace(padIndex) {
+  const r = E.placeHero(state, selBench, padIndex);
   if (!r.ok) {
-    if (r.reason === 'occupied') ui.toast('그 칸에는 이미 용사가 있어요!', 'bad');
+    if (r.reason === 'occupied') ui.toast('그 발판에는 이미 용사가 있어요!', 'bad');
     return;
   }
   SFX.place();
@@ -159,13 +160,6 @@ function handleEvents(events) {
         else SFX.bolt();
         break;
       case 'explode': SFX.explode(); break;
-      case 'thorns': SFX.thorns(); break;
-      case 'heroHurt': SFX.heroHurt(); break;
-      case 'heroDead':
-        SFX.heroDead();
-        if (selHero === ev.heroId) { selHero = null; renderer.setSelectedHero(null); }
-        ui.toast('용사가 쓰러졌어요… 😢', 'bad');
-        break;
       case 'castleHit':
         SFX.castleHit();
         ui.flashHit();
@@ -177,7 +171,7 @@ function handleEvents(events) {
       case 'waveEnd':
         SFX.waveClear();
         ui.toast(`🎉 ${ev.wave}웨이브 클리어! 보너스 💰${ev.bonus}`, 'good');
-        refreshPanels();
+        refreshAll();
         break;
       case 'gameOver': onGameOver(); break;
     }
@@ -237,21 +231,22 @@ ui.bind({
     } else {
       selBench = id;
       selHero = id;
-      renderer.setPlacementMode(true);
+      const hero = state.bench.find(h => h.id === id);
+      renderer.setPlacementMode(true, hero ? D.CLASSES[hero.cls].range : 0);
       renderer.setSelectedHero(null);
     }
     ui.renderBench(state, selBench);
     ui.renderHeroPanel(state, selHero);
   },
   onSceneClick(cx, cy) {
-    const cell = renderer.screenToCell(cx, cy);
-    if (!cell) {
+    const pad = renderer.screenToPad(cx, cy);
+    if (pad == null) {
       selHero = null; renderer.setSelectedHero(null);
       ui.renderHeroPanel(state, null);
       return;
     }
-    if (selBench != null) { doPlace(cell); return; }
-    const hero = state.field.find(h => h.row === cell.row && h.col === cell.col);
+    if (selBench != null) { doPlace(pad); return; }
+    const hero = E.padOccupant(state, pad);
     selHero = hero ? hero.id : null;
     renderer.setSelectedHero(selHero);
     ui.renderHeroPanel(state, selHero);
@@ -259,7 +254,15 @@ ui.bind({
   },
   onSceneMove(cx, cy) {
     if (cx == null) { renderer.setHover(null); return; }
-    renderer.setHover(renderer.screenToCell(cx, cy));
+    renderer.setHover(renderer.screenToPad(cx, cy));
+  },
+  onHint() {
+    if (!modal.prob) return;
+    E.useHint(state);
+    SFX.tap();
+    ui.showHint(modal.prob.hint);
+    ui.toast(`💡 힌트! 대신 지식 레벨이 ${D.HINT_COST} 내려갔어요. (소환 확률 ↓)`, 'bad');
+    ui.updateHud(state, store.shards, store.best(state.difficulty));
   },
   onUpgrade() {
     const r = E.upgradeHero(state, selHero);
@@ -397,6 +400,8 @@ function frame(now) {
   ui.updateHud(state, store.shards, store.best(state.difficulty));
   ui.setWaveUI(state);
   ui.comboChip(state.combo.count, state.combo.count >= D.COMBO.x3At ? 3 : state.combo.count >= D.COMBO.x2At ? 2 : 1);
+  const bossE = state.enemies.find(e => e.boss && !e.dead);
+  ui.setBossBar(bossE ? bossE.hp / bossE.maxHp : null);
   panelT += realDt;
   if (panelT > 0.35) {           // 골드 변동에 따른 버튼 활성화 갱신
     panelT = 0;

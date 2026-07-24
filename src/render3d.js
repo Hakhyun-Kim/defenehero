@@ -1,7 +1,7 @@
 /* =====================================================
  * 3D 렌더러 (Three.js)
- * 엔진의 논리 좌표(x: 0~700, y: 0~408)를 3D 월드로 투영한다.
- * 외부 에셋 0개: 모든 지형/성/이펙트는 코드로 생성.
+ * v3: 경로 기반 TD — 길/배치 패드/사람 모양 용사
+ * 외부 에셋 0개: 지형·성·캐릭터·이펙트 전부 코드 생성.
  * ===================================================== */
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -14,7 +14,7 @@ const S = 1 / 36;                                    // 논리px → 월드 유�
 const wx = (x) => (x - D.FIELD_W / 2) * S;
 const wz = (y) => (y - D.FIELD_H / 2) * S;
 
-/* ---------- 이모지 텍스처 캐시 ---------- */
+/* ---------- 이모지 텍스처 (몬스터용) ---------- */
 const emojiCache = new Map();
 function emojiTexture(emoji) {
   if (emojiCache.has(emoji)) return emojiCache.get(emoji);
@@ -31,7 +31,7 @@ function emojiTexture(emoji) {
   return t;
 }
 
-/* ---------- 블롭 그림자 텍스처 ---------- */
+/* ---------- 블롭 그림자 ---------- */
 let blobTex = null;
 function blobTexture() {
   if (blobTex) return blobTex;
@@ -47,7 +47,7 @@ function blobTexture() {
   return blobTex;
 }
 
-/* ---------- 레벨 배지 텍스처 ---------- */
+/* ---------- 레벨 배지 ---------- */
 const lvCache = new Map();
 function levelTexture(level) {
   if (lvCache.has(level)) return lvCache.get(level);
@@ -67,6 +67,185 @@ function levelTexture(level) {
 }
 
 /* =====================================================
+ * 사람 모양 용사 모델 (치비 비율, 직업별 장비)
+ * 모델은 +Z를 바라보게 만들고 rotation.y로 조준한다.
+ * ===================================================== */
+const SKIN = 0xffd9b3;
+const CLASS_LOOK = {
+  knight: { tunic: 0xcf5548, sleeve: 0xa93b30, pants: 0x54423a, hair: 0x6b4423 },
+  guard:  { tunic: 0x5a7fd6, sleeve: 0x3f5fae, pants: 0x3d4666, hair: 0x3a3f4a },
+  archer: { tunic: 0x4f9e57, sleeve: 0x3b7f44, pants: 0x5a4a32, hair: 0x8a5a2b },
+  mage:   { tunic: 0x7a5fd0, sleeve: 0x6448b8, pants: 0x453a6b, hair: 0xd9d9e8 },
+};
+
+function lam(color) { return new THREE.MeshLambertMaterial({ color }); }
+
+function makeHumanHero(cls, tier) {
+  const look = CLASS_LOOK[cls];
+  const g = new THREE.Group();
+  const refs = {};
+
+  /* 다리 */
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.2, 0.13), lam(look.pants));
+    leg.position.set(0.09 * sx, 0.1, 0);
+    g.add(leg);
+  }
+  /* 몸통 */
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.42, 0.3), lam(look.tunic));
+  body.position.y = 0.41;
+  g.add(body);
+  refs.body = body;
+  /* 벨트 */
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.06, 0.32), lam(0x3a2f24));
+  belt.position.y = 0.24;
+  g.add(belt);
+
+  /* 왼팔 (고정) */
+  const armL = new THREE.Group();
+  armL.position.set(-0.27, 0.6, 0);
+  const armLmesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.3, 0.1), lam(look.sleeve));
+  armLmesh.position.y = -0.12;
+  armL.add(armLmesh);
+  g.add(armL);
+  refs.armL = armL;
+
+  /* 오른팔 (공격 스윙 피벗) */
+  const armPivot = new THREE.Group();
+  armPivot.position.set(0.27, 0.6, 0);
+  const armR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.3, 0.1), lam(look.sleeve));
+  armR.position.y = -0.12;
+  armPivot.add(armR);
+  g.add(armPivot);
+  refs.armPivot = armPivot;
+
+  /* 머리 */
+  const head = new THREE.Group();
+  head.position.y = 0.93;
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.21, 14, 12), lam(SKIN));
+  head.add(skull);
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.026, 6, 6), lam(0x232323));
+    eye.position.set(0.075 * sx, 0.02, 0.185);
+    head.add(eye);
+  }
+  g.add(head);
+  refs.head = head;
+
+  /* 직업별 장비 */
+  if (cls === 'knight') {
+    const helm = new THREE.Mesh(
+      new THREE.SphereGeometry(0.225, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55),
+      lam(0xc8ccd8)
+    );
+    helm.position.y = 0.03;
+    head.add(helm);
+    const plume = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.2, 6), lam(0xd83a3a));
+    plume.position.y = 0.3;
+    head.add(plume);
+    /* 검: 칼날 + 가드 + 손잡이 */
+    const sword = new THREE.Group();
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.46, 0.02), lam(0xe8ecf4));
+    blade.position.y = 0.28;
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.035, 0.045), lam(0xd9a93d));
+    guard.position.y = 0.05;
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.12), lam(0x5a3a22));
+    grip.position.y = -0.03;
+    sword.add(blade, guard, grip);
+    sword.position.set(0, -0.26, 0.06);
+    sword.rotation.x = Math.PI / 5;
+    armPivot.add(sword);
+  } else if (cls === 'guard') {
+    const helm = new THREE.Mesh(new THREE.CylinderGeometry(0.225, 0.235, 0.2, 12), lam(0xb9c0cf));
+    helm.position.y = 0.08;
+    head.add(helm);
+    const helmTop = new THREE.Mesh(new THREE.SphereGeometry(0.225, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), lam(0xb9c0cf));
+    helmTop.position.y = 0.16;
+    head.add(helmTop);
+    /* 큰 방패 (왼팔) */
+    const shield = new THREE.Group();
+    const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.2, 0.05, 6), lam(0xd0d6e2));
+    plate.rotation.x = Math.PI / 2;
+    const boss = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), lam(0xd9a93d));
+    boss.position.z = 0.04;
+    shield.add(plate, boss);
+    shield.position.set(-0.1, -0.16, 0.14);
+    armL.add(shield);
+    /* 철퇴 (오른손) */
+    const mace = new THREE.Group();
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.3), lam(0x5a3a22));
+    handle.position.y = 0.1;
+    const headM = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), lam(0x8b93a8));
+    headM.position.y = 0.28;
+    mace.add(handle, headM);
+    mace.position.set(0, -0.26, 0.05);
+    mace.rotation.x = Math.PI / 5;
+    armPivot.add(mace);
+  } else if (cls === 'archer') {
+    const hood = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.3, 10), lam(0x35703c));
+    hood.position.y = 0.14;
+    head.add(hood);
+    /* 활 (왼손, 세로) */
+    const bow = new THREE.Group();
+    const arc = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.02, 6, 14, Math.PI), lam(0x7a4a22));
+    arc.rotation.z = Math.PI / 2;      // 활 등이 앞을 향하게
+    const string = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.5, 0.008), lam(0xe8e8e8));
+    bow.add(arc, string);
+    bow.position.set(-0.08, -0.2, 0.16);
+    armL.add(bow);
+    refs.bow = bow;
+  } else { // mage
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.03, 14), lam(0x5b43a8));
+    brim.position.y = 0.12;
+    head.add(brim);
+    const hat = new THREE.Mesh(new THREE.ConeGeometry(0.23, 0.4, 12), lam(0x5b43a8));
+    hat.position.y = 0.32;
+    head.add(hat);
+    /* 지팡이 + 발광 수정 (오른손) */
+    const staff = new THREE.Group();
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.68), lam(0x6b4c2a));
+    rod.position.y = 0.2;
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 10), new THREE.MeshBasicMaterial({ color: 0x9ff3ff }));
+    orb.position.y = 0.58;
+    staff.add(rod, orb);
+    staff.position.set(0, -0.26, 0.06);
+    staff.rotation.x = Math.PI / 7;
+    armPivot.add(staff);
+    refs.staffOrb = orb;
+  }
+
+  /* 등급 망토 (희귀 이상) */
+  if (tier >= 1) {
+    const cape = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.42, 0.52),
+      new THREE.MeshLambertMaterial({ color: D.TIERS[tier].color, side: THREE.DoubleSide })
+    );
+    cape.position.set(0, 0.52, -0.19);
+    cape.rotation.x = 0.16;
+    g.add(cape);
+    refs.cape = cape;
+  }
+  /* 전설 왕관 */
+  if (tier === 3) {
+    const crown = new THREE.Group();
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.06, 10, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd93d, side: THREE.DoubleSide }));
+    crown.add(band);
+    for (let k = 0; k < 4; k++) {
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.09, 4), new THREE.MeshBasicMaterial({ color: 0xffd93d }));
+      const a = (k / 4) * Math.PI * 2;
+      spike.position.set(Math.cos(a) * 0.12, 0.07, Math.sin(a) * 0.12);
+      crown.add(spike);
+    }
+    crown.position.y = 0.24;
+    head.add(crown);
+  }
+
+  const scale = 1.18 + tier * 0.09;
+  g.scale.setScalar(scale);
+  return { group: g, refs };
+}
+
+/* =====================================================
  * 렌더러 본체
  * ===================================================== */
 export class Renderer3D {
@@ -79,7 +258,7 @@ export class Renderer3D {
     const r = new THREE.WebGLRenderer({
       antialias: this.quality !== 'min',
       powerPreference: 'high-performance',
-      preserveDrawingBuffer: !!opts.preserve,   // 자동화/숨김 탭 캡처용
+      preserveDrawingBuffer: !!opts.preserve,
     });
     r.setPixelRatio(this._targetDpr());
     r.setClearColor(0xbfe3ff);
@@ -94,7 +273,6 @@ export class Renderer3D {
     this.camera.position.copy(this.camBase);
     this.camera.lookAt(0.4, 0, 0.4);
 
-    /* 조명 */
     this.scene.add(new THREE.HemisphereLight(0xeaf6ff, 0x5d8742, 1.05));
     const sun = new THREE.DirectionalLight(0xfff2d8, 1.35);
     sun.position.set(7, 12, 5);
@@ -102,23 +280,19 @@ export class Renderer3D {
 
     this._buildTerrain();
     this._buildCastle();
-    this._buildPortals();
-    this._buildHighlights();
     this._buildParticles();
     this._buildDamageNumbers();
 
-    /* 엔티티 뷰 */
     this.heroViews = new Map();
     this.enemyViews = new Map();
     this.projViews = new Map();
     this.placementMode = false;
+    this.placeRange = 0;
     this.selectedHeroId = null;
-    this.hoverCell = null;
+    this.hoverPad = null;
 
-    /* 후처리 (블룸) */
     this._setupComposer();
 
-    /* 리사이즈 */
     this._resize = this._resize.bind(this);
     this.ro = new ResizeObserver(this._resize);
     this.ro.observe(container);
@@ -132,7 +306,7 @@ export class Renderer3D {
     const d = window.devicePixelRatio || 1;
     if (this.quality === 'high') return Math.min(d, 2);
     if (this.quality === 'lite') return Math.min(d, 1.4);
-    return 0.6;                                  // min: 초저사양/소프트웨어 렌더링
+    return 0.6;
   }
 
   _setupComposer() {
@@ -166,9 +340,8 @@ export class Renderer3D {
     if (this.composer) this.composer.setSize(w, h);
   }
 
-  /* ---------- 지형 ---------- */
+  /* ---------- 지형: 잔디 + 길 + 배치 패드 ---------- */
   _buildTerrain() {
-    /* 넓은 바깥 잔디 */
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(80, 50),
       new THREE.MeshLambertMaterial({ color: 0x67a94a })
@@ -177,44 +350,141 @@ export class Renderer3D {
     ground.position.y = -0.08;
     this.scene.add(ground);
 
-    /* 격자 셀 (인스턴스) */
-    const geo = new THREE.BoxGeometry(1.86, 0.14, 1.86);
-    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    const cells = new THREE.InstancedMesh(geo, mat, D.COLS * D.ROWS);
-    const m = new THREE.Matrix4();
-    const cA = new THREE.Color(0x8fd45e), cB = new THREE.Color(0x7fc44f);
-    let i = 0;
-    for (let row = 0; row < D.ROWS; row++) {
-      for (let col = 0; col < D.COLS; col++) {
-        m.setPosition(wx(D.GRID_X + col * D.CELL + D.CELL / 2), 0, wz(D.GRID_Y + row * D.CELL + D.CELL / 2));
-        cells.setMatrixAt(i, m);
-        cells.setColorAt(i, (row + col) % 2 === 0 ? cA : cB);
-        i++;
-      }
-    }
-    cells.instanceColor.needsUpdate = true;
-    this.scene.add(cells);
-
-    /* 몬스터 행진로 (격자 오른쪽 → 스폰 지점) */
-    const laneMat = new THREE.MeshLambertMaterial({ color: 0x86a852 });
-    const gridRight = D.GRID_X + D.COLS * D.CELL;
-    const laneLen = (D.FIELD_W + 60 - gridRight) * S;
-    for (let row = 0; row < D.ROWS; row++) {
-      const lane = new THREE.Mesh(new THREE.PlaneGeometry(laneLen, 1.3), laneMat);
-      lane.rotation.x = -Math.PI / 2;
-      lane.position.set(wx(gridRight) + laneLen / 2, -0.02, wz(D.GRID_Y + row * D.CELL + D.CELL / 2));
-      this.scene.add(lane);
+    /* 풀밭 살짝 얼룩 (밝은 패치) */
+    const patchMat = new THREE.MeshLambertMaterial({ color: 0x74b854 });
+    const rnd = (() => { let s = 7; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
+    for (let k = 0; k < 24; k++) {
+      const p = new THREE.Mesh(new THREE.CircleGeometry(0.5 + rnd() * 0.9, 8), patchMat);
+      p.rotation.x = -Math.PI / 2;
+      p.position.set(-10 + rnd() * 21, -0.06, -6 + rnd() * 12);
+      this.scene.add(p);
     }
 
-    /* 장식: 나무/바위 */
-    const treeTrunk = new THREE.MeshLambertMaterial({ color: 0x7a5230 });
-    const treeLeaf = new THREE.MeshLambertMaterial({ color: 0x3f8f3f });
-    const rockMat = new THREE.MeshLambertMaterial({ color: 0x9aa0a8 });
-    const rnd = (() => { let s = 42; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
+    /* 길: 세그먼트 리본 + 모서리 원판 (테두리 → 본판 2층) */
+    const roadW = (D.ROAD_HALF * 2 + 10) * S;
+    const edgeMat = lam(0x9c7a4e);
+    const roadMat = lam(0xc9a36b);
+    for (const seg of D.PATH_SEGS) {
+      const len = seg.len * S;
+      const cx = wx((seg.x1 + seg.x2) / 2), cz = wz((seg.y1 + seg.y2) / 2);
+      const ang = Math.atan2(wz(seg.y2) - wz(seg.y1), wx(seg.x2) - wx(seg.x1));
+      const edge = new THREE.Mesh(new THREE.PlaneGeometry(len + roadW * 0.3, roadW + 0.16), edgeMat);
+      edge.rotation.x = -Math.PI / 2;
+      edge.rotation.z = ang;
+      edge.position.set(cx, -0.04, cz);
+      this.scene.add(edge);
+      const road = new THREE.Mesh(new THREE.PlaneGeometry(len + roadW * 0.2, roadW), roadMat);
+      road.rotation.x = -Math.PI / 2;
+      road.rotation.z = ang;
+      road.position.set(cx, -0.02, cz);
+      this.scene.add(road);
+    }
+    for (let i = 1; i < D.PATH.length - 1; i++) {
+      const [px, py] = D.PATH[i];
+      const cornerE = new THREE.Mesh(new THREE.CircleGeometry(roadW / 2 + 0.08, 18), edgeMat);
+      cornerE.rotation.x = -Math.PI / 2;
+      cornerE.position.set(wx(px), -0.035, wz(py));
+      this.scene.add(cornerE);
+      const corner = new THREE.Mesh(new THREE.CircleGeometry(roadW / 2, 18), roadMat);
+      corner.rotation.x = -Math.PI / 2;
+      corner.position.set(wx(px), -0.015, wz(py));
+      this.scene.add(corner);
+    }
+    /* 길 위 발자국 점 */
+    const dotMat = lam(0xb08e58);
+    for (let s = 30; s < D.PATH_LEN; s += 46) {
+      const p = D.pathPoint(s);
+      const dot = new THREE.Mesh(new THREE.CircleGeometry(0.07, 6), dotMat);
+      dot.rotation.x = -Math.PI / 2;
+      dot.position.set(wx(p.x), 0.001, wz(p.y));
+      this.scene.add(dot);
+    }
+
+    /* 스폰 포탈 (길 시작점) */
+    const p0 = D.pathPoint(6);
+    this.portal = new THREE.Mesh(
+      new THREE.TorusGeometry(0.85, 0.1, 10, 26),
+      new THREE.MeshBasicMaterial({ color: 0xc478f0 })
+    );
+    this.portal.position.set(wx(740) - 0.6, 1.0, wz(84));
+    this.portal.rotation.y = Math.PI / 2;
+    this.scene.add(this.portal);
+    const portalGlow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.7, 20),
+      new THREE.MeshBasicMaterial({ color: 0x8a4fc0, transparent: true, opacity: 0.55 })
+    );
+    portalGlow.position.copy(this.portal.position);
+    portalGlow.rotation.y = Math.PI / 2;
+    this.scene.add(portalGlow);
+
+    /* 배치 패드 */
+    this.padMeshes = [];
+    this.padHighlights = [];
+    for (let i = 0; i < D.PADS.length; i++) {
+      const pad = D.PADS[i];
+      const px = wx(pad.x), pz = wz(pad.y);
+      const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.74, 0.8, 0.1, 18), lam(0x8d94a8));
+      rim.position.set(px, 0.02, pz);
+      this.scene.add(rim);
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.66, 0.1, 18), lam(0xbfc6d4));
+      top.position.set(px, 0.07, pz);
+      this.scene.add(top);
+      this.padMeshes.push(top);
+      /* 배치 모드 하이라이트 */
+      const hl = new THREE.Mesh(
+        new THREE.CircleGeometry(0.62, 18),
+        new THREE.MeshBasicMaterial({ color: 0x3ddc6e, transparent: true, opacity: 0.35, depthWrite: false })
+      );
+      hl.rotation.x = -Math.PI / 2;
+      hl.position.set(px, 0.14, pz);
+      hl.visible = false;
+      this.scene.add(hl);
+      this.padHighlights.push(hl);
+    }
+
+    /* 호버 링 */
+    this.hoverRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.68, 0.8, 24),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false })
+    );
+    this.hoverRing.rotation.x = -Math.PI / 2;
+    this.hoverRing.visible = false;
+    this.scene.add(this.hoverRing);
+
+    /* 선택 링 */
+    this.selRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.85, 1.0, 28),
+      new THREE.MeshBasicMaterial({ color: 0x22ff88, transparent: true, opacity: 0.9, depthWrite: false })
+    );
+    this.selRing.rotation.x = -Math.PI / 2;
+    this.selRing.visible = false;
+    this.scene.add(this.selRing);
+
+    /* 사거리 표시 (단위원 스케일 방식) */
+    this.rangeGroup = new THREE.Group();
+    const rangeFill = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 48),
+      new THREE.MeshBasicMaterial({ color: 0x66c2ff, transparent: true, opacity: 0.1, depthWrite: false })
+    );
+    rangeFill.rotation.x = -Math.PI / 2;
+    const rangeEdge = new THREE.Mesh(
+      new THREE.RingGeometry(0.97, 1, 64),
+      new THREE.MeshBasicMaterial({ color: 0x66c2ff, transparent: true, opacity: 0.7, depthWrite: false })
+    );
+    rangeEdge.rotation.x = -Math.PI / 2;
+    this.rangeGroup.add(rangeFill, rangeEdge);
+    this.rangeGroup.position.y = 0.16;
+    this.rangeGroup.visible = false;
+    this.scene.add(this.rangeGroup);
+
+    /* 나무/바위 장식 */
+    const treeTrunk = lam(0x7a5230);
+    const treeLeaf = lam(0x3f8f3f);
+    const rockMat = lam(0x9aa0a8);
     for (let k = 0; k < 14; k++) {
       const behind = rnd() < 0.65;
       const x = -10 + rnd() * 22;
-      const z = behind ? -(7.2 + rnd() * 3.5) : (7.2 + rnd() * 3);
+      const z = behind ? -(7.4 + rnd() * 3.4) : (7.4 + rnd() * 3);
       if (rnd() < 0.7) {
         const g = new THREE.Group();
         const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.5), treeTrunk);
@@ -233,7 +503,7 @@ export class Renderer3D {
     }
   }
 
-  /* ---------- 성 (왼쪽) ---------- */
+  /* ---------- 성 ---------- */
   _buildCastle() {
     const g = new THREE.Group();
     this.castleStoneMats = [];
@@ -243,31 +513,25 @@ export class Renderer3D {
       this.castleStoneMats.push(m);
       return m;
     };
-    const roofMat = new THREE.MeshLambertMaterial({ color: 0xe05252 });
+    const roofMat = lam(0xe05252);
     const glowMat = new THREE.MeshBasicMaterial({ color: 0xffd76e });
 
-    /* 받침 */
     const base = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.5, 12.6), stone(0x8d94aa));
     base.position.set(-8.35, 0.25, 0);
     g.add(base);
 
-    /* 성벽 + 요철 */
     this.wall = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.6, 12.2), stone(0xa3aabf));
     this.wall.position.set(-6.95, 1.05, 0);
     g.add(this.wall);
-    this.crenels = [];
     for (let k = 0; k < 9; k++) {
       const c = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.34, 0.62), stone(0xb2b8cc));
       c.position.set(-6.95, 2.0, -5.4 + k * 1.35);
       g.add(c);
-      this.crenels.push(c);
     }
-    /* 성문 */
-    const gate = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.1, 1.5), new THREE.MeshLambertMaterial({ color: 0x4a3826 }));
+    const gate = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.1, 1.5), lam(0x4a3826));
     gate.position.set(-6.55, 0.8, 0);
     g.add(gate);
 
-    /* 본성 */
     const keep = new THREE.Mesh(new THREE.BoxGeometry(2.1, 2.7, 2.7), stone(0x9ba2b8));
     keep.position.set(-8.6, 1.6, 0);
     g.add(keep);
@@ -275,14 +539,12 @@ export class Renderer3D {
     keepRoof.rotation.y = Math.PI / 4;
     keepRoof.position.set(-8.6, 3.65, 0);
     g.add(keepRoof);
-    /* 창문 (발광 → 블룸) */
     for (const dz of [-0.6, 0.6]) {
       const win = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.3), glowMat);
       win.position.set(-7.52, 1.9, dz);
       g.add(win);
     }
 
-    /* 좌우 탑 + 깃발 */
     this.flags = [];
     for (const dz of [-4.7, 4.7]) {
       const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.88, 3.1, 8), stone(0x99a0b6));
@@ -291,7 +553,7 @@ export class Renderer3D {
       const roof = new THREE.Mesh(new THREE.ConeGeometry(1.05, 1.25, 8), roofMat);
       roof.position.set(-8.3, 3.72, dz);
       g.add(roof);
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0), new THREE.MeshLambertMaterial({ color: 0x6b4c2a }));
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0), lam(0x6b4c2a));
       pole.position.set(-8.3, 4.8, dz);
       g.add(pole);
       const flag = new THREE.Mesh(
@@ -304,7 +566,6 @@ export class Renderer3D {
       g.add(flag);
     }
 
-    /* 마법 포탑 수정 (업그레이드 시 표시) */
     this.crystals = [];
     for (let k = 0; k < 3; k++) {
       const crystal = new THREE.Mesh(
@@ -317,7 +578,6 @@ export class Renderer3D {
       g.add(crystal);
     }
 
-    /* 강화 시 금색 띠 */
     this.fortifyBands = [];
     for (let k = 0; k < 5; k++) {
       const band = new THREE.Mesh(
@@ -332,54 +592,6 @@ export class Renderer3D {
 
     this.castle = g;
     this.scene.add(g);
-  }
-
-  /* ---------- 스폰 포탈 ---------- */
-  _buildPortals() {
-    this.portals = [];
-    const mat = new THREE.MeshBasicMaterial({ color: 0xc478f0 });
-    for (let row = 0; row < D.ROWS; row++) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.075, 10, 24), mat);
-      ring.position.set(wx(D.FIELD_W + 26), 0.85, wz(D.GRID_Y + row * D.CELL + D.CELL / 2));
-      ring.rotation.y = Math.PI / 2;
-      this.portals.push(ring);
-      this.scene.add(ring);
-    }
-  }
-
-  /* ---------- 배치 하이라이트 ---------- */
-  _buildHighlights() {
-    this.highlights = [];
-    const geo = new THREE.PlaneGeometry(1.8, 1.8);
-    for (let row = 0; row < D.ROWS; row++) {
-      for (let col = 0; col < D.COLS; col++) {
-        const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-          color: 0x3ddc6e, transparent: true, opacity: 0.3, depthWrite: false,
-        }));
-        mesh.rotation.x = -Math.PI / 2;
-        mesh.position.set(wx(D.GRID_X + col * D.CELL + D.CELL / 2), 0.1, wz(D.GRID_Y + row * D.CELL + D.CELL / 2));
-        mesh.visible = false;
-        mesh.userData = { row, col };
-        this.highlights.push(mesh);
-        this.scene.add(mesh);
-      }
-    }
-    /* 호버 표시 */
-    this.hoverMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.9, 1.9),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false })
-    );
-    this.hoverMesh.rotation.x = -Math.PI / 2;
-    this.hoverMesh.visible = false;
-    this.scene.add(this.hoverMesh);
-    /* 선택 링 */
-    this.selRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.85, 1.0, 28),
-      new THREE.MeshBasicMaterial({ color: 0x22ff88, transparent: true, opacity: 0.9, depthWrite: false })
-    );
-    this.selRing.rotation.x = -Math.PI / 2;
-    this.selRing.visible = false;
-    this.scene.add(this.selRing);
   }
 
   /* ---------- 파티클 풀 ---------- */
@@ -450,7 +662,7 @@ export class Renderer3D {
     this.pMesh.instanceMatrix.needsUpdate = true;
   }
 
-  /* ---------- 데미지 숫자 풀 ---------- */
+  /* ---------- 데미지 숫자 ---------- */
   _buildDamageNumbers() {
     this.dmgPool = [];
     for (let i = 0; i < 22; i++) {
@@ -495,11 +707,64 @@ export class Renderer3D {
     }
   }
 
-  /* ---------- 엔티티 뷰 생성 ---------- */
-  _makeUnitView(emoji, scale, ringColor, barColor, barW = 1.2) {
+  /* ---------- 용사 뷰 ---------- */
+  _makeHeroView(hero) {
+    const { group, refs } = makeHumanHero(hero.cls, hero.tier);
+    const holder = new THREE.Group();
+    holder.add(group);
+
+    /* 블롭 그림자 */
+    const shadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.3, 0.95),
+      new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false })
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = 0.12;
+    holder.add(shadow);
+
+    /* 등급 링 */
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.52, 0.64, 24),
+      new THREE.MeshBasicMaterial({ color: D.TIERS[hero.tier].color, transparent: true, opacity: 0.95, depthWrite: false })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.145;
+    holder.add(ring);
+
+    let legendGlow = null;
+    if (hero.tier === 3) {
+      legendGlow = new THREE.Mesh(
+        new THREE.RingGeometry(0.72, 0.9, 26),
+        new THREE.MeshBasicMaterial({ color: 0xffc93d, transparent: true, opacity: 0.5, depthWrite: false })
+      );
+      legendGlow.rotation.x = -Math.PI / 2;
+      legendGlow.position.y = 0.14;
+      holder.add(legendGlow);
+    }
+
+    const lv = new THREE.Sprite(new THREE.SpriteMaterial({ map: levelTexture(hero.level), transparent: true, depthTest: false }));
+    lv.scale.set(0.85, 0.42, 1);
+    lv.position.set(0.55, 1.85, 0);
+    lv.renderOrder = 42;
+    lv.visible = hero.level > 1;
+    holder.add(lv);
+
+    this.scene.add(holder);
+    return {
+      holder, model: group, refs, legendGlow,
+      lvSprite: lv, level: hero.level,
+      attackT: 0, faceY: Math.PI / 2, targetFaceY: Math.PI / 2,
+      cls: hero.cls,
+    };
+  }
+
+  /* ---------- 몬스터 뷰 ---------- */
+  _makeEnemyView(e) {
+    const E = D.ENEMY_TYPES[e.type];
+    const scale = (e.size / 30) * 1.55;
     const g = new THREE.Group();
 
-    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: emojiTexture(emoji), transparent: true }));
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: emojiTexture(E.emoji), transparent: true }));
     spr.scale.set(scale, scale, 1);
     spr.position.y = scale * 0.62;
     g.add(spr);
@@ -512,18 +777,17 @@ export class Renderer3D {
     shadow.position.y = 0.03;
     g.add(shadow);
 
-    let ring = null;
-    if (ringColor != null) {
-      ring = new THREE.Mesh(
+    if (e.boss) {
+      const ring = new THREE.Mesh(
         new THREE.RingGeometry(scale * 0.42, scale * 0.52, 24),
-        new THREE.MeshBasicMaterial({ color: ringColor, transparent: true, opacity: 0.95, depthWrite: false })
+        new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.95, depthWrite: false })
       );
       ring.rotation.x = -Math.PI / 2;
       ring.position.y = 0.06;
       g.add(ring);
     }
 
-    /* 체력바 (빌보드 그룹) */
+    const barW = e.boss ? 2.1 : 1.1;
     const bar = new THREE.Group();
     const bg = new THREE.Mesh(
       new THREE.PlaneGeometry(barW, 0.14),
@@ -531,7 +795,7 @@ export class Renderer3D {
     );
     const fg = new THREE.Mesh(
       new THREE.PlaneGeometry(barW, 0.11),
-      new THREE.MeshBasicMaterial({ color: barColor, depthTest: false })
+      new THREE.MeshBasicMaterial({ color: e.boss ? 0xc084fc : 0xf87171, depthTest: false })
     );
     fg.position.z = 0.001;
     bg.renderOrder = 40; fg.renderOrder = 41;
@@ -541,11 +805,7 @@ export class Renderer3D {
     g.add(bar);
 
     this.scene.add(g);
-    return { group: g, spr, ring, bar, barFg: fg, barW, baseScale: scale, hurtT: 0, flashT: 0 };
-  }
-
-  _removeView(v) {
-    this.scene.remove(v.group);
+    return { group: g, spr, bar, barFg: fg, barW, baseScale: scale, boss: e.boss };
   }
 
   /* ---------- 상태 동기화 ---------- */
@@ -556,28 +816,16 @@ export class Renderer3D {
       fieldIds.add(h.id);
       let v = this.heroViews.get(h.id);
       if (!v) {
-        const C = D.CLASSES[h.cls];
-        v = this._makeUnitView(C.emoji, 1.7, D.TIERS[h.tier].color, 0x4ade80);
-        v.tier = h.tier;
-        if (h.tier === 3) {
-          const glow = new THREE.Mesh(
-            new THREE.RingGeometry(0.78, 0.95, 26),
-            new THREE.MeshBasicMaterial({ color: 0xffc93d, transparent: true, opacity: 0.5, depthWrite: false })
-          );
-          glow.rotation.x = -Math.PI / 2;
-          glow.position.y = 0.055;
-          v.group.add(glow);
-          v.legendGlow = glow;
+        v = this._makeHeroView(h);
+        /* 처음엔 길 쪽을 바라본다 */
+        let bs = 0, bd = Infinity;
+        for (let s = 0; s < D.PATH_LEN; s += 24) {
+          const p = D.pathPoint(s);
+          const d = Math.hypot(p.x - h.x, p.y - h.y);
+          if (d < bd) { bd = d; bs = s; }
         }
-        /* 레벨 배지 */
-        const lv = new THREE.Sprite(new THREE.SpriteMaterial({ map: levelTexture(h.level), transparent: true, depthTest: false }));
-        lv.scale.set(0.85, 0.42, 1);
-        lv.position.set(0.72, 2.0, 0);
-        lv.renderOrder = 42;
-        lv.visible = h.level > 1;
-        v.group.add(lv);
-        v.lvSprite = lv;
-        v.level = h.level;
+        const pp = D.pathPoint(bs);
+        v.faceY = v.targetFaceY = Math.atan2(wx(pp.x) - wx(h.x), wz(pp.y) - wz(h.y));
         this.heroViews.set(h.id, v);
       }
       if (v.level !== h.level) {
@@ -585,14 +833,10 @@ export class Renderer3D {
         v.lvSprite.material.map = levelTexture(h.level);
         v.lvSprite.visible = h.level > 1;
       }
-      v.group.position.set(wx(h.x), 0, wz(h.y));
-      const ratio = Math.max(0, h.hp / h.maxHp);
-      v.bar.visible = ratio < 1;
-      v.barFg.scale.x = Math.max(0.001, ratio);
-      v.barFg.position.x = -(1 - ratio) * v.barW / 2;
+      v.holder.position.set(wx(h.x), 0, wz(h.y));
     }
     for (const [id, v] of this.heroViews) {
-      if (!fieldIds.has(id)) { this._removeView(v); this.heroViews.delete(id); }
+      if (!fieldIds.has(id)) { this.scene.remove(v.holder); this.heroViews.delete(id); }
     }
 
     /* 몬스터 */
@@ -601,10 +845,7 @@ export class Renderer3D {
       enemyIds.add(e.id);
       let v = this.enemyViews.get(e.id);
       if (!v) {
-        const E = D.ENEMY_TYPES[e.type];
-        const sc = (e.size / 30) * 1.55;
-        v = this._makeUnitView(E.emoji, sc, e.boss ? 0xff4444 : null, e.boss ? 0xc084fc : 0xf87171, e.boss ? 2.1 : 1.1);
-        v.boss = e.boss;
+        v = this._makeEnemyView(e);
         this.enemyViews.set(e.id, v);
       }
       v.group.position.set(wx(e.x), 0, wz(e.y));
@@ -613,10 +854,11 @@ export class Renderer3D {
       v.barFg.scale.x = Math.max(0.001, ratio);
       v.barFg.position.x = -(1 - ratio) * v.barW / 2;
       v.burning = !!e.burn;
+      v.slowed = !!e.slowed;
       v.id = e.id;
     }
     for (const [id, v] of this.enemyViews) {
-      if (!enemyIds.has(id)) { this._removeView(v); this.enemyViews.delete(id); }
+      if (!enemyIds.has(id)) { this.scene.remove(v.group); this.enemyViews.delete(id); }
     }
 
     /* 투사체 */
@@ -628,7 +870,7 @@ export class Renderer3D {
         v = this._makeProjView(p);
         this.projViews.set(p.id, v);
       }
-      const y3 = p.kind === 'bolt' ? 1.6 : 0.95;
+      const y3 = p.kind === 'bolt' ? 1.6 : 0.85;
       const nx = wx(p.x), nz = wz(p.y);
       if (p.kind === 'arrow' && v.lastPos) {
         const dx = nx - v.lastPos.x, dz = nz - v.lastPos.z;
@@ -646,30 +888,43 @@ export class Renderer3D {
     for (let k = 0; k < this.fortifyBands.length; k++) this.fortifyBands[k].visible = k < state.castle.fortify;
     const hpRatio = state.castleMax > 0 ? state.castleHp / state.castleMax : 1;
     this.castleHpRatio = hpRatio;
-    /* 체력이 낮을수록 성이 그을린다 */
     const char = new THREE.Color(0x554f5e);
     for (const m of this.castleStoneMats) {
       m.color.copy(m.userData.baseColor).lerp(char, (1 - hpRatio) * 0.55);
     }
 
-    /* 배치 하이라이트 */
+    /* 배치 하이라이트: 빈 패드만 */
     if (this.placementMode) {
-      const occupied = new Set(state.field.map(h => h.row * 100 + h.col));
-      for (const hmesh of this.highlights) {
-        hmesh.visible = !occupied.has(hmesh.userData.row * 100 + hmesh.userData.col);
+      for (let i = 0; i < D.PADS.length; i++) {
+        this.padHighlights[i].visible = !state.field.some(h => h.padIndex === i);
       }
     } else {
-      for (const hmesh of this.highlights) hmesh.visible = false;
+      for (const hl of this.padHighlights) hl.visible = false;
     }
 
-    /* 선택 링 */
+    /* 선택 링 + 사거리 원 */
+    let rangeShown = false;
+    if (this.placementMode && this.hoverPad != null && this.placeRange > 0) {
+      const pad = D.PADS[this.hoverPad];
+      this.rangeGroup.position.set(wx(pad.x), 0.16, wz(pad.y));
+      this.rangeGroup.scale.setScalar(this.placeRange * S);
+      this.rangeGroup.visible = true;
+      rangeShown = true;
+    }
     if (this.selectedHeroId != null) {
       const h = state.field.find(v => v.id === this.selectedHeroId);
       if (h) {
         this.selRing.visible = true;
-        this.selRing.position.set(wx(h.x), 0.08, wz(h.y));
+        this.selRing.position.set(wx(h.x), 0.15, wz(h.y));
+        if (!rangeShown) {
+          this.rangeGroup.position.set(wx(h.x), 0.16, wz(h.y));
+          this.rangeGroup.scale.setScalar(D.CLASSES[h.cls].range * S);
+          this.rangeGroup.visible = true;
+          rangeShown = true;
+        }
       } else this.selRing.visible = false;
     } else this.selRing.visible = false;
+    if (!rangeShown) this.rangeGroup.visible = false;
   }
 
   _makeProjView(p) {
@@ -694,6 +949,16 @@ export class Renderer3D {
   }
 
   /* ---------- 이벤트 → 시각 효과 ---------- */
+  _heroAttackAnim(heroId, tx, ty) {
+    const v = this.heroViews.get(heroId);
+    if (!v) return;
+    v.attackT = 1;
+    if (tx != null) {
+      const hx = v.holder.position.x, hz = v.holder.position.z;
+      v.targetFaceY = Math.atan2(wx(tx) - hx, wz(ty) - hz);
+    }
+  }
+
   onEvents(state, events) {
     for (const ev of events) {
       const x3 = ev.x != null ? wx(ev.x) : 0;
@@ -702,8 +967,6 @@ export class Renderer3D {
         case 'enemyHit': {
           if (ev.kind === 'burn') {
             if (Math.random() < 0.4) this.showNumber(x3, 1.7, z3, `${ev.dmg}`, '#ff9a3d', 0.72);
-          } else if (ev.kind === 'thorns') {
-            this.showNumber(x3, 1.8, z3, `${ev.dmg}`, '#8dff5a', 0.8);
           } else {
             this.showNumber(x3, 1.8, z3, `${ev.dmg}`, '#ffffff', ev.dmg >= 100 ? 1.15 : 0.85);
           }
@@ -718,12 +981,18 @@ export class Renderer3D {
           break;
         }
         case 'meleeHit':
+          this._heroAttackAnim(ev.heroId, ev.tx, ev.ty);
           if (ev.cleave) {
             this.burst(x3, 0.8, z3, 0xffffff, 18, 4.5, { grav: 2, ttl: 0.3 });
             this.addShake(0.12);
+          } else if (ev.slow) {
+            this.burst(x3, 0.9, z3, 0x9fdcff, 6, 2.4, { grav: 3, ttl: 0.3 });
           } else {
             this.burst(x3, 0.9, z3, 0xffffff, 4, 2.6, { grav: 3, ttl: 0.22 });
           }
+          break;
+        case 'shoot':
+          this._heroAttackAnim(ev.heroId, ev.tx, ev.ty);
           break;
         case 'explode':
           this.burst(x3, 0.9, z3, 0xffa040, ev.big ? 26 : 14, ev.big ? 4.6 : 3.4);
@@ -736,24 +1005,10 @@ export class Renderer3D {
         case 'pierceHit':
           this.burst(x3, 1.0, z3, 0xffffff, 5, 3.4, { grav: 2 });
           break;
-        case 'thorns':
-          this.burst(x3, 0.9, z3, 0x8dff5a, 6, 2.8, { grav: 3 });
-          break;
-        case 'heroHurt': {
-          this.showNumber(x3, 1.9, z3, `-${ev.dmg}`, '#ff8080', 0.8);
-          const v = this.heroViews.get(ev.heroId);
-          if (v) v.hurtT = 0.25;
-          break;
-        }
-        case 'heroDead':
-          this.burst(x3, 0.9, z3, 0x666677, 16, 3);
-          this.showNumber(x3, 1.8, z3, '💀', '#ffffff', 1.1);
-          this.addShake(0.15);
-          break;
         case 'castleHit':
-          this.burst(-6.6, 1.2, ev.y != null ? wz(ev.y) : 0, 0xff5544, 20, 4);
-          this.burst(-6.7, 1.6, ev.y != null ? wz(ev.y) : 0, 0x9aa2b8, 10, 3);
-          this.showNumber(-6.2, 2.4, ev.y != null ? wz(ev.y) : 0, `-${ev.dmg}`, '#ff4444', 1.25);
+          this.burst(-6.6, 1.2, 0, 0xff5544, 20, 4);
+          this.burst(-6.7, 1.6, 0, 0x9aa2b8, 10, 3);
+          this.showNumber(-6.2, 2.4, 0, `-${ev.dmg}`, '#ff4444', 1.25);
           this.addShake(0.42);
           break;
         case 'heal':
@@ -784,41 +1039,62 @@ export class Renderer3D {
     this.time += dt;
     const t = this.time;
 
-    /* 포탈 회전/맥동 */
-    for (const p of this.portals) {
-      p.rotation.x = t * 1.6;
-      const s = 1 + Math.sin(t * 3 + p.position.z) * 0.08;
-      p.scale.set(s, s, s);
-    }
-    /* 깃발 펄럭임 */
+    /* 포탈 */
+    this.portal.rotation.x = t * 1.6;
+    const ps = 1 + Math.sin(t * 3) * 0.08;
+    this.portal.scale.set(ps, ps, ps);
+
     for (let i = 0; i < this.flags.length; i++) {
       this.flags[i].rotation.y = Math.sin(t * 4 + i * 2) * 0.28;
     }
-    /* 포탑 수정 */
     for (let i = 0; i < this.crystals.length; i++) {
       const c = this.crystals[i];
       if (!c.visible) continue;
       c.rotation.y = t * 2 + i;
       c.position.y = (4.6 + (i === 1 ? 0.5 : 0)) + Math.sin(t * 2.4 + i * 1.4) * 0.12;
     }
+
     /* 용사 애니메이션 */
     for (const [id, v] of this.heroViews) {
-      const bob = Math.sin(t * 3 + id) * 0.05;
-      v.spr.position.y = v.baseScale * 0.62 + bob;
-      if (v.hurtT > 0) {
-        v.hurtT -= dt;
-        v.spr.material.color.setRGB(1, 0.5 + v.hurtT, 0.5 + v.hurtT);
+      /* 숨쉬기 */
+      v.refs.body.scale.y = 1 + Math.sin(t * 2.6 + id) * 0.025;
+      v.refs.head.position.y = 0.93 + Math.sin(t * 2.6 + id) * 0.012;
+      if (v.refs.cape) v.refs.cape.rotation.x = 0.16 + Math.sin(t * 3 + id) * 0.09;
+      /* 조준 방향으로 부드럽게 회전 */
+      let dy = v.targetFaceY - v.faceY;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      v.faceY += dy * Math.min(1, dt * 9);
+      v.model.rotation.y = v.faceY;
+      /* 공격 스윙 */
+      if (v.attackT > 0) {
+        v.attackT = Math.max(0, v.attackT - dt * 3.4);
+        const k = Math.sin((1 - v.attackT) * Math.PI);
+        if (v.cls === 'knight' || v.cls === 'guard') {
+          v.refs.armPivot.rotation.x = -1.7 * k;
+        } else if (v.cls === 'archer') {
+          v.refs.armPivot.rotation.x = -1.1 * k;
+          if (v.refs.bow) v.refs.bow.scale.x = 1 - 0.25 * k;
+        } else {
+          v.refs.armPivot.rotation.x = -2.1 * k;
+        }
       } else {
-        v.spr.material.color.setRGB(1, 1, 1);
+        v.refs.armPivot.rotation.x *= 0.8;
       }
+      /* 전설 이펙트 */
       if (v.legendGlow) {
         v.legendGlow.material.opacity = 0.35 + Math.sin(t * 4 + id) * 0.2;
         v.legendGlow.rotation.z = t * 1.2;
         if (Math.random() < dt * 2.2) {
-          this.burst(v.group.position.x, 0.4, v.group.position.z, 0xffd93d, 1, 0.9, { grav: -0.8, ttl: 0.6, size: 0.5 });
+          this.burst(v.holder.position.x, 0.4, v.holder.position.z, 0xffd93d, 1, 0.9, { grav: -0.8, ttl: 0.6, size: 0.5 });
         }
       }
+      if (v.refs.staffOrb) {
+        const os = 1 + Math.sin(t * 5 + id) * 0.18;
+        v.refs.staffOrb.scale.setScalar(os);
+      }
     }
+
     /* 몬스터 애니메이션 */
     for (const [id, v] of this.enemyViews) {
       const hop = Math.abs(Math.sin(t * 7 + id)) * 0.14;
@@ -828,40 +1104,45 @@ export class Renderer3D {
         if (Math.random() < dt * 7) {
           this.burst(v.group.position.x, 0.7, v.group.position.z, 0xff8830, 1, 1.1, { grav: -2.2, ttl: 0.45, size: 0.6 });
         }
+      } else if (v.slowed) {
+        v.spr.material.color.setRGB(0.62, 0.82, 1);
+        if (Math.random() < dt * 3) {
+          this.burst(v.group.position.x, 0.5, v.group.position.z, 0x9fdcff, 1, 0.7, { grav: -1, ttl: 0.5, size: 0.5 });
+        }
       } else {
         v.spr.material.color.setRGB(1, 1, 1);
       }
     }
-    /* 투사체 맥동 */
+
     for (const [, v] of this.projViews) {
       if (v.group.userData.pulse) {
         const s = 1 + Math.sin(t * 18) * 0.22;
         v.group.scale.set(s, s, s);
       }
     }
-    /* 성: 손상 연기/불 */
+
+    /* 성 손상 연출 */
     if (state && this.castleHpRatio < 0.66 && Math.random() < dt * 5) {
       this.burst(-8.5 + Math.random(), 3.4, (Math.random() - 0.5) * 2, 0x8b8b95, 2, 0.8, { grav: -1.6, ttl: 1.1, size: 1.1 });
     }
     if (state && this.castleHpRatio < 0.33 && Math.random() < dt * 7) {
       this.burst(-8.3 + Math.random() * 0.8, 2.6, (Math.random() - 0.5) * 3, 0xff7a30, 2, 1.4, { grav: -2.8, ttl: 0.7, size: 0.8 });
     }
-    /* 하이라이트 맥동 */
+
+    /* 배치 하이라이트 맥동 */
     if (this.placementMode) {
-      const op = 0.22 + Math.sin(t * 5) * 0.12;
-      for (const hmesh of this.highlights) hmesh.material.opacity = op;
+      const op = 0.25 + Math.sin(t * 5) * 0.13;
+      for (const hl of this.padHighlights) hl.material.opacity = op;
     }
     this.selRing.rotation.z = t * 1.5;
 
-    /* 체력바 빌보드 */
+    /* 몬스터 체력바 빌보드 */
     const q = this.camera.quaternion;
-    for (const [, v] of this.heroViews) v.bar.quaternion.copy(q);
     for (const [, v] of this.enemyViews) v.bar.quaternion.copy(q);
 
     this._updateParticles(dt);
     this._updateNumbers(dt);
 
-    /* 카메라: 흔들림(제곱 감쇠) + 미세한 흐름 */
     this.shake = Math.max(0, this.shake - dt * 1.7);
     const s2 = this.shake * this.shake;
     this.camera.position.set(
@@ -876,7 +1157,7 @@ export class Renderer3D {
   }
 
   /* ---------- 입력 지원 ---------- */
-  screenToCell(clientX, clientY) {
+  _screenToLogical(clientX, clientY) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(
       ((clientX - rect.left) / rect.width) * 2 - 1,
@@ -885,24 +1166,33 @@ export class Renderer3D {
     this.raycaster.setFromCamera(ndc, this.camera);
     const pt = new THREE.Vector3();
     if (!this.raycaster.ray.intersectPlane(this.groundPlane, pt)) return null;
-    const lx = pt.x / S + D.FIELD_W / 2;
-    const ly = pt.z / S + D.FIELD_H / 2;
-    const col = Math.floor((lx - D.GRID_X) / D.CELL);
-    const row = Math.floor((ly - D.GRID_Y) / D.CELL);
-    if (col < 0 || col >= D.COLS || row < 0 || row >= D.ROWS) return null;
-    return { row, col };
+    return { x: pt.x / S + D.FIELD_W / 2, y: pt.z / S + D.FIELD_H / 2 };
   }
 
-  setHover(cell) {
-    if (!cell) { this.hoverMesh.visible = false; return; }
-    this.hoverMesh.visible = true;
-    this.hoverMesh.position.set(
-      wx(D.GRID_X + cell.col * D.CELL + D.CELL / 2), 0.12,
-      wz(D.GRID_Y + cell.row * D.CELL + D.CELL / 2)
-    );
+  /* 화면 좌표 → 가장 가까운 패드 인덱스 (없으면 null) */
+  screenToPad(clientX, clientY) {
+    const p = this._screenToLogical(clientX, clientY);
+    if (!p) return null;
+    let best = null, bd = Infinity;
+    for (let i = 0; i < D.PADS.length; i++) {
+      const d = Math.hypot(D.PADS[i].x - p.x, D.PADS[i].y - p.y);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return bd <= D.PAD_RADIUS * 1.5 ? best : null;
   }
 
-  setPlacementMode(on) { this.placementMode = on; }
+  setHover(padIndex) {
+    this.hoverPad = padIndex;
+    if (padIndex == null) { this.hoverRing.visible = false; return; }
+    const pad = D.PADS[padIndex];
+    this.hoverRing.visible = true;
+    this.hoverRing.position.set(wx(pad.x), 0.15, wz(pad.y));
+  }
+
+  setPlacementMode(on, rangePx = 0) {
+    this.placementMode = on;
+    this.placeRange = rangePx;
+  }
   setSelectedHero(id) { this.selectedHeroId = id; }
 
   dispose() {

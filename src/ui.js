@@ -16,6 +16,8 @@ export class UI {
       'grades', 'practiceBtn', 'probs', 'summonBtn', 'benchHint', 'bench', 'combineRows',
       'castleRows', 'heroPanel', 'hpTitle', 'hpInfo', 'upgradeBtn', 'recallBtn', 'sellBtn',
       'diffRow', 'mathModal', 'mTitle', 'mGrade', 'mProblem', 'mInput', 'mSubmit', 'mFeedback', 'mNext', 'mClose',
+      'mHintBtn', 'mHint',
+      'wavePreview', 'bossBar', 'bossBarFill',
       'overModal', 'overStats', 'overShards', 'restartBtn', 'shareBtn', 'overMetaBtn',
       'metaModal', 'metaShards', 'metaRows', 'metaClose',
     ].forEach(id => this.el[id] = $(id));
@@ -42,6 +44,7 @@ export class UI {
     el.mSubmit.addEventListener('click', () => h.onMathSubmit(el.mInput.value));
     el.mNext.addEventListener('click', h.onMathNext);
     el.mClose.addEventListener('click', h.onMathClose);
+    el.mHintBtn.addEventListener('click', h.onHint);
     el.mInput.addEventListener('keydown', (ev) => {
       if (ev.key !== 'Enter') return;
       if (this._answered) {
@@ -97,10 +100,12 @@ export class UI {
       el.waveInfo.classList.add('hidden');
     } else if (state.phase === 'wave') {
       el.waveBtn.classList.add('hidden');
+      el.wavePreview.classList.add('hidden');
       el.waveInfo.classList.remove('hidden');
       el.remainN.textContent = `남은 몬스터 ${E.remainingEnemies(state)}`;
     } else {
       el.waveBtn.classList.add('hidden');
+      el.wavePreview.classList.add('hidden');
       el.waveInfo.classList.add('hidden');
     }
     /* 난이도는 게임 시작 전(1웨이브 준비)에만 변경 가능 */
@@ -197,17 +202,18 @@ export class UI {
     const hero = state.field.find(v => v.id === heroId) || state.bench.find(v => v.id === heroId);
     if (!hero) { el.heroPanel.classList.add('hidden'); return; }
     const C = D.CLASSES[hero.cls], T = D.TIERS[hero.tier];
-    const onField = hero.row >= 0;
+    const onField = hero.padIndex >= 0;
     el.heroPanel.classList.remove('hidden');
-    el.hpTitle.textContent = onField ? '🧍 선택한 용사 (필드)' : '🧍 선택한 용사 (벤치)';
+    el.hpTitle.textContent = onField ? '🧍 선택한 용사 (배치됨)' : '🧍 선택한 용사 (벤치)';
     let abilityHtml = '';
     if (hero.tier === 3) {
       const A = D.LEGEND_ABILITIES[hero.cls];
       abilityHtml = `<div class="ability">⭐ ${A.name}: ${A.desc}</div>`;
     }
+    const extra = hero.cls === 'guard' ? ` · ❄ 감속 ${Math.round((1 - C.slow) * 100)}%` : '';
     el.hpInfo.innerHTML =
       `<b style="color:${T.color}">[${T.name}]</b> ${C.emoji} <b>${C.name}</b> <span class="lv">Lv${hero.level}</span><br>
-       ⚔ 공격력 ${hero.dmg} · ❤ 체력 ${hero.hp}/${hero.maxHp}<br>
+       ⚔ 공격력 ${hero.dmg} · 🎯 사거리 ${C.range}${extra}<br>
        <span class="cdesc">${C.desc}</span>${abilityHtml}`;
     if (hero.level >= D.HERO_LEVEL_MAX) {
       el.upgradeBtn.textContent = '⬆ 최고 레벨!';
@@ -219,6 +225,25 @@ export class UI {
     }
     el.recallBtn.classList.toggle('hidden', !onField);
     el.sellBtn.textContent = `💰 판매 (+${D.SELL_PRICE[hero.tier]})`;
+  }
+
+  /* ---------- 다음 웨이브 미리보기 ---------- */
+  renderWavePreview(state, counts) {
+    const el = this.el.wavePreview;
+    if (state.phase !== 'prep') { el.classList.add('hidden'); return; }
+    const chips = Object.entries(counts)
+      .map(([type, n]) => `<span class="wchip${type === 'boss' ? ' boss' : ''}">${D.ENEMY_TYPES[type].emoji}×${n}</span>`)
+      .join('');
+    el.innerHTML = `<span class="wlabel">다음 웨이브</span>${chips}`;
+    el.classList.remove('hidden');
+  }
+
+  /* ---------- 보스 체력바 ---------- */
+  setBossBar(ratio) {
+    const el = this.el.bossBar;
+    if (ratio == null) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    this.el.bossBarFill.style.width = `${Math.max(0, ratio * 100)}%`;
   }
 
   /* ---------- 별의 축복 (메타) ---------- */
@@ -261,7 +286,18 @@ export class UI {
     el.mFeedback.textContent = rewardLabel;
     el.mFeedback.className = 'mfeedback';
     el.mNext.classList.add('hidden');
+    el.mHint.classList.add('hidden');
+    el.mHint.textContent = '';
+    el.mHintBtn.disabled = false;
+    el.mHintBtn.textContent = `💡 힌트 보기 (🧠 -${D.HINT_COST})`;
     setTimeout(() => el.mInput.focus(), 30);
+  }
+  showHint(text) {
+    this.el.mHint.textContent = `💡 ${text}`;
+    this.el.mHint.classList.remove('hidden');
+    this.el.mHintBtn.disabled = true;
+    this.el.mHintBtn.textContent = '💡 힌트 사용함';
+    this.el.mInput.focus();
   }
   mathFeedback(ok, text, nextLabel) {
     const el = this.el;
@@ -287,7 +323,7 @@ export class UI {
       `🌊 도달한 웨이브: <b>${state.wave}웨이브</b> (${D.DIFFICULTIES[state.difficulty].name})<br>
        👾 물리친 몬스터: <b>${state.kills}마리</b> ${state.bossKills ? `· 🐉 보스 ${state.bossKills}` : ''}<br>
        🎲 소환 <b>${state.summons}</b> · ⚗️ 조합 <b>${state.combos}</b> · ⬆ 강화 <b>${state.upgrades}</b><br>
-       🧮 수학 문제: <b>${state.solved}문제 중 ${state.correct}개 정답 (${rate}%)</b>`;
+       🧮 수학 문제: <b>${state.solved}문제 중 ${state.correct}개 정답 (${rate}%)</b>${state.hints ? ` · 💡 힌트 ${state.hints}회` : ''}`;
     this.el.overShards.textContent = `✨ 별조각 +${state.shardsEarned} 획득!`;
     this.el.overModal.classList.remove('hidden');
   }

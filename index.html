@@ -33,11 +33,13 @@
       <div id="hitFlash"></div>
       <div id="lowHpVignette"></div>
       <div id="bossBanner" class="hidden">🐉 보스 드래곤 출현!!</div>
+      <div id="bossBar" class="hidden">🐉<div class="bossbar-track"><div id="bossBarFill"></div></div></div>
       <div id="comboChip" class="hidden"></div>
       <div id="waveInfo" class="hidden">👾 <span id="remainN"></span></div>
+      <div id="wavePreview" class="hidden"></div>
       <button id="waveBtn" class="wave-btn">▶ 1웨이브 시작!</button>
       <div id="coachChip" class="hidden">
-        👋 <b>처음이시죠?</b> ① 오른쪽에서 용사 소환 → ② 용사 카드 클릭 → ③ 풀밭 클릭으로 배치!<br>
+        👋 <b>처음이시죠?</b> ① 오른쪽에서 용사 소환 → ② 용사 카드 클릭 → ③ 길 옆 <b>돌 발판</b>을 눌러 배치!<br>
         🧮 수학 문제를 풀면 골드와 좋은 용사가 나올 확률이 올라가요!
       </div>
       <div id="toasts"></div>
@@ -50,7 +52,7 @@
         <button data-d="normal" class="on">⚔️ 보통</button>
         <button data-d="hard">🔥 어려움</button>
       </div>
-      <p class="hint">💡 몬스터가 성에 닿으면 성 체력이 줄어요. 성이 무너지면 처음부터! (별조각 ✨은 남아요)</p>
+      <p class="hint">💡 몬스터는 구불구불한 길을 따라 성으로 와요. 용사는 길 옆 <b>돌 발판</b>에만 배치! 성이 무너지면 처음부터예요. (별조각 ✨은 남아요)</p>
     </div>
   </div>
 
@@ -82,7 +84,7 @@
     <section class="card">
       <h2>🦸 용사 소환 <span class="sub">벤치 최대 12명</span></h2>
       <button id="summonBtn" class="big amber">🎲 용사 소환 (💰 50)</button>
-      <div id="benchHint" class="benchhint hidden">🟩 왼쪽 풀밭의 빈 칸을 눌러 배치!</div>
+      <div id="benchHint" class="benchhint hidden">🟩 길 옆의 돌 발판을 눌러 배치!</div>
       <div id="bench" class="bench"></div>
     </section>
 
@@ -119,8 +121,10 @@
       <input id="mInput" type="text" inputmode="decimal" autocomplete="off" placeholder="정답을 입력하세요">
       <button id="mSubmit" class="big blue">확인!</button>
     </div>
+    <div id="mHint" class="mhint hidden"></div>
     <div id="mFeedback" class="mfeedback"></div>
     <div class="mrow">
+      <button id="mHintBtn" class="hintbtn">💡 힌트 보기 (🧠 -2)</button>
       <button id="mNext" class="hidden">➡ 다음 문제</button>
       <button id="mClose">그만 풀기</button>
     </div>
