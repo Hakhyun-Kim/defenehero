@@ -156,16 +156,17 @@ export class UI {
 
     /* ① 등급업: 같은 용사 2명 → 등급+1 (가능한 것만 표시) */
     const rankups = E.listCombos(state).filter(c => c.kind === 'rankup');
-    html += `<div class="combine-sub">⬆ 등급업 <span class="cnt">같은 용사 2명 → 등급 UP (가끔 🍀2단계!)</span></div>`;
+    html += `<div class="combine-sub">⬆ 등급업 <span class="cnt">같은 용사 2명 + 골드 (가끔 🍀2단계!)</span></div>`;
     if (!rankups.length) {
       html += `<div class="combine-empty">같은 직업·같은 등급 용사 2명을 모아 보세요</div>`;
     }
     for (const c of rankups) {
       const C = D.CLASSES[c.cls];
-      html += `<div class="combine-row ready">
+      html += `<div class="combine-row${c.affordable ? ' ready' : ''}">
         <span>${C.emoji}</span> ${C.name}
         <span class="cnt" style="color:${D.TIERS[c.tier].color}">${D.TIERS[c.tier].name}×2</span>
-        <button data-kind="rankup" data-cls="${c.cls}" data-tier="${c.tier}">⚗ → ${D.TIERS[c.resultTier].name}</button>
+        <button data-kind="rankup" data-cls="${c.cls}" data-tier="${c.tier}"
+          ${c.affordable ? '' : 'disabled'}>⚗ ${D.TIERS[c.resultTier].name} 💰${c.cost}</button>
       </div>`;
     }
 
@@ -180,11 +181,14 @@ export class UI {
       const hasA = state.bench.some(h => h.cls === r.a);
       const hasB = state.bench.some(h => h.cls === r.b);
       const ready = readyTier >= 0;
-      html += `<div class="combine-row recipe${ready ? ' ready' : ''}">
+      const cost = ready ? D.combineCost(readyTier + 1, true) : 0;
+      const canPay = ready && state.gold >= cost;
+      html += `<div class="combine-row recipe${canPay ? ' ready' : ''}">
         <span class="ing${hasA ? ' have' : ''}">${A.emoji}</span>+<span class="ing${hasB ? ' have' : ''}">${B.emoji}</span>
         <span class="rarrow">→</span> <span>${R.emoji}</span> <b>${R.name}</b>
         ${ready
-          ? `<button data-kind="recipe" data-result="${r.result}" data-tier="${readyTier}">⚗ ${D.TIERS[readyTier].name}→${D.TIERS[readyTier + 1].name}</button>`
+          ? `<button data-kind="recipe" data-result="${r.result}" data-tier="${readyTier}"
+               ${canPay ? '' : 'disabled'}>⚗ ${D.TIERS[readyTier + 1].name} 💰${cost}</button>`
           : `<span class="cnt need">${hasA || hasB ? '같은 등급 필요' : '재료 모으기'}</span>`}
       </div>`;
     }

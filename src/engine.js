@@ -113,14 +113,22 @@ export function listCombos(state) {
     if (seen.has(key) || h.tier >= 3) continue;
     seen.add(key);
     if (benchOf(state, h.cls, h.tier).length >= 2) {
-      out.push({ kind: 'rankup', cls: h.cls, tier: h.tier, result: h.cls, resultTier: h.tier + 1 });
+      const cost = D.combineCost(h.tier + 1, false);
+      out.push({
+        kind: 'rankup', cls: h.cls, tier: h.tier, result: h.cls, resultTier: h.tier + 1,
+        cost, affordable: state.gold >= cost,
+      });
     }
   }
   /* 레시피 */
   for (const r of D.RECIPES) {
     for (let tier = 0; tier <= 2; tier++) {
       if (benchOf(state, r.a, tier).length >= 1 && benchOf(state, r.b, tier).length >= 1) {
-        out.push({ kind: 'recipe', result: r.result, a: r.a, b: r.b, tier, resultTier: tier + 1 });
+        const cost = D.combineCost(tier + 1, true);
+        out.push({
+          kind: 'recipe', result: r.result, a: r.a, b: r.b, tier, resultTier: tier + 1,
+          cost, affordable: state.gold >= cost,
+        });
       }
     }
   }
@@ -130,14 +138,17 @@ export function listCombos(state) {
 export function combineRankUp(state, cls, tier) {
   const mats = benchOf(state, cls, tier).slice(0, 2);
   if (mats.length < 2 || tier >= 3) return { ok: false };
+  const cost = D.combineCost(tier + 1, false);
+  if (state.gold < cost) return { ok: false, reason: 'gold', cost };
+  state.gold -= cost;
   state.bench = state.bench.filter(h => !mats.includes(h));
-  /* 럭키! 낮은 확률로 두 등급 점프 */
-  const lucky = tier + 2 <= 3 && state.rng() < D.LUCKY_JUMP;
+  /* 럭키! 낮은 확률로 두 등급 점프 (전설까지는 못 뛴다) */
+  const lucky = tier + 2 <= D.LUCKY_MAX_TIER && state.rng() < D.LUCKY_JUMP;
   const newTier = lucky ? tier + 2 : tier + 1;
   const hero = makeHero(state, cls, newTier, Math.max(mats[0].level, mats[1].level));
   state.bench.push(hero);
   state.combos++;
-  return { ok: true, hero, lucky };
+  return { ok: true, hero, lucky, cost };
 }
 
 export function combineRecipe(state, result, tier) {
@@ -146,12 +157,15 @@ export function combineRecipe(state, result, tier) {
   const a = benchOf(state, R.recipe[0], tier)[0];
   const b = benchOf(state, R.recipe[1], tier)[0];
   if (!a || !b) return { ok: false };
+  const cost = D.combineCost(tier + 1, true);
+  if (state.gold < cost) return { ok: false, reason: 'gold', cost };
+  state.gold -= cost;
   state.bench = state.bench.filter(h => h !== a && h !== b);
   const hero = makeHero(state, result, tier + 1, Math.max(a.level, b.level));
   state.bench.push(hero);
   state.combos++;
   state.specialsMade++;
-  return { ok: true, hero };
+  return { ok: true, hero, cost };
 }
 
 /* ---------- 배치 / 회수 / 판매 / 강화 ---------- */
@@ -267,16 +281,29 @@ function pickRoute(state) {
   return 0;
 }
 
+/* 분대 단위로 몰려오는 웨이브를 만든다 */
 export function buildWave(state) {
   const w = state.wave;
-  const count = Math.round(D.waveCount(w) * state.diff.countMul);
-  const interval = D.waveInterval(w);
+  const total = Math.round(D.waveCount(w) * state.diff.countMul);
   const mix = D.waveMix(w);
   const list = [];
   let t = 1.2;
-  for (let i = 0; i < count; i++) {
-    list.push({ t, type: pickWeighted(state, mix) });
-    t += interval * (0.7 + state.rng() * 0.6);
+  let spawned = 0;
+  while (spawned < total) {
+    const size = Math.min(D.squadSize(w), total - spawned);
+    /* 분대는 같은 종류가 뭉쳐 나오되, 30%는 섞인 혼성 분대 */
+    const uniform = state.rng() < 0.7;
+    const squadType = pickWeighted(state, mix);
+    const route = pickRoute(state);          // 분대는 같은 길로 함께 진군
+    for (let i = 0; i < size; i++) {
+      list.push({
+        t: t + i * D.SQUAD_INNER_GAP,
+        type: uniform ? squadType : pickWeighted(state, mix),
+        route,
+      });
+    }
+    spawned += size;
+    t += size * D.SQUAD_INNER_GAP + D.squadGap(w) * (0.8 + state.rng() * 0.4);
   }
   if (D.isBossWave(w)) list.push({ t: t + 1.5, type: 'boss' });
   return list;
@@ -296,11 +323,11 @@ export function startWave(state) {
   return { ok: true, boss: D.isBossWave(state.wave) };
 }
 
-function spawnEnemy(state, type, events) {
+function spawnEnemy(state, type, events, presetRoute) {
   const E = D.ENEMY_TYPES[type];
   const w = state.wave;
   const hp = Math.round(E.hp * D.hpScale(w) * state.diff.hpMul);
-  const route = E.boss ? D.BOSS_ROUTE : pickRoute(state);
+  const route = E.boss ? D.BOSS_ROUTE : (presetRoute != null ? presetRoute : pickRoute(state));
   const start = D.routePoint(route, 0);
   const e = {
     id: state.nextId++, type, route,
@@ -618,7 +645,7 @@ export function tick(state, dt) {
   state.waveT += dt;
   while (state.spawnQueue.length && state.spawnQueue[0].t <= state.waveT) {
     const s = state.spawnQueue.shift();
-    spawnEnemy(state, s.type, events);
+    spawnEnemy(state, s.type, events, s.route);
   }
 
   updateHeroes(state, dt, events);

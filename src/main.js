@@ -105,13 +105,18 @@ function submitMath(value) {
       const r = p.kind === 'rankup'
         ? E.combineRankUp(state, p.cls, Number(p.tier))
         : E.combineRecipe(state, p.result, Number(p.tier));
+      if (!r.ok && r.reason === 'gold') {
+        ui.mathFeedback(true, `정답! 그런데 조합 골드가 부족해요 (💰${r.cost} 필요)`, null);
+        refreshAll();
+        return;
+      }
       if (r.ok) {
         SFX.combine();
         const C = D.CLASSES[r.hero.cls];
-        const more = E.listCombos(state).length > 0;
-        let msg = `🎉 정답! ${D.TIERS[r.hero.tier].name} ${C.name} ${C.emoji} 탄생!`;
+        const more = !!chooseBestCombo();
+        let msg = `🎉 정답! ${D.TIERS[r.hero.tier].name} ${C.name} ${C.emoji} 탄생! (💰-${r.cost})`;
         if (r.lucky) {
-          msg = `🍀 럭키!! 두 등급 점프! ${D.TIERS[r.hero.tier].name} ${C.name} ${C.emoji} 탄생!`;
+          msg = `🍀 럭키!! 두 등급 점프! ${D.TIERS[r.hero.tier].name} ${C.name} ${C.emoji} 탄생! (💰-${r.cost})`;
           renderer.celebrate(0x7fd45e, true);
           SFX.summon(3);
         }
@@ -154,9 +159,13 @@ function closeMathAll() {
   modal.pending = null;
 }
 function chooseBestCombo() {
-  const combos = E.listCombos(state);
+  const combos = E.listCombos(state).filter(c => c.affordable);
   if (!combos.length) return null;
-  return combos.find(c => c.kind === 'recipe') || combos[0];
+  /* 가장 높은 등급을 만들 수 있는 것 우선, 동급이면 특수 레시피 우선 */
+  return combos.sort((a, b) =>
+    b.resultTier - a.resultTier ||
+    (b.kind === 'recipe' ? 1 : 0) - (a.kind === 'recipe' ? 1 : 0)
+  )[0];
 }
 function comboToAction(c) {
   return c.kind === 'rankup'
@@ -524,7 +533,12 @@ document.addEventListener('keydown', (ev) => {
     case 'c': {
       const combo = chooseBestCombo();
       if (combo) openMath('combine', comboToAction(combo));
-      else ui.toast('지금 가능한 조합이 없어요. 용사를 더 모아 보세요!', 'bad');
+      else {
+        const unpaid = E.listCombos(state).find(c => !c.affordable);
+        ui.toast(unpaid
+          ? `조합 골드가 부족해요! (💰${unpaid.cost} 필요) 수학 문제로 벌어 보세요 ✏️`
+          : '지금 가능한 조합이 없어요. 용사를 더 모아 보세요!', 'bad');
+      }
       return;
     }
     case 'q':

@@ -79,9 +79,12 @@ function prepActions(state, P) {
   while (state.gold >= D.SUMMON_COST + P.reserve && state.bench.length < D.BENCH_MAX) {
     if (!summonOk(state)) break;
   }
-  /* 3) 조합 (수학 문제 통과 필요) — 레시피(특수 용사) 우선, 그다음 등급업 */
+  /* 3) 조합 (수학 문제 + 골드 필요) — 높은 등급 우선, 동급이면 특수 레시피 우선 */
   for (let round = 0; round < 6; round++) {
-    const combos = E.listCombos(state);
+    const combos = E.listCombos(state)
+      .filter(c => c.affordable)
+      .sort((a, b) => b.resultTier - a.resultTier ||
+        (b.kind === 'recipe' ? 1 : 0) - (a.kind === 'recipe' ? 1 : 0));
     if (!combos.length || state.rng() >= P.combineChance) break;
     let passed = false;
     for (let tryN = 0; tryN < 3; tryN++) {
@@ -90,8 +93,7 @@ function prepActions(state, P) {
       if (ok) { passed = true; break; }
     }
     if (!passed) break;
-    const recipe = combos.find(c => c.kind === 'recipe');
-    const pick = recipe || combos[0];
+    const pick = combos[0];
     if (pick.kind === 'recipe') E.combineRecipe(state, pick.result, pick.tier);
     else E.combineRankUp(state, pick.cls, pick.tier);
   }

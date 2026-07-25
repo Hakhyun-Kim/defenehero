@@ -35,22 +35,29 @@ export const PADS = [
 ];
 export const PAD_RADIUS = 26;
 
-/* ---------- 경제 ---------- */
+/* ---------- 경제 ----------
+ * 판매는 확실히 손해: 소환가 50 대비 일반 12(-76%).
+ * 조합으로 올린 등급도 되팔면 투입 골드의 절반 이하만 회수된다. */
 export const START_GOLD = 150;
 export const SUMMON_COST = 50;
 export const BENCH_MAX = 12;
-export const SELL_PRICE = [15, 40, 100, 250];
-export const WAVE_BONUS = (w) => 30 + w * 10;
+export const SELL_PRICE = [12, 30, 70, 160];
+export const WAVE_BONUS = (w) => 20 + w * 6;
 
 /* ---------- 지식(수학) ---------- */
 export const KNOW_MAX = 20;
-export const MATH_GOLD = (grade) => grade * 8;
+/* 수학 보상은 실력 격차의 핵심 레버 — 넉넉하게 유지하고, 대신 조합 비용으로 조인다 */
+export const MATH_GOLD = (grade) => grade * 9;
 export const MATH_KP = (grade) => grade - 2;
 export const WRONG_KP = -1;
 export const HINT_COST = 2;
 
+/* 소환 확률(%): 전설은 소환으로 거의 안 나온다 — 조합으로 얻는 게 정석 */
 export function tierProbs(k) {
-  return [60 - 2 * k, 30 + k, 9 + 0.7 * k, 1 + 0.3 * k];
+  const legend = 0.3 + 0.07 * k;     // 지식 20에서도 1.7%
+  const hero = 6 + 0.4 * k;
+  const rare = 26 + 0.8 * k;
+  return [100 - legend - hero - rare, rare, hero, legend];
 }
 
 /* ---------- 용사 ---------- */
@@ -146,8 +153,19 @@ export const LEGEND_OVERRIDES = {
 export const PIERCE_WIDTH = 46;
 export const BURN_DUR = 3;
 export const COMBO = { window: 3, x2At: 6, x3At: 12 };
-/* 등급업 조합 시 "럭키!" 확률: 한 번에 두 등급 점프 (럭키 디펜스 참고) */
-export const LUCKY_JUMP = 0.08;
+/* 등급업 조합 시 "럭키!" 확률: 한 번에 두 등급 점프 (럭키 디펜스 참고).
+ * 단, 전설은 럭키로 건너뛸 수 없다 — 정규 비용을 치러야 한다. */
+export const LUCKY_JUMP = 0.05;
+export const LUCKY_MAX_TIER = 2;
+
+/* ---------- 조합 비용 ----------
+ * 결과 등급이 높을수록 급격히 비싸진다. 전설은 확실히 어렵게.
+ * 인덱스 = 결과 등급 (희귀/영웅/전설) */
+export const COMBINE_COST = [0, 50, 240, 950];
+/* 특수 레시피는 25% 프리미엄 (강력한 대신 값비싸다) */
+export const RECIPE_COST_MUL = 1.25;
+export const combineCost = (resultTier, isRecipe) =>
+  Math.round(COMBINE_COST[resultTier] * (isRecipe ? RECIPE_COST_MUL : 1));
 
 /* ---------- 용사 강화 (레벨) ---------- */
 export const HERO_LEVEL_MAX = 5;
@@ -190,11 +208,22 @@ export const DIFFICULTIES = {
   hard:   { name: '어려움', emoji: '🔥', hpMul: 1.3,  countMul: 1.15, goldMul: 0.95 },
 };
 
-export const hpScale = (w) => 1 + 0.22 * (w - 1) + 0.05 * (w - 1) * (w - 1);
-export const enemyGoldScale = (w) => 1 + 0.03 * w;
-export const waveCount = (w) => 6 + Math.round(w * 1.6);
-export const waveInterval = (w) => Math.max(0.7, 1.5 - w * 0.03);
+/* 마릿수가 늘어난 만큼 개체 체력 곡선은 완화 — "많이 몰려오지만 하나하나는 잡힌다" */
+export const hpScale = (w) => 1 + 0.18 * (w - 1) + 0.035 * (w - 1) * (w - 1);
+export const enemyGoldScale = (w) => 1 + 0.02 * w;
+/* 마릿수: 초반부터 넉넉하게, 뒤로 갈수록 크게 증가 (타격감 + 압박) */
+export const waveCount = (w) => 9 + Math.round(w * 2.2);
 export const castleDmgScale = (w) => 1 + Math.max(0, w - 15) * 0.08;
+
+/* ---------- 분대(스쿼드) 스폰 ----------
+ * 한 마리씩 찔끔 나오지 않고 2~6마리가 한 덩어리로 몰려온다.
+ * 분대 안 간격은 촘촘(0.18s), 분대 사이는 넉넉(정비 시간). */
+export const squadSize = (w) => {
+  const base = 3 + Math.floor(w / 3);              // w1~2:3, w3~5:4, w6~8:5 …
+  return Math.min(7, base);
+};
+export const SQUAD_INNER_GAP = 0.18;               // 분대 내부 간격(초)
+export const squadGap = (w) => Math.max(2.5, 4.6 - w * 0.1);   // 분대 사이 간격(초)
 
 export function waveMix(w) {
   const mix = [{ type: 'goblin', weight: 10 }];
