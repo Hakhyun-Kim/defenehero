@@ -1,17 +1,17 @@
 {
-  "comment": "밸런스 회귀 기준선 (v3 경로 기반 TD). node scripts/balance-bot.mjs 120 check 로 검증. 중앙값이 tolerance 이상 벗어나면 경고.",
+  "comment": "밸런스 회귀 기준선 (v4 세 갈래 길 + 레시피 조합). node scripts/balance-bot.mjs 120 check 로 검증 (Bash 권장). 중앙값이 tolerance 이상 벗어나면 경고.",
   "date": "2026-07-25",
   "runs": 150,
   "tolerance": 3,
   "medians": {
     "easy/초보": 10,
-    "easy/보통": 20,
-    "easy/고수": 29,
-    "normal/초보": 9,
-    "normal/보통": 18,
-    "normal/고수": 25,
-    "hard/초보": 8,
-    "hard/보통": 15,
-    "hard/고수": 21
+    "easy/보통": 16,
+    "easy/고수": 23,
+    "normal/초보": 8,
+    "normal/보통": 13,
+    "normal/고수": 19,
+    "hard/초보": 7,
+    "hard/보통": 11,
+    "hard/고수": 17
   }
 }

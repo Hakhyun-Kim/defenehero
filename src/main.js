@@ -41,7 +41,7 @@ let selHero = null;       // 정보 패널에 표시 중인 용사 (벤치/필�
 let overHandled = false;
 let heartbeatT = 0;
 let panelT = 0;
-const modal = { mode: null, tier: 0, prob: null };
+const modal = { mode: null, pending: null, prob: null };
 
 function newGame(difficulty) {
   state = E.createGame({ difficulty, metaLevels: store.meta });
@@ -71,13 +71,21 @@ function refreshAll() {
 }
 
 /* ---------- 수학 모달 ---------- */
-function openMath(mode, tier = 0) {
+function openMath(mode, pending = null) {
   if (state.phase === 'over') return;
   modal.mode = mode;
-  modal.tier = tier;
-  ui.showMath(mode === 'combine'
-    ? `⚗️ 조합 시험! (${D.TIERS[tier].name} 2명 → ${D.TIERS[tier + 1].name})`
-    : '✏️ 지혜의 시험!');
+  modal.pending = pending;
+  let title = '✏️ 지혜의 시험!';
+  if (mode === 'combine' && pending) {
+    if (pending.kind === 'rankup') {
+      const C = D.CLASSES[pending.cls];
+      title = `⚗️ 조합 시험! (${C.name} ${D.TIERS[pending.tier].name}×2)`;
+    } else {
+      const R = D.CLASSES[pending.result];
+      title = `⚗️ 조합 시험! (${R.emoji} ${R.name} 만들기)`;
+    }
+  }
+  ui.showMath(title);
   newProblem();
 }
 function newProblem() {
@@ -92,17 +100,30 @@ function submitMath(value) {
   const res = E.applyMathResult(state, ok, grade);
   if (ok) {
     SFX.correct();
-    if (modal.mode === 'combine') {
-      const r = E.combine(state, modal.tier);
+    if (modal.mode === 'combine' && modal.pending) {
+      const p = modal.pending;
+      const r = p.kind === 'rankup'
+        ? E.combineRankUp(state, p.cls, Number(p.tier))
+        : E.combineRecipe(state, p.result, Number(p.tier));
       if (r.ok) {
         SFX.combine();
-        const more = E.benchCountByTier(state, modal.tier) >= 2;
-        ui.mathFeedback(true,
-          `🎉 정답! ${D.TIERS[r.hero.tier].name} ${D.CLASSES[r.hero.cls].name} ${D.CLASSES[r.hero.cls].emoji} 탄생!`,
-          more ? '⚗ 한 번 더 조합!' : null);
-        if (r.hero.tier === 3) ui.toast(`👑 전설 용사 탄생! [${D.LEGEND_ABILITIES[r.hero.cls].name}] 능력 발동!`, 'good');
+        const C = D.CLASSES[r.hero.cls];
+        const more = E.listCombos(state).length > 0;
+        let msg = `🎉 정답! ${D.TIERS[r.hero.tier].name} ${C.name} ${C.emoji} 탄생!`;
+        if (r.lucky) {
+          msg = `🍀 럭키!! 두 등급 점프! ${D.TIERS[r.hero.tier].name} ${C.name} ${C.emoji} 탄생!`;
+          renderer.celebrate(0x7fd45e, true);
+          SFX.summon(3);
+        }
+        if (p.kind === 'recipe') {
+          ui.toast(`✨ 특수 용사 [${C.name}] 탄생! ${C.desc}`, 'good');
+          renderer.celebrate(0xd8b4ff, true);
+        }
+        modal.pending = null;   // 다음 조합은 패널에서 새로 고른다
+        ui.mathFeedback(true, msg, null);
+        if (r.hero.tier === 3) ui.toast(`👑 전설! [${D.LEGEND_ABILITIES[r.hero.cls].name}] ${D.LEGEND_ABILITIES[r.hero.cls].desc}`, 'good');
       } else {
-        ui.mathFeedback(true, '정답! 그런데 조합할 용사가 부족해요…', null);
+        ui.mathFeedback(true, '정답! 그런데 조합 재료가 부족해요…', null);
       }
     } else {
       ui.mathFeedback(true, `🎉 정답! 💰+${res.gold} · 🧠 지식+${res.kp}`, '➡ 다음 문제');
@@ -206,7 +227,7 @@ ui.bind({
   },
   onSummon: doSummon,
   onPractice() { openMath('practice'); },
-  onCombine(tier) { openMath('combine', tier); },
+  onCombine(action) { openMath('combine', action); },
   onSpeed() {
     speed = speed === 1 ? 2 : 1;
     ui.setSpeedLabel(speed);

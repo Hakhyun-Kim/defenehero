@@ -1,36 +1,13 @@
 /* =====================================================
  * 게임 엔진 (순수 로직, DOM/렌더링 없음)
- * v3: 경로 기반 타워 디펜스
- *  - 몬스터는 길(PATH)을 따라 진행도 s로 이동
- *  - 용사는 지정 패드에 배치, 사거리 안 "최전방" 적을 자동 공격
- *  - 용사는 탑처럼 파괴되지 않는다 (성 체력만 관리)
+ * v4: 세 갈래 길 + 레시피 조합(특수 직업)
+ *  - 몬스터는 무게 추첨으로 길을 골라 아래→위로 행진
+ *  - 공격은 데이터 주도 수정자(다단타/화상/감속/폭발/성회복/관통)
  * ===================================================== */
 import * as D from './data.js';
 
 const riFor = (rng) => (a, b) => Math.floor(rng() * (b - a + 1)) + a;
 const pickFor = (rng) => (arr) => arr[Math.floor(rng() * arr.length)];
-
-/* 진행도 s → 좌표 + 진행 방향 (측면 오프셋 적용용) */
-function pathPosDir(s) {
-  const segs = D.PATH_SEGS;
-  if (s <= 0) {
-    const g = segs[0];
-    return { x: g.x1, y: g.y1, dx: (g.x2 - g.x1) / g.len, dy: (g.y2 - g.y1) / g.len };
-  }
-  for (const seg of segs) {
-    if (s <= seg.start + seg.len) {
-      const t = (s - seg.start) / seg.len;
-      return {
-        x: seg.x1 + (seg.x2 - seg.x1) * t,
-        y: seg.y1 + (seg.y2 - seg.y1) * t,
-        dx: (seg.x2 - seg.x1) / seg.len,
-        dy: (seg.y2 - seg.y1) / seg.len,
-      };
-    }
-  }
-  const last = segs[segs.length - 1];
-  return { x: last.x2, y: last.y2, dx: (last.x2 - last.x1) / last.len, dy: (last.y2 - last.y1) / last.len };
-}
 
 /* ---------- 생성 ---------- */
 export function createGame(opts = {}) {
@@ -45,7 +22,7 @@ export function createGame(opts = {}) {
     dmgMul: D.META_UPGRADES.heroDmg.apply(meta.heroDmg),
     mathMul: D.META_UPGRADES.mathBonus.apply(meta.mathBonus),
 
-    phase: 'prep',                 // prep | wave | over
+    phase: 'prep',
     gold: D.META_UPGRADES.startGold.apply(meta.startGold),
     wave: 1,
     castleHp: castleMax, castleMax,
@@ -54,13 +31,14 @@ export function createGame(opts = {}) {
     knowledge: 0,
 
     nextId: 1,
-    bench: [], field: [],          // field 용사는 padIndex를 가진다
+    bench: [], field: [],
     enemies: [], projectiles: [],
     spawnQueue: [], waveT: 0,
-    pendingWave: null,             // 다음 웨이브 스폰 목록 (미리보기용)
+    pendingWave: null,
 
     kills: 0, bossKills: 0, summons: 0, combos: 0,
     solved: 0, correct: 0, goldEarned: 0, upgrades: 0, hints: 0,
+    specialsMade: 0,
     shardsEarned: 0,
     combo: { count: 0, timer: 0 },
     time: 0,
@@ -78,7 +56,27 @@ export function makeHero(state, cls, tier, level = 1) {
   };
 }
 
-/* ---------- 소환 / 조합 ---------- */
+/* 등급/전설 오버라이드를 합친 실효 수정자 */
+export function heroMods(h) {
+  const C = D.CLASSES[h.cls];
+  const o = h.tier === 3 ? (D.LEGEND_OVERRIDES[h.cls] || {}) : {};
+  return {
+    atk: C.atk,
+    range: C.range,
+    spd: C.spd,
+    hits: o.hits ?? C.hits ?? 1,
+    burn: o.burn ?? C.burn ?? 0,
+    slowOnHit: o.slowOnHit ?? C.slowOnHit ?? null,
+    splash: (C.splash || 0) * (o.splashMul || 1),
+    splashSlow: o.splashSlow ?? C.splashSlow ?? null,
+    healOnKill: o.healOnKill ?? C.healOnKill ?? 0,
+    pierce: o.pierce ?? C.pierce ?? 1,
+    cleave: !!o.cleave,
+    aura: o.aura || 0,
+  };
+}
+
+/* ---------- 소환 ---------- */
 export function rollTier(state) {
   const p = D.tierProbs(state.knowledge);
   let r = state.rng() * 100;
@@ -92,24 +90,67 @@ export function summon(state) {
   if (state.bench.length >= D.BENCH_MAX) return { ok: false, reason: 'bench' };
   state.gold -= D.SUMMON_COST;
   const tier = rollTier(state);
-  const cls = state.pick(D.CLASS_KEYS);
+  const cls = state.pick(D.GACHA_KEYS);          // 특수 직업은 소환으로 안 나온다 — 조합 전용!
   const hero = makeHero(state, cls, tier);
   state.bench.push(hero);
   state.summons++;
   return { ok: true, hero };
 }
 
-export const benchCountByTier = (state, tier) => state.bench.filter(h => h.tier === tier).length;
+/* ---------- 조합 ----------
+ * ① 등급업: 같은 직업 + 같은 등급 2명 → 같은 직업 등급+1 (예측 가능)
+ * ② 레시피: 서로 다른 두 직업(같은 등급) → 특수 직업 등급+1  */
+export function benchOf(state, cls, tier) {
+  return state.bench.filter(h => h.cls === cls && h.tier === tier);
+}
 
-export function combine(state, tier) {
-  const targets = state.bench.filter(h => h.tier === tier).slice(0, 2);
-  if (targets.length < 2 || tier >= 3) return { ok: false };
-  state.bench = state.bench.filter(h => !targets.includes(h));
-  const cls = state.pick(D.CLASS_KEYS);
-  const level = Math.max(targets[0].level, targets[1].level);
-  const hero = makeHero(state, cls, tier + 1, level);
+export function listCombos(state) {
+  const out = [];
+  /* 등급업 */
+  const seen = new Set();
+  for (const h of state.bench) {
+    const key = `${h.cls}:${h.tier}`;
+    if (seen.has(key) || h.tier >= 3) continue;
+    seen.add(key);
+    if (benchOf(state, h.cls, h.tier).length >= 2) {
+      out.push({ kind: 'rankup', cls: h.cls, tier: h.tier, result: h.cls, resultTier: h.tier + 1 });
+    }
+  }
+  /* 레시피 */
+  for (const r of D.RECIPES) {
+    for (let tier = 0; tier <= 2; tier++) {
+      if (benchOf(state, r.a, tier).length >= 1 && benchOf(state, r.b, tier).length >= 1) {
+        out.push({ kind: 'recipe', result: r.result, a: r.a, b: r.b, tier, resultTier: tier + 1 });
+      }
+    }
+  }
+  return out;
+}
+
+export function combineRankUp(state, cls, tier) {
+  const mats = benchOf(state, cls, tier).slice(0, 2);
+  if (mats.length < 2 || tier >= 3) return { ok: false };
+  state.bench = state.bench.filter(h => !mats.includes(h));
+  /* 럭키! 낮은 확률로 두 등급 점프 */
+  const lucky = tier + 2 <= 3 && state.rng() < D.LUCKY_JUMP;
+  const newTier = lucky ? tier + 2 : tier + 1;
+  const hero = makeHero(state, cls, newTier, Math.max(mats[0].level, mats[1].level));
   state.bench.push(hero);
   state.combos++;
+  return { ok: true, hero, lucky };
+}
+
+export function combineRecipe(state, result, tier) {
+  const R = D.CLASSES[result];
+  if (!R || !R.recipe || tier >= 3) return { ok: false };
+  const a = benchOf(state, R.recipe[0], tier)[0];
+  const b = benchOf(state, R.recipe[1], tier)[0];
+  if (!a || !b) return { ok: false };
+  state.bench = state.bench.filter(h => h !== a && h !== b);
+  const hero = makeHero(state, result, tier + 1, Math.max(a.level, b.level));
+  state.bench.push(hero);
+  state.combos++;
+  state.specialsMade++;
   return { ok: true, hero };
 }
 
@@ -186,7 +227,7 @@ export function castleUpgrade(state, key) {
   return { ok: true, cost };
 }
 
-/* ---------- 수학 결과 / 힌트 ---------- */
+/* ---------- 수학 / 힌트 ---------- */
 export function applyMathResult(state, correct, grade) {
   state.solved++;
   if (correct) {
@@ -202,7 +243,6 @@ export function applyMathResult(state, correct, grade) {
   return { gold: 0, kp: D.WRONG_KP };
 }
 
-/* 힌트: 소환 희귀도(지식)를 대가로 지불 */
 export function useHint(state) {
   state.hints++;
   state.knowledge = Math.max(0, state.knowledge - D.HINT_COST);
@@ -216,6 +256,15 @@ function pickWeighted(state, mix) {
   let r = state.rng() * total;
   for (const m of mix) { r -= m.weight; if (r < 0) return m.type; }
   return mix[0].type;
+}
+
+function pickRoute(state) {
+  let r = state.rng();
+  for (let i = 0; i < D.ROUTE_WEIGHTS.length; i++) {
+    r -= D.ROUTE_WEIGHTS[i];
+    if (r < 0) return i;
+  }
+  return 0;
 }
 
 export function buildWave(state) {
@@ -233,7 +282,6 @@ export function buildWave(state) {
   return list;
 }
 
-/* 다음 웨이브 미리보기: 종류별 마릿수 */
 export function waveSummary(state) {
   const counts = {};
   for (const s of (state.pendingWave || [])) counts[s.type] = (counts[s.type] || 0) + 1;
@@ -252,12 +300,13 @@ function spawnEnemy(state, type, events) {
   const E = D.ENEMY_TYPES[type];
   const w = state.wave;
   const hp = Math.round(E.hp * D.hpScale(w) * state.diff.hpMul);
-  const start = pathPosDir(0);
+  const route = E.boss ? D.BOSS_ROUTE : pickRoute(state);
+  const start = D.routePoint(route, 0);
   const e = {
-    id: state.nextId++, type,
+    id: state.nextId++, type, route,
     hp, maxHp: hp,
-    s: 0,                                          // 길 진행도
-    off: state.ri(-10, 10),                        // 길 중심에서의 측면 오프셋
+    s: 0,
+    off: state.ri(-10, 10),
     x: start.x, y: start.y,
     spd: E.spd * (0.92 + state.rng() * 0.16),
     gold: Math.round(E.gold * D.enemyGoldScale(w) * state.diff.goldMul),
@@ -265,7 +314,7 @@ function spawnEnemy(state, type, events) {
     size: E.size, boss: !!E.boss,
     heal: E.heal || 0, healPeriod: E.healPeriod || 0, healRange: E.healRange || 0,
     healCd: E.healPeriod || 0,
-    slowT: 0, slowMul: 1, aura: false,
+    slowT: 0, slowMul: 1, auraMul: 1,
     dead: false,
   };
   state.enemies.push(e);
@@ -274,7 +323,7 @@ function spawnEnemy(state, type, events) {
 }
 
 /* ---------- 전투 ---------- */
-function damageEnemy(state, e, dmg, events, kind = 'hit') {
+function damageEnemy(state, e, dmg, events, kind = 'hit', healOnKill = 0) {
   if (e.dead) return;
   e.hp -= dmg;
   events.push({ type: 'enemyHit', x: e.x, y: e.y - e.size / 2, dmg, kind });
@@ -289,65 +338,87 @@ function damageEnemy(state, e, dmg, events, kind = 'hit') {
     state.gold += gold;
     state.goldEarned += gold;
     events.push({ type: 'kill', x: e.x, y: e.y, gold, etype: e.type, boss: e.boss, combo: state.combo.count, mul });
+    /* 성기사: 처치 시 성 회복 */
+    if (healOnKill > 0 && state.castleHp < state.castleMax) {
+      state.castleHp = Math.min(state.castleMax, state.castleHp + healOnKill);
+      events.push({ type: 'castleHeal', amount: healOnKill, x: e.x, y: e.y });
+    }
   }
 }
 
-/* 사거리 안 최전방(진행도 최대) 적 — 일반적인 TD의 'first' 타겟팅 */
+function applyBurn(e, dmg, ratio) {
+  e.burn = { dps: Math.max(1, Math.round(dmg * ratio)), t: D.BURN_DUR };
+}
+function applySlow(e, s) {
+  if (e.slowT > 0) e.slowMul = Math.min(e.slowMul, s.mul);
+  else e.slowMul = s.mul;
+  e.slowT = Math.max(e.slowT, s.dur);
+}
+
 function firstInRange(state, x, y, range) {
   let target = null, best = -1;
   for (const e of state.enemies) {
     if (e.dead) continue;
     if (Math.hypot(e.x - x, e.y - y) <= range) {
-      if (e.s > best) { best = e.s; target = e; }
+      /* 루트 길이가 달라 진행률(%)로 비교 — 성문에 가까운 적 우선 */
+      const prog = e.s / D.ROUTE_LENS[e.route];
+      if (prog > best) { best = prog; target = e; }
     }
   }
   return target;
+}
+
+function meleeStrike(state, h, mods, e, events) {
+  for (let k = 0; k < mods.hits; k++) {
+    damageEnemy(state, e, h.dmg, events, 'hit', mods.healOnKill);
+    if (e.dead) break;
+  }
+  if (!e.dead) {
+    if (mods.burn) applyBurn(e, h.dmg, mods.burn);
+    if (mods.slowOnHit) applySlow(e, mods.slowOnHit);
+  }
 }
 
 function updateHeroes(state, dt, events) {
   for (const h of state.field) {
     h.cd -= dt;
     if (h.cd > 0) continue;
-    const C = D.CLASSES[h.cls];
-    const legend = h.tier === 3;
-    const target = firstInRange(state, h.x, h.y, C.range);
+    const mods = heroMods(h);
+    const target = firstInRange(state, h.x, h.y, mods.range);
     if (!target) continue;
-    h.cd = 1 / C.spd;
+    h.cd = 1 / mods.spd;
 
-    if (h.cls === 'knight') {
-      if (legend) {
+    if (mods.atk === 'melee') {
+      if (mods.cleave) {
         for (const e of [...state.enemies]) {
           if (e.dead) continue;
-          if (Math.hypot(e.x - h.x, e.y - h.y) <= C.range) damageEnemy(state, e, h.dmg, events);
+          if (Math.hypot(e.x - h.x, e.y - h.y) <= mods.range) meleeStrike(state, h, mods, e, events);
         }
-        events.push({ type: 'meleeHit', x: h.x, y: h.y, cls: 'knight', heroId: h.id, cleave: true, tx: target.x, ty: target.y });
+        events.push({ type: 'meleeHit', x: h.x, y: h.y, cls: h.cls, heroId: h.id, cleave: true, tx: target.x, ty: target.y });
       } else {
-        damageEnemy(state, target, h.dmg, events);
-        events.push({ type: 'meleeHit', x: target.x, y: target.y, cls: 'knight', heroId: h.id, tx: target.x, ty: target.y });
+        meleeStrike(state, h, mods, target, events);
+        events.push({
+          type: 'meleeHit', x: target.x, y: target.y, cls: h.cls, heroId: h.id,
+          tx: target.x, ty: target.y,
+          slow: !!mods.slowOnHit, burn: !!mods.burn, hits: mods.hits,
+        });
       }
-    } else if (h.cls === 'guard') {
-      damageEnemy(state, target, h.dmg, events);
-      if (!target.dead) {
-        target.slowT = C.slowDur;
-        target.slowMul = C.slow;
-      }
-      events.push({ type: 'meleeHit', x: target.x, y: target.y, cls: 'guard', heroId: h.id, tx: target.x, ty: target.y, slow: true });
-    } else if (h.cls === 'archer') {
+    } else {
       state.projectiles.push({
-        id: state.nextId++, kind: 'arrow', x: h.x, y: h.y - 20, target,
-        dmg: h.dmg, spd: D.ARROW_SPEED, dead: false,
-        pierce: legend ? D.PIERCE_COUNT : 1,
+        id: state.nextId++,
+        kind: mods.atk,                    // 'arrow' | 'orb'
+        x: h.x, y: h.y - 22, target,
+        dmg: h.dmg,
+        spd: mods.atk === 'arrow' ? D.ARROW_SPEED : D.ORB_SPEED,
+        dead: false,
+        splash: mods.splash || 0,
+        splashSlow: mods.splashSlow,
+        slowOnHit: mods.slowOnHit,
+        burn: mods.burn,
+        pierce: mods.pierce,
         srcX: h.x, srcY: h.y,
       });
-      events.push({ type: 'shoot', kind: 'arrow', x: h.x, y: h.y, heroId: h.id, tx: target.x, ty: target.y });
-    } else { // mage
-      state.projectiles.push({
-        id: state.nextId++, kind: 'orb', x: h.x, y: h.y - 24, target,
-        dmg: h.dmg, spd: D.ORB_SPEED, dead: false,
-        splash: C.splash * (legend ? D.LEGEND_SPLASH_MUL : 1),
-        burn: legend,
-      });
-      events.push({ type: 'shoot', kind: 'orb', x: h.x, y: h.y, heroId: h.id, tx: target.x, ty: target.y });
+      events.push({ type: 'shoot', kind: mods.atk, x: h.x, y: h.y, heroId: h.id, tx: target.x, ty: target.y });
     }
   }
 }
@@ -362,28 +433,31 @@ function updateTower(state, dt, events) {
   state.towerCd = D.TOWER_PERIOD(lv);
   state.projectiles.push({
     id: state.nextId++, kind: 'bolt',
-    x: D.CASTLE_POS.x - 40, y: D.CASTLE_POS.y - 60,
+    x: D.CASTLE_POS.x, y: D.CASTLE_POS.y - 20,
     target, dmg: D.TOWER_DMG(lv), spd: 420, dead: false,
+    splash: 0, pierce: 1,
   });
-  events.push({ type: 'shoot', kind: 'bolt', x: D.CASTLE_POS.x - 40, y: D.CASTLE_POS.y - 60 });
+  events.push({ type: 'shoot', kind: 'bolt', x: D.CASTLE_POS.x, y: D.CASTLE_POS.y });
 }
 
 function updateEnemies(state, dt, events) {
-  /* 전설 수호병의 서리 결계: 사거리 안 모든 적을 계속 감속 */
-  const auraGuards = state.field.filter(h => h.cls === 'guard' && h.tier === 3);
-  for (const e of state.enemies) e.aura = false;
-  for (const g of auraGuards) {
-    const range = D.CLASSES.guard.range;
+  /* 서리 결계(오라) 감속 */
+  const auraHeroes = [];
+  for (const h of state.field) {
+    const mods = heroMods(h);
+    if (mods.aura) auraHeroes.push({ h, aura: mods.aura, range: mods.range });
+  }
+  for (const e of state.enemies) e.auraMul = 1;
+  for (const g of auraHeroes) {
     for (const e of state.enemies) {
-      if (e.dead || e.aura) continue;
-      if (Math.hypot(e.x - g.x, e.y - g.y) <= range) e.aura = true;
+      if (e.dead) continue;
+      if (Math.hypot(e.x - g.h.x, e.y - g.h.y) <= g.range) e.auraMul = Math.min(e.auraMul, g.aura);
     }
   }
 
   for (const e of state.enemies) {
     if (e.dead) continue;
 
-    /* 화상 */
     if (e.burn) {
       e.burn.t -= dt;
       e.burnAcc = (e.burnAcc || 0) + e.burn.dps * dt;
@@ -396,7 +470,6 @@ function updateEnemies(state, dt, events) {
       if (e.burn && e.burn.t <= 0) delete e.burn;
     }
 
-    /* 주술사 회복 */
     if (e.heal) {
       e.healCd -= dt;
       if (e.healCd <= 0) {
@@ -414,28 +487,26 @@ function updateEnemies(state, dt, events) {
       }
     }
 
-    /* 감속 계산 */
     if (e.slowT > 0) e.slowT -= dt;
     let mul = 1;
     if (e.slowT > 0) mul = Math.min(mul, e.slowMul);
-    if (e.aura) mul = Math.min(mul, D.LEGEND_AURA_SLOW);
+    mul = Math.min(mul, e.auraMul);
     e.slowed = mul < 1;
 
-    /* 길을 따라 이동 */
     e.s += e.spd * mul * dt;
-    if (e.s >= D.PATH_LEN) {
+    const routeLen = D.ROUTE_LENS[e.route];
+    if (e.s >= routeLen) {
       e.dead = true;
       const dmg = Math.round(e.castleDmg * D.castleDmgScale(state.wave));
       state.castleHp = Math.max(0, state.castleHp - dmg);
-      events.push({ type: 'castleHit', dmg, y: e.y });
+      events.push({ type: 'castleHit', dmg, x: e.x, y: e.y });
       if (state.castleHp <= 0) {
         gameOver(state, events);
         return;
       }
       continue;
     }
-    const p = pathPosDir(e.s);
-    /* 진행 방향의 수직으로 살짝 흩어져 걷는다 */
+    const p = D.routePoint(e.route, e.s);
     e.x = p.x + (-p.dy) * e.off;
     e.y = p.y + (p.dx) * e.off;
     e.dirX = p.dx; e.dirY = p.dy;
@@ -461,19 +532,25 @@ function updateProjectiles(state, dt, events) {
     const step = p.spd * dt;
     if (d <= step + 14) {
       p.dead = true;
-      if (p.splash) {
-        events.push({ type: 'explode', x: t.x, y: t.y, big: !!p.burn });
+      if (p.splash > 0) {
+        events.push({ type: 'explode', x: t.x, y: t.y, big: p.splash > 66, frost: !!p.splashSlow });
         for (const e of state.enemies) {
           if (e.dead) continue;
           if (Math.hypot(e.x - t.x, e.y - t.y) <= p.splash) {
             damageEnemy(state, e, p.dmg, events);
-            if (p.burn && !e.dead) e.burn = { dps: Math.max(1, Math.round(p.dmg * D.BURN.ratio)), t: D.BURN.dur };
+            if (!e.dead) {
+              if (p.splashSlow) applySlow(e, p.splashSlow);
+              if (p.burn) applyBurn(e, p.dmg, p.burn);
+            }
           }
         }
       } else {
         damageEnemy(state, t, p.dmg, events);
+        if (!t.dead) {
+          if (p.slowOnHit) applySlow(t, p.slowOnHit);
+          if (p.burn) applyBurn(t, p.dmg, p.burn);
+        }
         if (p.kind === 'bolt') events.push({ type: 'boltHit', x: t.x, y: t.y });
-        /* 전설 궁수: 관통 — 화살 진행 방향의 일직선상 적 추가 타격 */
         if (p.pierce > 1) {
           const ux = (t.x - p.srcX), uy = (t.y - p.srcY);
           const ul = Math.hypot(ux, uy) || 1;
@@ -483,9 +560,9 @@ function updateProjectiles(state, dt, events) {
             .filter(e => {
               if (e.dead || e === t) return false;
               const rx = e.x - t.x, ry = e.y - t.y;
-              const along = rx * nx + ry * ny;           // 관통 방향으로 앞쪽
+              const along = rx * nx + ry * ny;
               if (along < 0 || along > 180) return false;
-              const side = Math.abs(rx * -ny + ry * nx); // 직선에서 벗어난 거리
+              const side = Math.abs(rx * -ny + ry * nx);
               return side <= D.PIERCE_WIDTH;
             })
             .sort((a, b) => {
@@ -496,6 +573,7 @@ function updateProjectiles(state, dt, events) {
           for (const e of cands) {
             if (remaining <= 0) break;
             damageEnemy(state, e, p.dmg, events, 'pierce');
+            if (!e.dead && p.slowOnHit) applySlow(e, p.slowOnHit);
             events.push({ type: 'pierceHit', x: e.x, y: e.y });
             remaining--;
           }
@@ -523,7 +601,7 @@ function endWave(state, events) {
   events.push({ type: 'waveEnd', wave: state.wave, bonus });
   state.wave++;
   state.phase = 'prep';
-  state.pendingWave = buildWave(state);   // 다음 웨이브 미리 생성 (미리보기용)
+  state.pendingWave = buildWave(state);
 }
 
 /* ---------- 틱 ---------- */

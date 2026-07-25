@@ -142,7 +142,7 @@ export class UI {
     for (const hero of state.bench) {
       const C = D.CLASSES[hero.cls], T = D.TIERS[hero.tier];
       const d = document.createElement('div');
-      d.className = `hcard t${hero.tier}` + (selId === hero.id ? ' sel' : '');
+      d.className = `hcard t${hero.tier}` + (selId === hero.id ? ' sel' : '') + (C.special ? ' sp' : '');
       d.innerHTML = `<div class="em">${C.emoji}</div><div class="nm">${C.name}</div>` +
         `<div class="tr">${T.name}${hero.level > 1 ? ` <span class="lv">Lv${hero.level}</span>` : ''}</div>`;
       d.title = `${T.name} ${C.name}\n공격력 ${hero.dmg} · 체력 ${hero.maxHp}`;
@@ -152,25 +152,48 @@ export class UI {
     this.el.benchHint.classList.toggle('hidden', selId == null);
   }
 
-  /* ---------- 조합 ---------- */
+  /* ---------- 조합 (등급업 + 레시피 도감) ---------- */
   renderCombine(state) {
     let html = '';
-    for (let t = 0; t < 3; t++) {
-      const n = E.benchCountByTier(state, t);
-      html += `<div class="combine-row">
-        <span class="tier-dot" style="background:${D.TIERS[t].color}"></span>
-        ${D.TIERS[t].name} <span class="cnt">×${n}</span>
-        <button data-tier="${t}" ${n < 2 ? 'disabled' : ''}>⚗ 2명 → ${D.TIERS[t + 1].name}</button>
+
+    /* ① 등급업: 같은 용사 2명 → 등급+1 (가능한 것만 표시) */
+    const rankups = E.listCombos(state).filter(c => c.kind === 'rankup');
+    html += `<div class="combine-sub">⬆ 등급업 <span class="cnt">같은 용사 2명 → 등급 UP (가끔 🍀2단계!)</span></div>`;
+    if (!rankups.length) {
+      html += `<div class="combine-empty">같은 직업·같은 등급 용사 2명을 모아 보세요</div>`;
+    }
+    for (const c of rankups) {
+      const C = D.CLASSES[c.cls];
+      html += `<div class="combine-row ready">
+        <span>${C.emoji}</span> ${C.name}
+        <span class="cnt" style="color:${D.TIERS[c.tier].color}">${D.TIERS[c.tier].name}×2</span>
+        <button data-kind="rankup" data-cls="${c.cls}" data-tier="${c.tier}">⚗ → ${D.TIERS[c.resultTier].name}</button>
       </div>`;
     }
-    const legends = E.benchCountByTier(state, 3) + state.field.filter(h => h.tier === 3).length;
-    html += `<div class="combine-row">
-      <span class="tier-dot" style="background:${D.TIERS[3].color}"></span>
-      전설 <span class="cnt">×${legends}</span> <span class="cnt">👑 특수능력 보유!</span>
-    </div>`;
+
+    /* ② 특수 레시피 도감: 항상 전부 표시 + 재료 보유 표시 */
+    html += `<div class="combine-sub">✨ 특수 조합법 <span class="cnt">서로 다른 두 용사(같은 등급)</span></div>`;
+    for (const r of D.RECIPES) {
+      const A = D.CLASSES[r.a], B = D.CLASSES[r.b], R = D.CLASSES[r.result];
+      let readyTier = -1;
+      for (let t = 0; t <= 2; t++) {
+        if (E.benchOf(state, r.a, t).length >= 1 && E.benchOf(state, r.b, t).length >= 1) { readyTier = t; break; }
+      }
+      const hasA = state.bench.some(h => h.cls === r.a);
+      const hasB = state.bench.some(h => h.cls === r.b);
+      const ready = readyTier >= 0;
+      html += `<div class="combine-row recipe${ready ? ' ready' : ''}">
+        <span class="ing${hasA ? ' have' : ''}">${A.emoji}</span>+<span class="ing${hasB ? ' have' : ''}">${B.emoji}</span>
+        <span class="rarrow">→</span> <span>${R.emoji}</span> <b>${R.name}</b>
+        ${ready
+          ? `<button data-kind="recipe" data-result="${r.result}" data-tier="${readyTier}">⚗ ${D.TIERS[readyTier].name}→${D.TIERS[readyTier + 1].name}</button>`
+          : `<span class="cnt need">${hasA || hasB ? '같은 등급 필요' : '재료 모으기'}</span>`}
+      </div>`;
+    }
+
     this.el.combineRows.innerHTML = html;
     this.el.combineRows.querySelectorAll('button').forEach(b => {
-      b.addEventListener('click', () => this.h.onCombine(Number(b.dataset.tier)));
+      b.addEventListener('click', () => this.h.onCombine({ ...b.dataset }));
     });
   }
 
@@ -210,11 +233,16 @@ export class UI {
       const A = D.LEGEND_ABILITIES[hero.cls];
       abilityHtml = `<div class="ability">⭐ ${A.name}: ${A.desc}</div>`;
     }
-    const extra = hero.cls === 'guard' ? ` · ❄ 감속 ${Math.round((1 - C.slow) * 100)}%` : '';
+    let specialHtml = '';
+    if (C.special) {
+      const [a, b] = C.recipe;
+      specialHtml = `<div class="ability sp">✨ 특수 용사 (${D.CLASSES[a].emoji}+${D.CLASSES[b].emoji} 조합으로만 탄생)</div>`;
+    }
+    const extra = C.slowOnHit ? ` · ❄ 감속 ${Math.round((1 - C.slowOnHit.mul) * 100)}%` : '';
     el.hpInfo.innerHTML =
       `<b style="color:${T.color}">[${T.name}]</b> ${C.emoji} <b>${C.name}</b> <span class="lv">Lv${hero.level}</span><br>
        ⚔ 공격력 ${hero.dmg} · 🎯 사거리 ${C.range}${extra}<br>
-       <span class="cdesc">${C.desc}</span>${abilityHtml}`;
+       <span class="cdesc">${C.desc}</span>${specialHtml}${abilityHtml}`;
     if (hero.level >= D.HERO_LEVEL_MAX) {
       el.upgradeBtn.textContent = '⬆ 최고 레벨!';
       el.upgradeBtn.disabled = true;
