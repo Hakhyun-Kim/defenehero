@@ -148,11 +148,66 @@ body {
   padding: 12px 34px;
   border-radius: 14px;
   border: 3px solid #ffd93d;
-  z-index: 6;
+  z-index: 8;
   animation: bossin 0.4s cubic-bezier(0.2, 1.6, 0.4, 1);
   white-space: nowrap;
 }
+#bossBanner.mid {
+  background: rgba(120, 60, 10, 0.88);
+  border-color: #ffa040;
+  color: #ffd9a0;
+  font-size: 21px;
+  padding: 9px 26px;
+}
 @keyframes bossin { from { transform: translateX(-50%) scale(0.3); opacity: 0; } }
+
+/* 등장 예고 경고 배너 */
+#bossWarnBanner {
+  position: absolute;
+  top: 28%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 12, 12, 0.82);
+  color: #ff9a3d;
+  border: 2px dashed #ff9a3d;
+  border-radius: 12px;
+  font-size: 18px;
+  font-weight: 900;
+  padding: 8px 22px;
+  z-index: 8;
+  white-space: nowrap;
+  animation: warnblink 0.65s ease-in-out infinite;
+}
+#bossWarnBanner.great {
+  color: #ff5252;
+  border-color: #ff5252;
+  border-style: solid;
+  font-size: 21px;
+}
+@keyframes warnblink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* 보스 전투 분위기: 화면 가장자리 붉은 기운 */
+#bossVignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.6s;
+  z-index: 3;
+  background: radial-gradient(ellipse at center, transparent 42%, rgba(120, 20, 40, 0.5) 100%);
+}
+.stage.boss-mid #bossVignette { opacity: 0.55; }
+.stage.boss-great #bossVignette {
+  opacity: 1;
+  background: radial-gradient(ellipse at center, transparent 36%, rgba(150, 10, 10, 0.62) 100%);
+  animation: bosspulse 1.7s ease-in-out infinite;
+}
+.stage.warning #bossVignette {
+  opacity: 1;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 120, 0, 0.5) 100%);
+  animation: warnblink 0.65s ease-in-out infinite;
+}
+@keyframes bosspulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
 
 #comboChip {
   position: absolute;
@@ -211,6 +266,10 @@ body {
   border: 1.5px solid #ff8a8a;
   animation: lowhp 1.2s ease-in-out infinite;
 }
+#wavePreview .wchip.midboss {
+  background: #fff0e0;
+  border: 1.5px solid #ffb073;
+}
 
 #bossBar {
   position: absolute;
@@ -220,14 +279,24 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: min(60%, 420px);
+  width: min(62%, 440px);
   background: rgba(40, 10, 10, 0.8);
   border: 2px solid #ff6a6a;
   border-radius: 999px;
-  padding: 5px 12px;
+  padding: 5px 14px;
   z-index: 6;
-  font-size: 16px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffd9d9;
 }
+#bossBar.mid {
+  border-color: #ffa040;
+  background: rgba(45, 26, 8, 0.8);
+  color: #ffdcb0;
+  width: min(52%, 360px);
+}
+#bossBar.enraged { animation: warnblink 0.5s ease-in-out infinite; }
+#bossBarName { white-space: nowrap; }
 #bossBar .bossbar-track {
   flex: 1;
   height: 12px;
@@ -242,6 +311,7 @@ body {
   background: linear-gradient(90deg, #ff5d5d, #c084fc);
   transition: width 0.2s;
 }
+#bossBar.mid #bossBarFill { background: linear-gradient(90deg, #ff8a3d, #ffc93d); }
 
 .wave-btn {
   position: absolute;

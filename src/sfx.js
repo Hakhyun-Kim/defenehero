@@ -117,10 +117,39 @@ export const SFX = {
   waveClear() {
     [523, 659, 784, 880, 1047].forEach((f, i) => tone(f, i * 0.09, 0.18, 'triangle', 0.09));
   },
+  /* 대보스: 낮게 깔리는 포효 + 굉음 */
   bossRoar() {
     tone(80, 0, 0.7, 'sawtooth', 0.14, 50);
     noise(0, 0.7, 0.09, 200, 0.3);
     tone(55, 0.25, 0.6, 'sawtooth', 0.12, 40);
+    tone(41, 0.5, 0.8, 'sawtooth', 0.1, 30);
+  },
+  /* 중간보스: 짧고 묵직한 으르렁 */
+  midBossRoar() {
+    tone(140, 0, 0.34, 'sawtooth', 0.1, 85);
+    noise(0, 0.35, 0.06, 320, 0.4);
+  },
+  /* 등장 경고 사이렌 — 음이 위아래로 흔들린다 */
+  bossWarn(great) {
+    const base = great ? 520 : 660;
+    for (let i = 0; i < (great ? 3 : 2); i++) {
+      tone(base, i * 0.42, 0.2, 'square', great ? 0.075 : 0.055, base * 1.5);
+      tone(base * 1.5, i * 0.42 + 0.2, 0.2, 'square', great ? 0.075 : 0.055, base);
+    }
+    if (great) tone(60, 0, 1.2, 'sine', 0.07);
+  },
+  /* 분노 페이즈: 급상승 굉음 */
+  bossEnrage() {
+    tone(120, 0, 0.55, 'sawtooth', 0.13, 400);
+    noise(0, 0.5, 0.09, 900, 0.35);
+    tone(90, 0.2, 0.5, 'square', 0.09, 320);
+  },
+  /* 보스 처치 팡파레 */
+  bossDown(great) {
+    const notes = great ? [523, 659, 784, 1047, 1319] : [523, 659, 784];
+    notes.forEach((f, i) => tone(f, i * 0.11, 0.3, 'triangle', 0.1));
+    noise(0, 0.6, 0.07, 3000, 0.4);
+    if (great) tone(65, 0, 0.9, 'sine', 0.09, 40);
   },
   gameOver() {
     [392, 330, 262, 196].forEach((f, i) => tone(f, i * 0.3, 0.4, 'sawtooth', 0.08));

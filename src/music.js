@@ -24,6 +24,15 @@ const TRACKS = {
       steps: [12, null, null, 10, null, null, 7, null, null, 3, 5, null, 7, null, null, null] },
     perc:   { steps: [1, null, null, null, 1, null, null, null, 1, null, null, null, 1, null, 1, null] },
   },
+  /* 중간보스: 전투곡보다 무겁고 불안한 반음 진행 */
+  midboss: {
+    bpm: 120,
+    bass:   { base: 82, type: 'square', vol: 0.055, len: 0.14,
+      steps: [0, null, 0, null, 1, null, 0, null, 0, null, 0, null, -2, null, -1, null] },
+    melody: { base: 330, type: 'sawtooth', vol: 0.022, len: 0.16,
+      steps: [null, null, 8, null, 7, null, null, null, null, null, 8, null, 10, null, 7, null] },
+    perc:   { steps: [1, null, null, 1, 1, null, null, null, 1, null, null, 1, 1, null, 1, null] },
+  },
   boss: {
     bpm: 132,
     bass:   { base: 55, type: 'sawtooth', vol: 0.06, len: 0.13,

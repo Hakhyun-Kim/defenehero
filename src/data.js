@@ -191,15 +191,37 @@ export const TOWER_DMG = (lv) => 12 + lv * 10;
 export const TOWER_PERIOD = (lv) => Math.max(0.8, 1.6 - lv * 0.25);
 export const TOWER_RANGE = 300;
 
-/* ---------- 몬스터 ---------- */
+/* ---------- 몬스터 ----------
+ * 일반 / 중간보스(매 웨이브) / 대보스(5웨이브마다) 3층 구조 */
 export const ENEMY_TYPES = {
   goblin:  { name: '고블린',     emoji: '👺', hp: 40,   spd: 62,  gold: 8,   castleDmg: 5,  size: 30 },
   wolf:    { name: '늑대',       emoji: '🐺', hp: 26,   spd: 105, gold: 10,  castleDmg: 4,  size: 30 },
   orc:     { name: '오크',       emoji: '👹', hp: 115,  spd: 44,  gold: 16,  castleDmg: 8,  size: 34 },
   troll:   { name: '트롤',       emoji: '🧌', hp: 270,  spd: 32,  gold: 32,  castleDmg: 12, size: 40 },
   shaman:  { name: '주술사',     emoji: '🧙', hp: 90,   spd: 38,  gold: 24,  castleDmg: 8,  size: 32, heal: 18, healPeriod: 1.6, healRange: 130 },
-  boss:    { name: '보스 드래곤', emoji: '🐉', hp: 1600, spd: 27,  gold: 200, castleDmg: 40, size: 54, boss: true },
+
+  /* 중간보스 — 매 웨이브 마지막에 등장, 3종이 순환 (일반 몬스터의 2~3배 체력) */
+  ogrelord:    { name: '오우거 군주', emoji: '👿', hp: 780, spd: 30, gold: 90, castleDmg: 22, size: 50, midBoss: true },
+  bonelord:    { name: '해골 장군',   emoji: '💀', hp: 600, spd: 42, gold: 85, castleDmg: 18, size: 47, midBoss: true },
+  spiderqueen: { name: '거미 여왕',   emoji: '🕷️', hp: 680, spd: 36, gold: 95, castleDmg: 20, size: 48, midBoss: true,
+                 heal: 22, healPeriod: 1.8, healRange: 160 },
+
+  /* 대보스 — 5웨이브마다, 체력 절반에서 분노 */
+  boss:  { name: '보스 드래곤',   emoji: '🐉', hp: 2000, spd: 26, gold: 260, castleDmg: 45, size: 58, boss: true,
+           enrageAt: 0.5, enrageSpd: 1.45 },
+  boss2: { name: '고대 파괴자',   emoji: '🦖', hp: 2350, spd: 23, gold: 300, castleDmg: 50, size: 60, boss: true,
+           enrageAt: 0.5, enrageSpd: 1.4 },
 };
+
+/* 중간보스는 매 웨이브, 대보스는 5웨이브마다 (두 종류가 번갈아) */
+export const MIDBOSS_CYCLE = ['ogrelord', 'bonelord', 'spiderqueen'];
+export const midBossType = (w) => MIDBOSS_CYCLE[(w - 1) % MIDBOSS_CYCLE.length];
+export const GREAT_BOSS_CYCLE = ['boss', 'boss2'];
+export const greatBossType = (w) => GREAT_BOSS_CYCLE[(Math.floor(w / 5) - 1) % GREAT_BOSS_CYCLE.length];
+/* 보스 등장 몇 초 전에 경고 */
+export const BOSS_WARN_LEAD = 2.6;
+/* 초반 중간보스는 약하게 시작해 5웨이브에 제 위력 (입문자 배려) */
+export const midBossRamp = (w) => Math.min(1, 0.45 + w * 0.12);
 
 /* ---------- 난이도 ---------- */
 export const DIFFICULTIES = {
@@ -212,7 +234,7 @@ export const DIFFICULTIES = {
 export const hpScale = (w) => 1 + 0.18 * (w - 1) + 0.035 * (w - 1) * (w - 1);
 export const enemyGoldScale = (w) => 1 + 0.02 * w;
 /* 마릿수: 초반부터 넉넉하게, 뒤로 갈수록 크게 증가 (타격감 + 압박) */
-export const waveCount = (w) => 9 + Math.round(w * 2.2);
+export const waveCount = (w) => 8 + Math.round(w * 1.9);
 export const castleDmgScale = (w) => 1 + Math.max(0, w - 15) * 0.08;
 
 /* ---------- 분대(스쿼드) 스폰 ----------

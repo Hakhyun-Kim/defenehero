@@ -1,17 +1,17 @@
 {
-  "comment": "밸런스 회귀 기준선 (v5 분대 스폰 + 경제 긴축 + 조합 비용). node scripts/balance-bot.mjs 120 check (Bash 권장). 중앙값이 tolerance 이상 벗어나면 경고.",
-  "date": "2026-07-25",
+  "comment": "밸런스 회귀 기준선 (v6 중간보스 매 웨이브 + 대보스 분노). node scripts/balance-bot.mjs 120 check (Bash 권장). 중앙값이 tolerance 이상 벗어나면 경고.",
+  "date": "2026-07-26",
   "runs": 150,
   "tolerance": 3,
   "medians": {
-    "easy/초보": 9,
+    "easy/초보": 8,
     "easy/보통": 10,
     "easy/고수": 14,
-    "normal/초보": 7,
-    "normal/보통": 9,
+    "normal/초보": 6,
+    "normal/보통": 8,
     "normal/고수": 11,
-    "hard/초보": 6,
-    "hard/보통": 8,
-    "hard/고수": 10
+    "hard/초보": 5,
+    "hard/보통": 7,
+    "hard/고수": 9
   }
 }

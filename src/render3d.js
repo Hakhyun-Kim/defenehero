@@ -342,16 +342,23 @@ export class Renderer3D {
 
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0xcfe9ff, 20, 48);
+    /* 보스 분위기 전환용 기준값 */
+    this.baseFog = new THREE.Color(0xcfe9ff);
+    this.baseClear = new THREE.Color(0xbfe3ff);
+    this.bossMode = 0;        // 0 없음 · 1 중간보스 · 2 대보스
+    this.bossBlend = 0;
 
     this.camera = new THREE.PerspectiveCamera(46, 16 / 10, 0.1, 120);
     this.camBase = new THREE.Vector3(0, 13.2, 12.8);
     this.camera.position.copy(this.camBase);
     this.camera.lookAt(0, 0, -0.6);
 
-    this.scene.add(new THREE.HemisphereLight(0xeaf6ff, 0x5d8742, 1.05));
+    this.hemi = new THREE.HemisphereLight(0xeaf6ff, 0x5d8742, 1.05);
+    this.scene.add(this.hemi);
     const sun = new THREE.DirectionalLight(0xfff2d8, 1.35);
     sun.position.set(7, 12, 5);
     this.scene.add(sun);
+    this.sun = sun;
 
     this._buildTerrain();
     this._buildCastle();
@@ -838,6 +845,25 @@ export class Renderer3D {
     };
   }
 
+  /* 보스 분위기: 하늘·안개·조명을 어둡게 (0 없음 / 1 중간 / 2 대보스) */
+  setBossMode(level) { this.bossMode = level; }
+
+  _updateBossMood(dt) {
+    const target = this.bossMode;
+    this.bossBlend += (target - this.bossBlend) * Math.min(1, dt * 1.6);
+    const k = this.bossBlend;
+    /* 중간보스는 보랏빛, 대보스는 핏빛으로 */
+    const tint = new THREE.Color(k > 1.2 ? 0x6b1418 : 0x3a2050);
+    const strength = Math.min(1, k) * (k > 1.2 ? 0.85 : 0.6);
+    const fogCol = this.baseFog.clone().lerp(tint, strength);
+    const clearCol = this.baseClear.clone().lerp(tint, strength * 0.9);
+    this.scene.fog.color.copy(fogCol);
+    this.renderer.setClearColor(clearCol);
+    this.scene.fog.far = 48 - Math.min(1, k) * 14;      // 안개가 조여든다
+    this.hemi.intensity = 1.05 - Math.min(1, k) * 0.42;
+    this.sun.intensity = 1.35 - Math.min(1, k) * 0.55;
+  }
+
   _makeEnemyView(e) {
     const E = D.ENEMY_TYPES[e.type];
     const scale = (e.size / 30) * 1.55;
@@ -856,17 +882,29 @@ export class Renderer3D {
     shadow.position.y = 0.03;
     g.add(shadow);
 
-    if (e.boss) {
+    let auraRing = null;
+    if (e.boss || e.midBoss) {
+      const col = e.boss ? 0xff4444 : 0xff9a3d;
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(scale * 0.42, scale * 0.52, 24),
-        new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.95, depthWrite: false })
+        new THREE.RingGeometry(scale * 0.42, scale * 0.54, 24),
+        new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.95, depthWrite: false })
       );
       ring.rotation.x = -Math.PI / 2;
       ring.position.y = 0.06;
       g.add(ring);
+      auraRing = ring;
+      /* 발밑에서 피어오르는 기운 */
+      const aura = new THREE.Mesh(
+        new THREE.RingGeometry(scale * 0.6, scale * 0.78, 26),
+        new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.4, depthWrite: false })
+      );
+      aura.rotation.x = -Math.PI / 2;
+      aura.position.y = 0.05;
+      g.add(aura);
+      g.userData.aura = aura;
     }
 
-    const barW = e.boss ? 2.1 : 1.1;
+    const barW = e.boss ? 2.1 : (e.midBoss ? 1.6 : 1.1);
     const bar = new THREE.Group();
     const bg = new THREE.Mesh(
       new THREE.PlaneGeometry(barW, 0.14),
@@ -874,7 +912,7 @@ export class Renderer3D {
     );
     const fg = new THREE.Mesh(
       new THREE.PlaneGeometry(barW, 0.11),
-      new THREE.MeshBasicMaterial({ color: e.boss ? 0xc084fc : 0xf87171, depthTest: false })
+      new THREE.MeshBasicMaterial({ color: e.boss ? 0xc084fc : (e.midBoss ? 0xffa040 : 0xf87171), depthTest: false })
     );
     fg.position.z = 0.001;
     bg.renderOrder = 40; fg.renderOrder = 41;
@@ -884,7 +922,7 @@ export class Renderer3D {
     g.add(bar);
 
     this.scene.add(g);
-    return { group: g, spr, bar, barFg: fg, barW, baseScale: scale, boss: e.boss };
+    return { group: g, spr, bar, barFg: fg, barW, baseScale: scale, boss: e.boss, midBoss: e.midBoss, auraRing };
   }
 
   /* ---------- 상태 동기화 ---------- */
@@ -933,6 +971,7 @@ export class Renderer3D {
       v.barFg.position.x = -(1 - ratio) * v.barW / 2;
       v.burning = !!e.burn;
       v.slowed = !!e.slowed;
+      v.enraged = !!e.enraged;
     }
     for (const [id, v] of this.enemyViews) {
       if (!enemyIds.has(id)) { this.scene.remove(v.group); this.enemyViews.delete(id); }
@@ -1052,11 +1091,15 @@ export class Renderer3D {
           break;
         }
         case 'kill': {
-          const col = ev.boss ? 0xffd93d : ({ goblin: 0x7fd45e, wolf: 0x9aa7ba, orc: 0xd46e5e, troll: 0x5ea7d4, shaman: 0xb08bff }[ev.etype] || 0xffffff);
-          this.burst(x3, 0.9, z3, col, ev.boss ? 46 : 12, ev.boss ? 6 : 3.2);
-          this.showNumber(x3, 2.2, z3, `+${ev.gold}💰`, '#ffd93d', ev.boss ? 1.3 : 0.9);
+          const col = ev.boss ? 0xffd93d : (ev.midBoss ? 0xffa040
+            : ({ goblin: 0x7fd45e, wolf: 0x9aa7ba, orc: 0xd46e5e, troll: 0x5ea7d4, shaman: 0xb08bff }[ev.etype] || 0xffffff));
+          const n = ev.boss ? 56 : (ev.midBoss ? 28 : 12);
+          const spd = ev.boss ? 6.5 : (ev.midBoss ? 4.4 : 3.2);
+          this.burst(x3, 0.9, z3, col, n, spd);
+          if (ev.boss) this.burst(x3, 1.4, z3, 0xffffff, 24, 4.5);
+          this.showNumber(x3, 2.2, z3, `+${ev.gold}💰`, '#ffd93d', ev.boss ? 1.3 : (ev.midBoss ? 1.1 : 0.9));
           if (ev.mul > 1) this.showNumber(x3, 2.9, z3, `콤보 x${ev.mul}!`, '#ff8a3d', 1.1);
-          this.addShake(ev.boss ? 0.5 : 0.07);
+          this.addShake(ev.boss ? 0.6 : (ev.midBoss ? 0.3 : 0.07));
           break;
         }
         case 'meleeHit':
@@ -1105,8 +1148,27 @@ export class Renderer3D {
           this.burst(x3, 1.3, z3, 0x6effa0, 7, 1.6, { grav: -1.5, ttl: 0.5 });
           break;
         case 'spawn':
-          this.burst(x3, 0.9, z3, 0xc478f0, ev.boss ? 30 : 6, ev.boss ? 5 : 2.2);
-          if (ev.boss) this.addShake(0.5);
+          if (ev.boss) {
+            this.burst(x3, 0.9, z3, 0xff3322, 40, 5.5);
+            this.burst(x3, 1.2, z3, 0xc478f0, 20, 3.4);
+            this.addShake(0.62);
+          } else if (ev.midBoss) {
+            this.burst(x3, 0.9, z3, 0xff9a3d, 22, 4);
+            this.addShake(0.3);
+          } else {
+            this.burst(x3, 0.9, z3, 0xc478f0, 6, 2.2);
+          }
+          break;
+        case 'bossWarn':
+          /* 포탈이 붉게 요동친다 */
+          this.burst(0, 1.0, wz(430), ev.tier === 'great' ? 0xff2222 : 0xff9a3d, ev.tier === 'great' ? 26 : 14, 3.2, { grav: -1 });
+          this.addShake(ev.tier === 'great' ? 0.22 : 0.12);
+          break;
+        case 'bossEnrage':
+          this.burst(x3, 1.2, z3, 0xff2200, 36, 5.5, { grav: 2 });
+          this.burst(x3, 0.8, z3, 0xffcc00, 18, 3.2);
+          this.showNumber(x3, 3.0, z3, '분노!!', '#ff3322', 1.4);
+          this.addShake(0.55);
           break;
         case 'waveEnd':
           for (let k = 0; k < 5; k++) {
@@ -1192,13 +1254,28 @@ export class Renderer3D {
     }
 
     for (const [id, v] of this.enemyViews) {
-      const hop = Math.abs(Math.sin(t * 7 + id)) * 0.14;
+      const bossHop = v.boss ? 4.2 : (v.midBoss ? 5.5 : 7);
+      const hop = Math.abs(Math.sin(t * bossHop + id)) * (v.boss || v.midBoss ? 0.2 : 0.14);
       v.spr.position.y = v.baseScale * 0.62 + hop;
+      /* 보스 발밑 기운이 회전·맥동 */
+      if (v.group.userData.aura) {
+        const a = v.group.userData.aura;
+        a.rotation.z = t * (v.boss ? 1.6 : 1.1);
+        const s = 1 + Math.sin(t * 3 + id) * 0.12;
+        a.scale.set(s, s, s);
+        a.material.opacity = (v.enraged ? 0.6 : 0.4) + Math.sin(t * 5 + id) * 0.15;
+        if (v.enraged) a.material.color.setHex(0xff2200);
+      }
+      if (v.enraged && Math.random() < dt * 9) {
+        this.burst(v.group.position.x, 0.8, v.group.position.z, 0xff3311, 1, 1.4, { grav: -2, ttl: 0.5, size: 0.8 });
+      }
       if (v.burning) {
         v.spr.material.color.setRGB(1, 0.72, 0.5);
         if (Math.random() < dt * 7) {
           this.burst(v.group.position.x, 0.7, v.group.position.z, 0xff8830, 1, 1.1, { grav: -2.2, ttl: 0.45, size: 0.6 });
         }
+      } else if (v.enraged) {
+        v.spr.material.color.setRGB(1, 0.55, 0.5);
       } else if (v.slowed) {
         v.spr.material.color.setRGB(0.62, 0.82, 1);
         if (Math.random() < dt * 3) {
@@ -1234,6 +1311,7 @@ export class Renderer3D {
 
     this._updateParticles(dt);
     this._updateNumbers(dt);
+    this._updateBossMood(dt);
 
     this.shake = Math.max(0, this.shake - dt * 1.7);
     const s2 = this.shake * this.shake;

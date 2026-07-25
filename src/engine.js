@@ -36,7 +36,7 @@ export function createGame(opts = {}) {
     spawnQueue: [], waveT: 0,
     pendingWave: null,
 
-    kills: 0, bossKills: 0, summons: 0, combos: 0,
+    kills: 0, bossKills: 0, midBossKills: 0, summons: 0, combos: 0,
     solved: 0, correct: 0, goldEarned: 0, upgrades: 0, hints: 0,
     specialsMade: 0,
     shardsEarned: 0,
@@ -281,7 +281,7 @@ function pickRoute(state) {
   return 0;
 }
 
-/* 분대 단위로 몰려오는 웨이브를 만든다 */
+/* 분대 단위로 몰려오는 웨이브를 만든다 (+ 웨이브 말미의 보스들) */
 export function buildWave(state) {
   const w = state.wave;
   const total = Math.round(D.waveCount(w) * state.diff.countMul);
@@ -305,13 +305,29 @@ export function buildWave(state) {
     spawned += size;
     t += size * D.SQUAD_INNER_GAP + D.squadGap(w) * (0.8 + state.rng() * 0.4);
   }
-  if (D.isBossWave(w)) list.push({ t: t + 1.5, type: 'boss' });
+
+  /* 중간보스: 매 웨이브 마지막을 장식한다 */
+  const midT = t + 1.6;
+  const midType = D.midBossType(w);
+  list.push({ t: midT - D.BOSS_WARN_LEAD, warnOnly: true, tier: 'mid', etype: midType });
+  list.push({ t: midT, type: midType, route: pickRoute(state) });
+
+  /* 대보스: 5웨이브마다, 중간보스 뒤에 지름길로 돌진 */
+  if (D.isBossWave(w)) {
+    const bossT = midT + 4.5;
+    const bType = D.greatBossType(w);
+    list.push({ t: bossT - D.BOSS_WARN_LEAD, warnOnly: true, tier: 'great', etype: bType });
+    list.push({ t: bossT, type: bType });
+  }
   return list;
 }
 
 export function waveSummary(state) {
   const counts = {};
-  for (const s of (state.pendingWave || [])) counts[s.type] = (counts[s.type] || 0) + 1;
+  for (const s of (state.pendingWave || [])) {
+    if (s.warnOnly) continue;
+    counts[s.type] = (counts[s.type] || 0) + 1;
+  }
   return counts;
 }
 
@@ -326,7 +342,9 @@ export function startWave(state) {
 function spawnEnemy(state, type, events, presetRoute) {
   const E = D.ENEMY_TYPES[type];
   const w = state.wave;
-  const hp = Math.round(E.hp * D.hpScale(w) * state.diff.hpMul);
+  const rampMul = E.midBoss ? D.midBossRamp(w) : 1;
+  const hp = Math.round(E.hp * D.hpScale(w) * state.diff.hpMul * rampMul);
+  /* 대보스는 지름길로 돌진 */
   const route = E.boss ? D.BOSS_ROUTE : (presetRoute != null ? presetRoute : pickRoute(state));
   const start = D.routePoint(route, 0);
   const e = {
@@ -338,15 +356,18 @@ function spawnEnemy(state, type, events, presetRoute) {
     spd: E.spd * (0.92 + state.rng() * 0.16),
     gold: Math.round(E.gold * D.enemyGoldScale(w) * state.diff.goldMul),
     castleDmg: E.castleDmg,
-    size: E.size, boss: !!E.boss,
+    size: E.size, boss: !!E.boss, midBoss: !!E.midBoss,
+    name: E.name,
+    enrageAt: E.enrageAt || 0, enrageSpd: E.enrageSpd || 1, enraged: false,
     heal: E.heal || 0, healPeriod: E.healPeriod || 0, healRange: E.healRange || 0,
     healCd: E.healPeriod || 0,
     slowT: 0, slowMul: 1, auraMul: 1,
     dead: false,
   };
   state.enemies.push(e);
-  events.push({ type: 'spawn', etype: type, x: e.x, y: e.y, boss: e.boss });
-  if (e.boss) events.push({ type: 'bossSpawn' });
+  events.push({ type: 'spawn', etype: type, x: e.x, y: e.y, boss: e.boss, midBoss: e.midBoss });
+  if (e.boss) events.push({ type: 'bossSpawn', tier: 'great', name: E.name, emoji: E.emoji });
+  else if (e.midBoss) events.push({ type: 'bossSpawn', tier: 'mid', name: E.name, emoji: E.emoji });
 }
 
 /* ---------- 전투 ---------- */
@@ -358,13 +379,18 @@ function damageEnemy(state, e, dmg, events, kind = 'hit', healOnKill = 0) {
     e.dead = true;
     state.kills++;
     if (e.boss) state.bossKills++;
+    if (e.midBoss) state.midBossKills++;
     state.combo.count++;
     state.combo.timer = D.COMBO.window;
     const mul = state.combo.count >= D.COMBO.x3At ? 3 : state.combo.count >= D.COMBO.x2At ? 2 : 1;
     const gold = e.gold * mul;
     state.gold += gold;
     state.goldEarned += gold;
-    events.push({ type: 'kill', x: e.x, y: e.y, gold, etype: e.type, boss: e.boss, combo: state.combo.count, mul });
+    events.push({
+      type: 'kill', x: e.x, y: e.y, gold, etype: e.type,
+      boss: e.boss, midBoss: e.midBoss, name: e.name,
+      combo: state.combo.count, mul,
+    });
     /* 성기사: 처치 시 성 회복 */
     if (healOnKill > 0 && state.castleHp < state.castleMax) {
       state.castleHp = Math.min(state.castleMax, state.castleHp + healOnKill);
@@ -514,6 +540,13 @@ function updateEnemies(state, dt, events) {
       }
     }
 
+    /* 대보스 분노: 체력이 절반 아래로 떨어지면 폭주 */
+    if (e.enrageAt && !e.enraged && e.hp / e.maxHp <= e.enrageAt) {
+      e.enraged = true;
+      e.spd *= e.enrageSpd;
+      events.push({ type: 'bossEnrage', x: e.x, y: e.y, name: e.name });
+    }
+
     if (e.slowT > 0) e.slowT -= dt;
     let mul = 1;
     if (e.slowT > 0) mul = Math.min(mul, e.slowMul);
@@ -645,6 +678,10 @@ export function tick(state, dt) {
   state.waveT += dt;
   while (state.spawnQueue.length && state.spawnQueue[0].t <= state.waveT) {
     const s = state.spawnQueue.shift();
+    if (s.warnOnly) {
+      events.push({ type: 'bossWarn', tier: s.tier, name: D.ENEMY_TYPES[s.etype].name, emoji: D.ENEMY_TYPES[s.etype].emoji });
+      continue;
+    }
     spawnEnemy(state, s.type, events, s.route);
   }
 

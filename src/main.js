@@ -219,9 +219,16 @@ function handleEvents(events) {
     switch (ev.type) {
       case 'enemyHit': if (ev.kind === 'hit') SFX.hit(); break;
       case 'kill':
-        SFX.kill(); SFX.coin();
+        if (ev.boss) {
+          SFX.bossDown(true);
+          ui.toast(`🎉 대보스 ${ev.name}를 물리쳤어요!! 💰${ev.gold}`, 'good');
+        } else if (ev.midBoss) {
+          SFX.bossDown(false);
+          ui.toast(`👊 중간보스 ${ev.name} 격파! 💰${ev.gold}`, 'good');
+        } else {
+          SFX.kill(); SFX.coin();
+        }
         if (ev.mul > 1 && (ev.combo === D.COMBO.x2At || ev.combo === D.COMBO.x3At)) SFX.combo(ev.mul);
-        if (ev.boss) ui.toast('🐉 보스를 물리쳤어요!!', 'good');
         break;
       case 'shoot':
         if (ev.kind === 'arrow') SFX.shoot();
@@ -233,9 +240,18 @@ function handleEvents(events) {
         SFX.castleHit();
         ui.flashHit();
         break;
+      case 'bossWarn':
+        SFX.bossWarn(ev.tier === 'great');
+        ui.bossWarn(ev.tier, ev.name, ev.emoji);
+        break;
       case 'bossSpawn':
-        SFX.bossRoar();
-        ui.showBossBanner();
+        if (ev.tier === 'great') SFX.bossRoar();
+        else SFX.midBossRoar();
+        ui.showBossBanner(ev.tier, ev.name, ev.emoji);
+        break;
+      case 'bossEnrage':
+        SFX.bossEnrage();
+        ui.showEnrage(ev.name);
         break;
       case 'waveEnd':
         SFX.waveClear();
@@ -444,7 +460,7 @@ function tryStartWave() {
   SFX.waveStart();
   music.setWave(state.wave);
   ui.toast(`🌊 ${state.wave}웨이브 시작! 몬스터를 막아요!`);
-  if (r.boss) ui.toast('⚠️ 보스가 지름길로 돌진하는 웨이브예요!', 'bad');
+  if (r.boss) ui.toast('⚠️ 대보스가 지름길로 돌진하는 웨이브예요!', 'bad');
   ui.setWaveUI(state);
 }
 
@@ -615,18 +631,31 @@ function frame(now) {
     }
   }
 
-  /* 음악 트랙 */
+  /* 보스 상태 → 음악/분위기/체력바 */
+  const greatBoss = state.enemies.find(e => e.boss && !e.dead);
+  const midBoss = greatBoss ? null : state.enemies.find(e => e.midBoss && !e.dead);
+  const bossLevel = greatBoss ? 2 : (midBoss ? 1 : 0);
+  renderer.setBossMode(bossLevel);
+  ui.setBossAtmosphere(state.phase === 'wave' ? bossLevel : 0);
+
   if (!isMuted()) {
-    if (state.phase === 'wave') music.setTrack(D.isBossWave(state.wave) ? 'boss' : 'battle');
-    else if (state.phase === 'prep') music.setTrack('prep');
+    if (state.phase === 'wave') {
+      music.setTrack(greatBoss ? 'boss' : (midBoss ? 'midboss' : 'battle'));
+    } else if (state.phase === 'prep') music.setTrack('prep');
   }
 
   /* UI 갱신 */
   ui.updateHud(state, store.shards, store.best(state.difficulty));
   ui.setWaveUI(state);
   ui.comboChip(state.combo.count, state.combo.count >= D.COMBO.x3At ? 3 : state.combo.count >= D.COMBO.x2At ? 2 : 1);
-  const bossE = state.enemies.find(e => e.boss && !e.dead);
-  ui.setBossBar(bossE ? bossE.hp / bossE.maxHp : null);
+  const barBoss = greatBoss || midBoss;
+  ui.setBossBar(barBoss ? {
+    ratio: barBoss.hp / barBoss.maxHp,
+    name: barBoss.name,
+    emoji: D.ENEMY_TYPES[barBoss.type].emoji,
+    great: !!barBoss.boss,
+    enraged: !!barBoss.enraged,
+  } : null);
   panelT += realDt;
   if (panelT > 0.35) {           // 골드 변동에 따른 버튼 활성화 갱신
     panelT = 0;

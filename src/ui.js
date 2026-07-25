@@ -17,7 +17,7 @@ export class UI {
       'castleRows', 'heroPanel', 'hpTitle', 'hpInfo', 'upgradeBtn', 'recallBtn', 'sellBtn',
       'diffRow', 'mathModal', 'mTitle', 'mGrade', 'mProblem', 'mInput', 'mSubmit', 'mFeedback', 'mNext', 'mClose',
       'mHintBtn', 'mHint',
-      'wavePreview', 'bossBar', 'bossBarFill',
+      'wavePreview', 'bossBar', 'bossBarFill', 'bossBarName', 'bossWarnBanner',
       'overModal', 'overStats', 'overShards', 'restartBtn', 'shareBtn', 'overMetaBtn',
       'metaModal', 'metaShards', 'metaRows', 'metaClose',
     ].forEach(id => this.el[id] = $(id));
@@ -264,18 +264,71 @@ export class UI {
     const el = this.el.wavePreview;
     if (state.phase !== 'prep') { el.classList.add('hidden'); return; }
     const chips = Object.entries(counts)
-      .map(([type, n]) => `<span class="wchip${type === 'boss' ? ' boss' : ''}">${D.ENEMY_TYPES[type].emoji}×${n}</span>`)
+      .map(([type, n]) => {
+        const T = D.ENEMY_TYPES[type];
+        const cls = T.boss ? ' boss' : (T.midBoss ? ' midboss' : '');
+        return `<span class="wchip${cls}">${T.emoji}×${n}</span>`;
+      })
       .join('');
     el.innerHTML = `<span class="wlabel">다음 웨이브</span>${chips}`;
     el.classList.remove('hidden');
   }
 
-  /* ---------- 보스 체력바 ---------- */
-  setBossBar(ratio) {
+  /* ---------- 보스 체력바 (이름 + 등급별 색) ---------- */
+  setBossBar(info) {
     const el = this.el.bossBar;
-    if (ratio == null) { el.classList.add('hidden'); return; }
+    if (!info) { el.classList.add('hidden'); this._bossBarKey = null; return; }
     el.classList.remove('hidden');
-    this.el.bossBarFill.style.width = `${Math.max(0, ratio * 100)}%`;
+    const key = `${info.name}|${info.great}`;
+    if (this._bossBarKey !== key) {
+      this._bossBarKey = key;
+      this.el.bossBarName.textContent = `${info.emoji} ${info.name}`;
+      el.classList.toggle('great', !!info.great);
+      el.classList.toggle('mid', !info.great);
+    }
+    el.classList.toggle('enraged', !!info.enraged);
+    this.el.bossBarFill.style.width = `${Math.max(0, info.ratio * 100)}%`;
+  }
+
+  /* 등장 경고 배너 */
+  bossWarn(tier, name, emoji) {
+    const el = this.el.bossWarnBanner;
+    const great = tier === 'great';
+    el.textContent = great ? `⚠️ 대보스 ${emoji} ${name} 접근!!` : `⚠️ 중간보스 ${emoji} ${name} 접근!`;
+    el.classList.toggle('great', great);
+    el.classList.remove('hidden');
+    clearTimeout(this._warnT);
+    this._warnT = setTimeout(() => el.classList.add('hidden'), 2600);
+    /* 화면 가장자리 붉은 경고 점멸 */
+    const stage = this.el.scene3d.parentElement;
+    stage.classList.add('warning');
+    clearTimeout(this._warnStageT);
+    this._warnStageT = setTimeout(() => stage.classList.remove('warning'), 2600);
+  }
+
+  /* 보스 등장/분노 배너 */
+  showBossBanner(tier, name, emoji) {
+    const el = this.el.bossBanner;
+    const great = tier === 'great';
+    el.textContent = great ? `${emoji} ${name} 등장!!` : `${emoji} ${name} 등장!`;
+    el.classList.toggle('mid', !great);
+    el.classList.remove('hidden');
+    clearTimeout(this._bossT);
+    this._bossT = setTimeout(() => el.classList.add('hidden'), 2400);
+  }
+  showEnrage(name) {
+    const el = this.el.bossBanner;
+    el.textContent = `🔥 ${name} 분노!! 더 빨라졌어요!`;
+    el.classList.remove('mid');
+    el.classList.remove('hidden');
+    clearTimeout(this._bossT);
+    this._bossT = setTimeout(() => el.classList.add('hidden'), 2200);
+  }
+  /* 보스 전투 중 화면 분위기 */
+  setBossAtmosphere(level) {
+    const stage = this.el.scene3d.parentElement;
+    stage.classList.toggle('boss-mid', level === 1);
+    stage.classList.toggle('boss-great', level === 2);
   }
 
   /* ---------- 별의 축복 (메타) ---------- */
@@ -358,7 +411,7 @@ export class UI {
     const rate = state.solved ? Math.round((state.correct / state.solved) * 100) : 0;
     this.el.overStats.innerHTML =
       `🌊 도달한 웨이브: <b>${state.wave}웨이브</b> (${D.DIFFICULTIES[state.difficulty].name})<br>
-       👾 물리친 몬스터: <b>${state.kills}마리</b> ${state.bossKills ? `· 🐉 보스 ${state.bossKills}` : ''}<br>
+       👾 물리친 몬스터: <b>${state.kills}마리</b>${state.midBossKills ? ` · 👿 중간보스 ${state.midBossKills}` : ''}${state.bossKills ? ` · 🐉 대보스 ${state.bossKills}` : ''}<br>
        🎲 소환 <b>${state.summons}</b> · ⚗️ 조합 <b>${state.combos}</b> · ⬆ 강화 <b>${state.upgrades}</b><br>
        🧮 수학 문제: <b>${state.solved}문제 중 ${state.correct}개 정답 (${rate}%)</b>${state.hints ? ` · 💡 힌트 ${state.hints}회` : ''}`;
     this.el.overShards.textContent = `✨ 별조각 +${state.shardsEarned} 획득!`;
@@ -381,12 +434,6 @@ export class UI {
     el.classList.add('on');
   }
   setLowHp(on) { this.el.lowHpVignette.classList.toggle('on', on); }
-  showBossBanner() {
-    const el = this.el.bossBanner;
-    el.classList.remove('hidden');
-    clearTimeout(this._bossT);
-    this._bossT = setTimeout(() => el.classList.add('hidden'), 2600);
-  }
   coachChip() {
     if (localStorage.getItem('mathdef_coach')) return;
     localStorage.setItem('mathdef_coach', '1');
