@@ -52,7 +52,8 @@
         <button data-d="normal" class="on">⚔️ 보통</button>
         <button data-d="hard">🔥 어려움</button>
       </div>
-      <p class="hint">💡 몬스터는 구불구불한 길을 따라 성으로 와요. 용사는 길 옆 <b>돌 발판</b>에만 배치! 성이 무너지면 처음부터예요. (별조각 ✨은 남아요)</p>
+      <p class="hint keys">⌨️ <b>Space</b> 웨이브 · <b>S</b> 소환 · <b>P</b> 문제 · <b>C</b> 조합 · <b>Tab</b> 용사 고르기 · <b>←→</b> 발판 이동 · <b>Enter</b> 배치 · <b>U</b> 강화 <b>R</b> 회수 <b>X</b> 판매 · <b>3~6</b> 학년 · <b>7~9</b> 성 관리 · <b>Esc</b> 취소</p>
+      <p class="hint">💡 몬스터는 세 갈래 길로 성에 와요(가운데는 보스 지름길!). 용사는 길 옆 <b>돌 발판</b>에만 배치할 수 있어요.</p>
     </div>
   </div>
 
@@ -77,14 +78,14 @@
         <button data-g="5">5학년</button>
         <button data-g="6">6학년</button>
       </div>
-      <button id="practiceBtn" class="big blue">✏️ 문제 풀기</button>
+      <button id="practiceBtn" class="big blue">✏️ 문제 풀기 (P)</button>
       <div class="probs" id="probs"></div>
     </section>
 
     <section class="card">
       <h2>🦸 용사 소환 <span class="sub">벤치 최대 12명</span></h2>
-      <button id="summonBtn" class="big amber">🎲 용사 소환 (💰 50)</button>
-      <div id="benchHint" class="benchhint hidden">🟩 길 옆의 돌 발판을 눌러 배치!</div>
+      <button id="summonBtn" class="big amber">🎲 용사 소환 (💰 50 · S)</button>
+      <div id="benchHint" class="benchhint hidden">🟩 발판 클릭 또는 ←→ 고르고 Enter로 배치!</div>
       <div id="bench" class="bench"></div>
     </section>
 
@@ -124,9 +125,9 @@
     <div id="mHint" class="mhint hidden"></div>
     <div id="mFeedback" class="mfeedback"></div>
     <div class="mrow">
-      <button id="mHintBtn" class="hintbtn">💡 힌트 보기 (🧠 -2)</button>
-      <button id="mNext" class="hidden">➡ 다음 문제</button>
-      <button id="mClose">그만 풀기</button>
+      <button id="mHintBtn" class="hintbtn">💡 힌트 (🧠 -2 · H)</button>
+      <button id="mNext" class="hidden">➡ 다음 문제 (Enter)</button>
+      <button id="mClose">닫기 (Esc)</button>
     </div>
   </div>
 </div>
@@ -142,7 +143,7 @@
       <button id="overMetaBtn">🌟 별의 축복</button>
       <button id="shareBtn">📸 기록 카드</button>
     </div>
-    <button id="restartBtn" class="big amber">🔄 처음부터 다시 도전!</button>
+    <button id="restartBtn" class="big amber">🔄 처음부터 다시 도전! (Enter)</button>
   </div>
 </div>
 

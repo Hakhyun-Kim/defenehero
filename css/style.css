@@ -333,6 +333,34 @@ body {
 .difficulty button.on { border-color: #2478e0; background: #e3f0ff; color: #1a5cb0; }
 .difficulty button:disabled { opacity: 0.55; cursor: not-allowed; }
 .hint { font-size: 12px; color: #4a5a74; line-height: 1.5; }
+.hint.keys {
+  background: #eef4fb;
+  border: 1px solid #d5e2f2;
+  border-radius: 8px;
+  padding: 5px 10px;
+  margin-bottom: 4px;
+  color: #35507a;
+}
+.hint.keys b {
+  background: #fff;
+  border: 1px solid #b8c9e0;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-family: inherit;
+}
+.kbd {
+  display: inline-block;
+  background: #f2f6fa;
+  border: 1px solid #cdd6e2;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #5a6a84;
+  margin-left: 3px;
+}
 
 /* ===== 카드 ===== */
 .card {

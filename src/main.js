@@ -119,21 +119,60 @@ function submitMath(value) {
           ui.toast(`✨ 특수 용사 [${C.name}] 탄생! ${C.desc}`, 'good');
           renderer.celebrate(0xd8b4ff, true);
         }
-        modal.pending = null;   // 다음 조합은 패널에서 새로 고른다
-        ui.mathFeedback(true, msg, null);
+        modal.pending = null;
+        /* 예측형 흐름: 더 조합할 게 있으면 Enter로 연쇄, 없으면 자동으로 닫힌다 */
+        if (more) {
+          ui.mathFeedback(true, msg, '⚗ 계속 조합 (Enter)');
+        } else {
+          ui.mathFeedback(true, `${msg} — 잠시 후 닫혀요`, null);
+          const token = ++autoCloseToken;
+          setTimeout(() => {
+            if (token === autoCloseToken && ui.isMathOpen()) closeMathAll();
+          }, 1400);
+        }
         if (r.hero.tier === 3) ui.toast(`👑 전설! [${D.LEGEND_ABILITIES[r.hero.cls].name}] ${D.LEGEND_ABILITIES[r.hero.cls].desc}`, 'good');
       } else {
         ui.mathFeedback(true, '정답! 그런데 조합 재료가 부족해요…', null);
       }
     } else {
-      ui.mathFeedback(true, `🎉 정답! 💰+${res.gold} · 🧠 지식+${res.kp}`, '➡ 다음 문제');
+      ui.mathFeedback(true, `🎉 정답! 💰+${res.gold} · 🧠 지식+${res.kp}`, '➡ 다음 문제 (Enter)');
     }
   } else {
     SFX.wrong();
     ui.mathFeedback(false, `😢 아쉬워요! 정답은 ${modal.prob.answer} 이에요. (지식 -1)`,
-      modal.mode === 'combine' ? '🔁 다시 도전!' : '➡ 다음 문제');
+      modal.mode === 'combine' ? '🔁 다시 도전 (Enter)' : '➡ 다음 문제 (Enter)');
   }
   refreshAll();
+}
+
+/* 응답 후 Enter/Space: 상황에 맞는 다음 행동 (연쇄 조합 → 자동 종료) */
+let autoCloseToken = 0;
+function closeMathAll() {
+  autoCloseToken++;
+  ui.hideMath();
+  modal.mode = null;
+  modal.pending = null;
+}
+function chooseBestCombo() {
+  const combos = E.listCombos(state);
+  if (!combos.length) return null;
+  return combos.find(c => c.kind === 'recipe') || combos[0];
+}
+function comboToAction(c) {
+  return c.kind === 'rankup'
+    ? { kind: 'rankup', cls: c.cls, tier: String(c.tier) }
+    : { kind: 'recipe', result: c.result, tier: String(c.tier) };
+}
+function advanceMath() {
+  autoCloseToken++;
+  if (modal.mode === 'combine') {
+    if (modal.pending) { newProblem(); return; }        // 오답 재도전
+    const next = chooseBestCombo();
+    if (next) openMath('combine', comboToAction(next)); // 연쇄 조합
+    else closeMathAll();
+  } else {
+    newProblem();
+  }
 }
 
 /* ---------- 액션 ---------- */
@@ -216,15 +255,7 @@ function onGameOver() {
 
 /* ---------- UI 바인딩 ---------- */
 ui.bind({
-  onWaveStart() {
-    const r = E.startWave(state);
-    if (!r.ok) return;
-    SFX.waveStart();
-    music.setWave(state.wave);
-    ui.toast(`🌊 ${state.wave}웨이브 시작! 몬스터를 막아요!`);
-    if (r.boss) ui.toast('⚠️ 보스가 나타나는 웨이브예요!', 'bad');
-    ui.setWaveUI(state);
-  },
+  onWaveStart() { tryStartWave(); },
   onSummon: doSummon,
   onPractice() { openMath('practice'); },
   onCombine(action) { openMath('combine', action); },
@@ -348,8 +379,167 @@ ui.bind({
   },
   onShare() { ui.makeShareCard(state, store.best(state.difficulty)); },
   onMathSubmit: submitMath,
-  onMathNext() { newProblem(); },
-  onMathClose() { ui.hideMath(); modal.mode = null; },
+  onMathNext: advanceMath,
+  onMathClose: closeMathAll,
+});
+
+/* ---------- 키보드 조작 (전 기능) ---------- */
+let kbPad = null;                     // 키보드 배치 커서
+
+const freePads = () => D.PADS.map((_, i) => i).filter(i => !E.padOccupant(state, i));
+
+function cyclePad(dir) {
+  const free = freePads();
+  if (!free.length) return;
+  if (kbPad == null || !free.includes(kbPad)) kbPad = free[0];
+  else kbPad = free[(free.indexOf(kbPad) + dir + free.length) % free.length];
+  renderer.setHover(kbPad);
+}
+
+function cycleBench(dir) {
+  if (!state.bench.length) { ui.toast('벤치가 비어 있어요. S키로 소환해 보세요!', 'bad'); return; }
+  let idx = state.bench.findIndex(h => h.id === selBench);
+  idx = (idx + dir + state.bench.length) % state.bench.length;
+  const hero = state.bench[idx];
+  selBench = hero.id;
+  selHero = hero.id;
+  renderer.setPlacementMode(true, D.CLASSES[hero.cls].range);
+  renderer.setSelectedHero(null);
+  if (kbPad == null) cyclePad(1);
+  else renderer.setHover(kbPad);
+  ui.renderBench(state, selBench);
+  ui.renderHeroPanel(state, selHero);
+  SFX.tap();
+}
+
+function deselectAll() {
+  selBench = null;
+  selHero = null;
+  kbPad = null;
+  renderer.setPlacementMode(false);
+  renderer.setSelectedHero(null);
+  renderer.setHover(null);
+  ui.renderBench(state, selBench);
+  ui.renderHeroPanel(state, null);
+}
+
+function setGradeKey(g) {
+  grade = g;
+  ui.setGradeActive(g);
+  SFX.tap();
+}
+
+function tryStartWave() {
+  const r = E.startWave(state);
+  if (!r.ok) return;
+  SFX.waveStart();
+  music.setWave(state.wave);
+  ui.toast(`🌊 ${state.wave}웨이브 시작! 몬스터를 막아요!`);
+  if (r.boss) ui.toast('⚠️ 보스가 지름길로 돌진하는 웨이브예요!', 'bad');
+  ui.setWaveUI(state);
+}
+
+/* 버튼 클릭 후 Space가 그 버튼을 다시 누르지 않도록 포커스 해제 */
+document.addEventListener('click', (ev) => {
+  if (ev.target instanceof HTMLButtonElement) ev.target.blur();
+});
+
+/* 한글 IME 상태에서도 단축키가 통하도록 매핑 */
+const KO = { 'ㄴ': 's', 'ㅔ': 'p', 'ㅊ': 'c', 'ㅂ': 'q', 'ㅕ': 'u', 'ㄱ': 'r', 'ㅌ': 'x', 'ㅗ': 'h' };
+
+document.addEventListener('keydown', (ev) => {
+  let key = ev.key;
+  if (KO[key]) key = KO[key];
+  const lower = key.length === 1 ? key.toLowerCase() : key;
+
+  /* --- 수학 모달 --- */
+  if (ui.isMathOpen()) {
+    if (key === 'Escape') { ev.preventDefault(); closeMathAll(); return; }
+    if (ui.isAnswered() && (key === 'Enter' || key === ' ')) {
+      ev.preventDefault();
+      const canAdvance = !ui.el.mNext.classList.contains('hidden');
+      if (canAdvance) advanceMath();
+      else closeMathAll();
+      return;
+    }
+    if (lower === 'h' && !ui.isAnswered() && !ui.el.mHintBtn.disabled) {
+      if (document.activeElement !== ui.el.mInput || ui.el.mInput.value === '') {
+        ev.preventDefault();
+        ui.el.mHintBtn.click();
+      }
+    }
+    return;   // 나머지 키는 입력창으로
+  }
+
+  /* --- 별의 축복 모달 --- */
+  if (ui.isMetaOpen()) {
+    if (key === 'Escape' || key === 'Enter') { ev.preventDefault(); ui.hideMeta(); return; }
+    const n = Number(key);
+    if (n >= 1 && n <= 4) {
+      const btns = ui.el.metaRows.querySelectorAll('button');
+      if (btns[n - 1] && !btns[n - 1].disabled) btns[n - 1].click();
+    }
+    return;
+  }
+
+  /* --- 게임 오버 --- */
+  if (state.phase === 'over') {
+    if (key === 'Enter' || key === ' ') { ev.preventDefault(); SFX.tap(); newGame(store.diff); }
+    return;
+  }
+
+  /* --- 게임 화면 --- */
+  switch (key) {
+    case ' ':
+    case 'Enter':
+      ev.preventDefault();
+      if (selBench != null && kbPad != null) {
+        const pad = kbPad;
+        kbPad = null;
+        renderer.setHover(null);
+        doPlace(pad);
+      } else if (state.phase === 'prep') {
+        tryStartWave();
+      }
+      return;
+    case 'Escape':
+      deselectAll();
+      return;
+    case 'Tab':
+      ev.preventDefault();
+      cycleBench(ev.shiftKey ? -1 : 1);
+      return;
+    case 'ArrowLeft':
+    case 'ArrowUp':
+      if (selBench != null) { ev.preventDefault(); cyclePad(-1); }
+      return;
+    case 'ArrowRight':
+    case 'ArrowDown':
+      if (selBench != null) { ev.preventDefault(); cyclePad(1); }
+      return;
+  }
+  switch (lower) {
+    case 's': doSummon(); return;
+    case 'p': openMath('practice'); return;
+    case 'c': {
+      const combo = chooseBestCombo();
+      if (combo) openMath('combine', comboToAction(combo));
+      else ui.toast('지금 가능한 조합이 없어요. 용사를 더 모아 보세요!', 'bad');
+      return;
+    }
+    case 'q':
+      speed = speed === 1 ? 2 : 1;
+      ui.setSpeedLabel(speed);
+      SFX.tap();
+      return;
+    case 'u': if (selHero != null) ui.el.upgradeBtn.click(); return;
+    case 'r': if (selHero != null && !ui.el.recallBtn.classList.contains('hidden')) ui.el.recallBtn.click(); return;
+    case 'x': if (selHero != null) ui.el.sellBtn.click(); return;
+    case '3': case '4': case '5': case '6': setGradeKey(Number(lower)); return;
+    case '7': ui.el.castleRows.querySelector('button[data-key="repair"]')?.click(); return;
+    case '8': ui.el.castleRows.querySelector('button[data-key="fortify"]')?.click(); return;
+    case '9': ui.el.castleRows.querySelector('button[data-key="tower"]')?.click(); return;
+  }
 });
 
 /* ---------- 게임 루프 ---------- */
@@ -447,6 +637,7 @@ window.addEventListener('pointerdown', () => { music.sync(); }, { once: true });
 /* 디버그 훅 (자동 검증/테스트용) */
 window.__game = {
   get state() { return state; },
+  get modal() { return modal; },
   E, D, renderer,
   refresh: refreshAll,
   selectHero(id) { selHero = id; renderer.setSelectedHero(id); ui.renderHeroPanel(state, id); },

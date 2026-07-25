@@ -47,10 +47,8 @@ export class UI {
     el.mHintBtn.addEventListener('click', h.onHint);
     el.mInput.addEventListener('keydown', (ev) => {
       if (ev.key !== 'Enter') return;
-      if (this._answered) {
-        if (!el.mNext.classList.contains('hidden')) h.onMathNext();
-        else h.onMathClose();
-      } else h.onMathSubmit(el.mInput.value);
+      ev.stopPropagation();   // 같은 Enter가 전역 핸들러로 흘러가 이중 동작하는 것 방지
+      if (!this._answered) h.onMathSubmit(el.mInput.value);
     });
     el.grades.querySelectorAll('button').forEach(b => {
       b.addEventListener('click', () => {
@@ -95,7 +93,7 @@ export class UI {
   setWaveUI(state) {
     const el = this.el;
     if (state.phase === 'prep') {
-      el.waveBtn.textContent = `▶ ${state.wave}웨이브 시작!${D.isBossWave(state.wave) ? ' 🐉' : ''}`;
+      el.waveBtn.textContent = `▶ ${state.wave}웨이브 시작!${D.isBossWave(state.wave) ? ' 🐉' : ''} (Space)`;
       el.waveBtn.classList.remove('hidden');
       el.waveInfo.classList.add('hidden');
     } else if (state.phase === 'wave') {
@@ -200,6 +198,7 @@ export class UI {
   /* ---------- 성 업그레이드 ---------- */
   renderCastlePanel(state) {
     let html = '';
+    const hotkeys = { repair: '7', fortify: '8', tower: '9' };
     for (const [key, U] of Object.entries(D.CASTLE_UPGRADES)) {
       const n = key === 'repair' ? 0 : state.castle[key];
       const maxed = U.max && n >= U.max;
@@ -208,7 +207,7 @@ export class UI {
       const disabled = maxed || full || state.gold < cost || state.phase === 'over';
       const lvLabel = U.max && key !== 'repair' ? ` <span class="cnt">${n}/${U.max}</span>` : '';
       html += `<div class="combine-row">
-        <span>${U.emoji}</span> ${U.name}${lvLabel}
+        <span>${U.emoji}</span> ${U.name}<span class="kbd">${hotkeys[key]}</span>${lvLabel}
         <span class="cdesc">${U.desc}</span>
         <button data-key="${key}" ${disabled ? 'disabled' : ''}>${maxed ? 'MAX' : `💰${cost}`}</button>
       </div>`;
@@ -248,11 +247,12 @@ export class UI {
       el.upgradeBtn.disabled = true;
     } else {
       const cost = D.levelCost(hero.tier, hero.level);
-      el.upgradeBtn.textContent = `⬆ 강화 Lv${hero.level + 1} (💰${cost})`;
+      el.upgradeBtn.textContent = `⬆ 강화 Lv${hero.level + 1} (💰${cost} · U)`;
       el.upgradeBtn.disabled = state.gold < cost;
     }
+    el.recallBtn.textContent = '↩ 회수 (R)';
     el.recallBtn.classList.toggle('hidden', !onField);
-    el.sellBtn.textContent = `💰 판매 (+${D.SELL_PRICE[hero.tier]})`;
+    el.sellBtn.textContent = `💰 판매 +${D.SELL_PRICE[hero.tier]} (X)`;
   }
 
   /* ---------- 다음 웨이브 미리보기 ---------- */
@@ -317,7 +317,7 @@ export class UI {
     el.mHint.classList.add('hidden');
     el.mHint.textContent = '';
     el.mHintBtn.disabled = false;
-    el.mHintBtn.textContent = `💡 힌트 보기 (🧠 -${D.HINT_COST})`;
+    el.mHintBtn.textContent = `💡 힌트 (🧠 -${D.HINT_COST} · H)`;
     setTimeout(() => el.mInput.focus(), 30);
   }
   showHint(text) {
@@ -343,6 +343,11 @@ export class UI {
   }
   hideMath() { this.el.mathModal.classList.add('hidden'); }
   isMathOpen() { return !this.el.mathModal.classList.contains('hidden'); }
+  isAnswered() { return !!this._answered; }
+  setGradeActive(g) {
+    this.el.grades.querySelectorAll('button').forEach(b =>
+      b.classList.toggle('on', Number(b.dataset.g) === g));
+  }
 
   /* ---------- 게임 오버 ---------- */
   showOver(state) {
@@ -385,7 +390,7 @@ export class UI {
     el.classList.remove('hidden');
     setTimeout(() => el.classList.add('hidden'), 9000);
   }
-  setSpeedLabel(s) { this.el.speedBtn.textContent = `⏩ x${s}`; }
+  setSpeedLabel(s) { this.el.speedBtn.textContent = `⏩ x${s} (Q)`; }
   setMuteLabel(m) { this.el.muteBtn.textContent = m ? '🔇' : '🔊'; }
 
   /* ---------- 기록 카드 (공유용 PNG) ---------- */
