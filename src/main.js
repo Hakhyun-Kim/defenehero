@@ -6,7 +6,7 @@ import * as E from './engine.js';
 import * as MathGen from './math.js';
 import { Renderer3D } from './render3d.js';
 import { UI } from './ui.js';
-import { SFX, toggleMute, isMuted } from './sfx.js';
+import { SFX, toggleSfx, toggleMusic, toggleAll, isSfxMuted, isMusicMuted } from './sfx.js';
 import { music } from './music.js';
 
 /* ---------- 저장 ---------- */
@@ -347,8 +347,14 @@ ui.bind({
     ui.setSpeedLabel(speed);
     SFX.tap();
   },
-  onMute() {
-    ui.setMuteLabel(toggleMute());
+  onToggleSfx() {
+    toggleSfx();
+    ui.setSoundLabels(isSfxMuted(), isMusicMuted());
+    if (!isSfxMuted()) SFX.tap();
+  },
+  onToggleBgm() {
+    toggleMusic();
+    ui.setSoundLabels(isSfxMuted(), isMusicMuted());
     music.sync();
   },
   onGrade(g) { grade = g; SFX.tap(); },
@@ -540,7 +546,7 @@ document.addEventListener('click', (ev) => {
 });
 
 /* 한글 IME 상태에서도 단축키가 통하도록 매핑 */
-const KO = { 'ㄴ': 's', 'ㅔ': 'p', 'ㅊ': 'c', 'ㅂ': 'q', 'ㄱ': 'r', 'ㅌ': 'x', 'ㅗ': 'h', 'ㄹ': 'f' };
+const KO = { 'ㄴ': 's', 'ㅔ': 'p', 'ㅊ': 'c', 'ㅂ': 'q', 'ㄱ': 'r', 'ㅌ': 'x', 'ㅗ': 'h', 'ㅡ': 'm', 'ㄹ': 'f' };
 
 document.addEventListener('keydown', (ev) => {
   let key = ev.key;
@@ -630,6 +636,13 @@ document.addEventListener('keydown', (ev) => {
       }
       return;
     }
+    case 'm': {
+      const off = toggleAll();
+      ui.setSoundLabels(isSfxMuted(), isMusicMuted());
+      music.sync();
+      ui.toast(off ? '🔇 소리를 모두 껐어요 (M)' : '🔊 소리를 다시 켰어요 (M)');
+      return;
+    }
     case 'q':
       speed = speed === 1 ? 2 : 1;
       ui.setSpeedLabel(speed);
@@ -711,7 +724,7 @@ function frame(now) {
   renderer.setBossMode(bossLevel);
   ui.setBossAtmosphere(state.phase === 'wave' ? bossLevel : 0);
 
-  if (!isMuted()) {
+  if (!isMusicMuted()) {
     if (state.phase === 'wave') {
       music.setTrack(greatBoss ? 'boss' : (midBoss ? 'midboss' : 'battle'));
     } else if (state.phase === 'prep') music.setTrack('prep');
@@ -742,7 +755,7 @@ function frame(now) {
 
 /* ---------- 시작 ---------- */
 newGame(store.diff);
-ui.setMuteLabel(isMuted());
+ui.setSoundLabels(isSfxMuted(), isMusicMuted());
 ui.setSpeedLabel(speed);
 ui.coachChip();
 requestAnimationFrame(frame);

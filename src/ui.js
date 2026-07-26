@@ -85,8 +85,8 @@ export class UI {
     [
       'bestWave', 'shards', 'metaBtn', 'castleText', 'castleFill', 'castleGhost',
       'scene3d', 'hitFlash', 'lowHpVignette', 'bossBanner', 'comboChip', 'waveInfo', 'remainN',
-      'waveBtn', 'coachChip', 'toasts', 'gold', 'waveNo', 'speedBtn', 'muteBtn',
-      'grades', 'summonBtn', 'benchHint', 'bench', 'combineRows',
+      'waveBtn', 'coachChip', 'toasts', 'gold', 'waveNo', 'speedBtn', 
+      'grades', 'summonBtn', 'benchHint', 'bench', 'combineRows', 'sfxBtn', 'bgmBtn',
       'castleRows', 'heroPanel', 'hpTitle', 'hpInfo', 'recallBtn', 'sellBtn', 'moveHint',
       'diffRow', 'mathModal', 'mTitle', 'mGrade', 'mProblem', 'mInput', 'mSubmit', 'mFeedback', 'mNext', 'mClose',
       'mHintBtn', 'mHint',
@@ -105,7 +105,8 @@ export class UI {
     el.waveBtn.addEventListener('click', h.onWaveStart);
     el.summonBtn.addEventListener('click', h.onSummon);
     el.speedBtn.addEventListener('click', h.onSpeed);
-    el.muteBtn.addEventListener('click', h.onMute);
+    el.sfxBtn.addEventListener('click', h.onToggleSfx);
+    el.bgmBtn.addEventListener('click', h.onToggleBgm);
     el.metaBtn.addEventListener('click', h.onMetaOpen);
     el.overMetaBtn.addEventListener('click', h.onMetaOpen);
     el.metaClose.addEventListener('click', () => this.hideMeta());
@@ -585,7 +586,13 @@ export class UI {
     setTimeout(() => el.classList.add('hidden'), 9000);
   }
   setSpeedLabel(s) { this.el.speedBtn.textContent = `⏩ x${s} (Q)`; }
-  setMuteLabel(m) { this.el.muteBtn.textContent = m ? '🔇' : '🔊'; }
+  /* 음소거 버튼 상태 — 꺼진 건 한눈에 보이게 (아이콘 + 회색 처리) */
+  setSoundLabels(sfxOff, bgmOff) {
+    this.el.sfxBtn.textContent = sfxOff ? '🔇 효과음' : '🔊 효과음';
+    this.el.sfxBtn.classList.toggle('off', sfxOff);
+    this.el.bgmBtn.textContent = bgmOff ? '🔇 배경음' : '🎵 배경음';
+    this.el.bgmBtn.classList.toggle('off', bgmOff);
+  }
 
   /* ---------- 기록 카드 (공유용 PNG) ---------- */
   makeShareCard(state, best) {

@@ -7,7 +7,7 @@
  *   ⑤ 드럼(킥·스네어·하이햇)  ⑥ 리버브(피드백 딜레이)
  * 트랙: prep(준비) / battle(전투) / midboss(중간보스) / boss(대보스)
  * ===================================================== */
-import { getAc, getMaster, isMuted } from './sfx.js';
+import { getAc, getMaster, isMusicMuted } from './sfx.js';
 
 const semi = (n) => Math.pow(2, n / 12);
 const NOTE = (s, base = 220) => base * semi(s);
@@ -183,7 +183,7 @@ let waveBoost = 0;
 
 function schedule() {
   const c = getAc();
-  if (!c || !current || isMuted()) return;
+  if (!c || !current || isMusicMuted()) return;
   const T = TRACKS[current];
   const bpm = T.bpm + waveBoost;
   const stepDur = 60 / bpm / 4;                 // 16분음표

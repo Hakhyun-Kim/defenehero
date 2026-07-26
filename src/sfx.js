@@ -4,7 +4,9 @@
  * ===================================================== */
 let ctx = null;
 let master = null;
-let muted = localStorage.getItem('mathdef_mute') === '1';
+/* 효과음과 배경음을 따로 끌 수 있다 — 배경음만 끄고 싶은 요구가 가장 흔하다 */
+let sfxMuted = localStorage.getItem('mathdef_mute_sfx') === '1';
+let musicMuted = localStorage.getItem('mathdef_mute_bgm') === '1';
 
 export function getAc() {
   if (!ctx) {
@@ -21,7 +23,7 @@ export function getAc() {
 export const getMaster = () => { getAc(); return master; };
 
 export function tone(freq, start = 0, dur = 0.1, type = 'triangle', vol = 0.1, glideTo = 0) {
-  if (muted) return;
+  if (sfxMuted) return;
   const c = getAc(); if (!c) return;
   const t0 = c.currentTime + start;
   const o = c.createOscillator(), g = c.createGain();
@@ -36,7 +38,7 @@ export function tone(freq, start = 0, dur = 0.1, type = 'triangle', vol = 0.1, g
 }
 
 export function noise(start = 0, dur = 0.08, vol = 0.1, freq = 1200, q = 0.8) {
-  if (muted) return;
+  if (sfxMuted) return;
   const c = getAc(); if (!c) return;
   const t0 = c.currentTime + start;
   const len = Math.max(1, Math.floor(c.sampleRate * dur));
@@ -54,13 +56,28 @@ export function noise(start = 0, dur = 0.08, vol = 0.1, freq = 1200, q = 0.8) {
   src.start(t0);
 }
 
-/* ---------- 뮤트 ---------- */
-export function toggleMute() {
-  muted = !muted;
-  localStorage.setItem('mathdef_mute', muted ? '1' : '0');
-  return muted;
+/* ---------- 음소거 ---------- */
+export function toggleSfx() {
+  sfxMuted = !sfxMuted;
+  localStorage.setItem('mathdef_mute_sfx', sfxMuted ? '1' : '0');
+  return sfxMuted;
 }
-export const isMuted = () => muted;
+export function toggleMusic() {
+  musicMuted = !musicMuted;
+  localStorage.setItem('mathdef_mute_bgm', musicMuted ? '1' : '0');
+  return musicMuted;
+}
+/* 전체 음소거 토글 (M키): 하나라도 켜져 있으면 둘 다 끈다 */
+export function toggleAll() {
+  const off = !(sfxMuted && musicMuted);
+  sfxMuted = off; musicMuted = off;
+  localStorage.setItem('mathdef_mute_sfx', off ? '1' : '0');
+  localStorage.setItem('mathdef_mute_bgm', off ? '1' : '0');
+  return off;
+}
+export const isSfxMuted = () => sfxMuted;
+export const isMusicMuted = () => musicMuted;
+export const isMuted = () => musicMuted;      // 하위 호환(BGM 기준)
 
 /* ---------- 빈도 제한 ---------- */
 const last = {};

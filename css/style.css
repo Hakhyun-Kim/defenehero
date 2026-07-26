@@ -466,8 +466,17 @@ body {
   border-radius: 8px;
   padding: 4px 8px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 700;
   font-family: inherit;
+  white-space: nowrap;
+}
+/* 꺼진 소리 버튼은 회색으로 눌린 듯이 */
+.minibtns button.off {
+  background: #e3e7ee;
+  color: #98a3b4;
+  border-color: #c3cbd8;
+  text-decoration: line-through;
 }
 
 /* ===== 버튼 ===== */
