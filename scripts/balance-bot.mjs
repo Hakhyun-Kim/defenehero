@@ -24,19 +24,19 @@ const PROFILES = {
   /* 초보: 문제를 거의 안 풀고, 조합도 잘 모름, 뽑는 대로 배치 */
   '초보': {
     acc: 0.45, grade: 3, problemsPerPrep: 1,
-    combineChance: 0.15, reserve: 0, upgradeOver: Infinity,
+    combineChance: 0.15, reserve: 0,
     useCastle: false, midWave: false, sloppy: 0.5,
   },
   /* 보통: 가끔 문제 풀고 조합도 하지만 최적은 아님 */
   '보통': {
     acc: 0.7, grade: 4, problemsPerPrep: 3,
-    combineChance: 0.7, reserve: 50, upgradeOver: 200,
+    combineChance: 0.7, reserve: 50,
     useCastle: 'repairOnly', midWave: false, sloppy: 0.3,
   },
   /* 고수: 수학 열심히, 조합/강화/포탑 풀활용 */
   '고수': {
     acc: 0.9, grade: 6, problemsPerPrep: 6,
-    combineChance: 1.0, reserve: 100, upgradeOver: 120,
+    combineChance: 1.0, reserve: 100,
     useCastle: true, midWave: true,
   },
 };
@@ -93,7 +93,7 @@ function prepActions(state, P) {
     if (!passed) break;
     const pick = combos[0];
     const r = pick.kind === 'recipe'
-      ? E.combineRecipe(state, pick.result, pick.tier)
+      ? E.combineRecipe(state, pick.result)
       : E.combineRankUp(state, pick.cls, pick.tier);
     if (r.ok && tries === 0) E.refundFirstTry(state, r.cost, P.grade);
   }
@@ -107,12 +107,6 @@ function prepActions(state, P) {
       if (state.wave >= 8 && state.castle.tower < 2 && state.gold > 400) E.castleUpgrade(state, 'tower');
       if (state.wave >= 6 && state.castle.fortify < 3 && state.gold > 350) E.castleUpgrade(state, 'fortify');
     }
-  }
-  /* 6) 용사 강화: 여유 골드로 최고 등급 용사부터 */
-  const heroes = [...state.field].sort((a, b) => b.tier - a.tier || b.level - a.level);
-  for (const h of heroes) {
-    if (state.gold <= P.upgradeOver) break;
-    E.upgradeHero(state, h.id);
   }
 }
 

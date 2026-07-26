@@ -16,9 +16,9 @@ function rangeLabel(range) {
 
 /* 조합 결과 미리보기용 가상 용사 (상태를 바꾸지 않는다) */
 function previewHero(cls, tier, state) {
-  const s = D.heroStats(cls, tier, 1);
+  const s = D.heroStats(cls, tier);
   return {
-    id: -1, cls, tier, level: 1, padIndex: -1,
+    id: -1, cls, tier, padIndex: -1,
     dmg: Math.round(s.dmg * (state ? state.dmgMul : 1)),
   };
 }
@@ -44,23 +44,21 @@ export function describeHero(hero, state, preview) {
   if (m.healOnKill) rows.push(`💚 처치 시 성 회복 <b>+${m.healOnKill}</b>`);
 
   let ability = '';
-  if (hero.tier === 3) {
-    const A = D.LEGEND_ABILITIES[hero.cls];
-    ability = `<div class="tt-legend">⭐ ${A.name} — ${A.desc}</div>`;
-  }
+  const MA = hero.tier >= 4 ? D.MYTHIC_ABILITIES[hero.cls] : null;
+  const LA = D.LEGEND_ABILITIES[hero.cls];
+  if (MA) ability = `<div class="tt-mythic">🌌 ${MA.name} — ${MA.desc}</div>`;
+  else if (hero.tier === 3 && LA) ability = `<div class="tt-legend">⭐ ${LA.name} — ${LA.desc}</div>`;
   let recipe = '';
-  if (C.special) {
+  if (C.recipe) {
     const [a, b] = C.recipe;
-    recipe = `<div class="tt-recipe">✨ ${D.CLASSES[a].emoji}+${D.CLASSES[b].emoji} 조합 전용 특수 용사</div>`;
+    const label = C.mythic ? '🌌 신화 조합 전용' : '✨ 조합 전용 특수 용사';
+    recipe = `<div class="tt-recipe">${label} (${D.CLASSES[a].emoji}+${D.CLASSES[b].emoji})</div>`;
   }
   const barPct = Math.round((m.range / D.RANGE_MAX) * 100);
   const onField = hero.padIndex >= 0;
-  const upgradeLine = hero.level >= D.HERO_LEVEL_MAX
-    ? '최고 레벨'
-    : `강화 Lv${hero.level + 1} 💰${D.levelCost(hero.tier, hero.level)}`;
   const foot = preview
     ? '🔮 조합하면 이렇게 나와요 (미리보기)'
-    : `${onField ? '배치됨 · 빈 발판 클릭으로 이동 · 우클릭 회수' : '벤치 · 발판을 눌러 배치'} · ${upgradeLine}`;
+    : (onField ? '배치됨 · 빈 발판 클릭으로 이동 · 우클릭 회수' : '벤치 · 발판을 눌러 배치');
 
   return `
     <div class="tt-head">
@@ -68,7 +66,6 @@ export function describeHero(hero, state, preview) {
       <span class="tt-emoji">${C.emoji}</span>
       <span class="tt-name">${C.name}</span>
       <span class="tt-tier" style="background:${T.color}">${T.name}</span>
-      ${preview ? '' : `<span class="tt-lv">Lv${hero.level}</span>`}
     </div>
     <div class="tt-range">
       <span class="tt-rlabel ${rl.cls}">${rl.text}</span>
@@ -90,7 +87,7 @@ export class UI {
       'scene3d', 'hitFlash', 'lowHpVignette', 'bossBanner', 'comboChip', 'waveInfo', 'remainN',
       'waveBtn', 'coachChip', 'toasts', 'gold', 'waveNo', 'speedBtn', 'muteBtn',
       'grades', 'summonBtn', 'benchHint', 'bench', 'combineRows',
-      'castleRows', 'heroPanel', 'hpTitle', 'hpInfo', 'upgradeBtn', 'recallBtn', 'sellBtn', 'moveHint',
+      'castleRows', 'heroPanel', 'hpTitle', 'hpInfo', 'recallBtn', 'sellBtn', 'moveHint',
       'diffRow', 'mathModal', 'mTitle', 'mGrade', 'mProblem', 'mInput', 'mSubmit', 'mFeedback', 'mNext', 'mClose',
       'mHintBtn', 'mHint',
       'wavePreview', 'bossBar', 'bossBarFill', 'bossBarName', 'bossWarnBanner',
@@ -114,7 +111,6 @@ export class UI {
     el.metaClose.addEventListener('click', () => this.hideMeta());
     el.restartBtn.addEventListener('click', h.onRestart);
     el.shareBtn.addEventListener('click', h.onShare);
-    el.upgradeBtn.addEventListener('click', () => h.onUpgrade());
     el.recallBtn.addEventListener('click', () => h.onRecall());
     el.sellBtn.addEventListener('click', () => h.onSell());
     el.mSubmit.addEventListener('click', () => h.onMathSubmit(el.mInput.value));
@@ -238,7 +234,7 @@ export class UI {
         `<div class="em">${C.emoji}${badges ? `<span class="bdgs">${badges}</span>` : ''}</div>` +
         `<div class="nm">${C.name}</div>` +
         `<div class="rg ${rl.cls}">🎯${m.range}</div>` +
-        `<div class="tr">${T.name}${hero.level > 1 ? ` <span class="lv">Lv${hero.level}</span>` : ''}</div>`;
+        `<div class="tr">${T.name}</div>`;
       d.addEventListener('click', () => this.h.onBenchSelect(hero.id));
       d.addEventListener('mouseenter', (ev) => this.showTooltip(hero, state, ev.clientX, ev.clientY));
       d.addEventListener('mousemove', (ev) => this.moveTooltip(ev.clientX, ev.clientY));
@@ -248,13 +244,15 @@ export class UI {
     this.el.benchHint.classList.toggle('hidden', selId == null);
   }
 
-  /* ---------- 조합 (등급업 + 레시피 도감) ---------- */
+  /* ---------- 조합 (3세대 도감: 등급업 / 특수 / 신화) ---------- */
   renderCombine(state) {
+    const combos = E.listCombos(state);
+    const byResult = new Map(combos.filter(c => c.kind === 'recipe').map(c => [c.result, c]));
     let html = '';
 
-    /* ① 등급업: 같은 용사 2명 → 등급+1 (가능한 것만 표시) */
-    const rankups = E.listCombos(state).filter(c => c.kind === 'rankup');
-    html += `<div class="combine-sub">⬆ 등급업 <span class="cnt">같은 용사 2명 + 골드 · 배치된 용사도 재료 OK</span></div>`;
+    /* ① 등급업 — 같은 용사 2명 (천장: 전설) */
+    const rankups = combos.filter(c => c.kind === 'rankup');
+    html += `<div class="combine-sub">⬆ 등급업 <span class="cnt">같은 용사 2명 · 전설까지 (배치된 용사도 재료 OK)</span></div>`;
     if (!rankups.length) {
       html += `<div class="combine-empty">같은 직업·같은 등급 용사 2명을 모아 보세요</div>`;
     }
@@ -268,30 +266,38 @@ export class UI {
       </div>`;
     }
 
-    /* ② 특수 레시피 도감: 항상 전부 표시 + 재료 보유 표시 */
-    html += `<div class="combine-sub">✨ 특수 조합법 <span class="cnt">서로 다른 두 용사(같은 등급)</span></div>`;
-    for (const r of D.RECIPES) {
-      const A = D.CLASSES[r.a], B = D.CLASSES[r.b], R = D.CLASSES[r.result];
-      let readyTier = -1;
-      for (let t = 0; t <= 2; t++) {
-        if (E.unitsOf(state, r.a, t).length >= 1 && E.unitsOf(state, r.b, t).length >= 1) { readyTier = t; break; }
+    /* ②③ 레시피 도감 — 특수(2세대) / 신화(3세대) */
+    const all = [...state.bench, ...state.field];
+    const has = (cls) => all.some(h => h.cls === cls);
+    const renderRecipes = (gen) => {
+      let out = '';
+      for (const r of D.RECIPES.filter(x => x.gen === gen)) {
+        const A = D.CLASSES[r.a], B = D.CLASSES[r.b], R = D.CLASSES[r.result];
+        const c = byResult.get(r.result);
+        const made = state.discovered && state.discovered.has(r.result);
+        const canPay = !!(c && c.affordable);
+        const rtier = c ? c.resultTier : (gen === 3 ? 3 : 1);
+        let right;
+        if (c) {
+          right = `<button data-kind="recipe" data-result="${r.result}"
+            ${canPay ? '' : 'disabled'}>⚗ ${D.TIERS[c.resultTier].name} 💰${c.cost}</button>`;
+        } else {
+          right = `<span class="cnt need">${has(r.a) || has(r.b) ? '재료 하나 더' : '재료 모으기'}</span>`;
+        }
+        out += `<div class="combine-row recipe${canPay ? ' ready' : ''}${gen === 3 ? ' mythic' : ''}">
+          <span class="ing${has(r.a) ? ' have' : ''}">${A.emoji}</span>+<span class="ing${has(r.b) ? ' have' : ''}">${B.emoji}</span>
+          <span class="rarrow">→</span>
+          <span class="peek" data-cls="${r.result}" data-rtier="${rtier}">${R.emoji} <b>${R.name}</b>${made ? ' <span class="found">✓</span>' : ''}</span>
+          ${right}
+        </div>`;
       }
-      const all = [...state.bench, ...state.field];
-      const hasA = all.some(h => h.cls === r.a);
-      const hasB = all.some(h => h.cls === r.b);
-      const ready = readyTier >= 0;
-      const cost = ready ? D.combineCost(readyTier + 1, true) : 0;
-      const canPay = ready && state.gold >= cost;
-      html += `<div class="combine-row recipe${canPay ? ' ready' : ''}">
-        <span class="ing${hasA ? ' have' : ''}">${A.emoji}</span>+<span class="ing${hasB ? ' have' : ''}">${B.emoji}</span>
-        <span class="rarrow">→</span>
-        <span class="peek" data-cls="${r.result}" data-rtier="${ready ? readyTier + 1 : 1}">${R.emoji} <b>${R.name}</b></span>
-        ${ready
-          ? `<button data-kind="recipe" data-result="${r.result}" data-tier="${readyTier}"
-               ${canPay ? '' : 'disabled'}>⚗ ${D.TIERS[readyTier + 1].name} 💰${cost}</button>`
-          : `<span class="cnt need">${hasA || hasB ? '같은 등급 필요' : '재료 모으기'}</span>`}
-      </div>`;
-    }
+      return out;
+    };
+
+    html += `<div class="combine-sub">✨ 특수 조합 <span class="cnt">서로 다른 두 용사 · 등급이 달라도 OK(낮은 쪽 +1)</span></div>`;
+    html += renderRecipes(2);
+    html += `<div class="combine-sub mythic">🌌 신화 조합 <span class="cnt">특수 + 특수 = 최강! 신화 등급은 이 길로만</span></div>`;
+    html += renderRecipes(3);
 
     this.el.combineRows.innerHTML = html;
     this.el.combineRows.querySelectorAll('button').forEach(b => {
@@ -341,14 +347,6 @@ export class UI {
     el.heroPanel.classList.remove('hidden');
     el.hpTitle.textContent = onField ? '🧍 선택한 용사 (배치됨)' : '🧍 선택한 용사 (벤치)';
     el.hpInfo.innerHTML = describeHero(hero, state);
-    if (hero.level >= D.HERO_LEVEL_MAX) {
-      el.upgradeBtn.textContent = '⬆ 최고 레벨!';
-      el.upgradeBtn.disabled = true;
-    } else {
-      const cost = D.levelCost(hero.tier, hero.level);
-      el.upgradeBtn.textContent = `⬆ 강화 Lv${hero.level + 1} (💰${cost} · U)`;
-      el.upgradeBtn.disabled = state.gold < cost;
-    }
     el.recallBtn.textContent = '↩ 회수 (R / 우클릭)';
     el.recallBtn.classList.toggle('hidden', !onField);
     el.sellBtn.textContent = `💰 판매 +${D.SELL_PRICE[hero.tier]} (X)`;
@@ -528,7 +526,7 @@ export class UI {
     this.el.overStats.innerHTML =
       `🌊 도달한 웨이브: <b>${state.wave}웨이브</b> (${D.DIFFICULTIES[state.difficulty].name})<br>
        👾 물리친 몬스터: <b>${state.kills}마리</b>${state.midBossKills ? ` · 👿 중간보스 ${state.midBossKills}` : ''}${state.bossKills ? ` · 🐉 대보스 ${state.bossKills}` : ''}<br>
-       🎲 소환 <b>${state.summons}</b> · ⚗️ 조합 <b>${state.combos}</b> · ⬆ 강화 <b>${state.upgrades}</b><br>
+       🎲 소환 <b>${state.summons}</b> · ⚗️ 조합 <b>${state.combos}</b> · ✨ 특수 <b>${state.specialsMade}</b> · 🌌 신화 <b>${state.mythicsMade}</b><br>
        🧮 수학 문제: <b>${state.solved}문제 중 ${state.correct}개 정답 (${rate}%)</b>${state.hints ? ` · 💡 힌트 ${state.hints}회` : ''}`;
     this.el.overShards.textContent = `✨ 별조각 +${state.shardsEarned} 획득!`;
     this.el.overModal.classList.remove('hidden');
@@ -549,11 +547,11 @@ export class UI {
     el.classList.add('pop');
     clearTimeout(this._revealT);
     this._revealT = setTimeout(() => { el.classList.add('hidden'); el.classList.remove('pop'); },
-      tier >= 2 ? 1500 : 900);
-    if (tier >= 2) this.flashScreen(tier === 3 ? 'legend' : 'hero');
+      tier >= 3 ? 1800 : tier >= 2 ? 1500 : 900);
+    if (tier >= 2) this.flashScreen(tier >= 4 ? 'mythic' : tier === 3 ? 'legend' : 'hero');
   }
 
-  flashCombine(tier) { this.flashScreen(tier === 3 ? 'legend' : 'hero'); }
+  flashCombine(tier) { this.flashScreen(tier >= 4 ? 'mythic' : tier === 3 ? 'legend' : 'hero'); }
 
   flashScreen(kind) {
     const el = this.el.rarityFlash;

@@ -1,17 +1,17 @@
 {
-  "comment": "밸런스 회귀 기준선 (v9 수학=조합 전용, 전투 보상 중심 경제). node scripts/balance-bot.mjs 120 check (Bash 권장).",
+  "comment": "밸런스 회귀 기준선 (v10 레벨 제거 + 3세대 조합 트리/신화 등급). node scripts/balance-bot.mjs 60 check (Bash 권장). 고수는 신화 도달 여부로 분포가 이봉형이라 편차가 큼 — tolerance 넉넉히.",
   "date": "2026-07-26",
-  "runs": 120,
-  "tolerance": 3,
+  "runs": 60,
+  "tolerance": 5,
   "medians": {
     "easy/초보": 9,
     "easy/보통": 11,
-    "easy/고수": 28,
+    "easy/고수": 32,
     "normal/초보": 7,
-    "normal/보통": 10,
-    "normal/고수": 14,
+    "normal/보통": 9,
+    "normal/고수": 30,
     "hard/초보": 6,
-    "hard/보통": 7,
-    "hard/고수": 10
+    "hard/보통": 6,
+    "hard/고수": 9
   }
 }

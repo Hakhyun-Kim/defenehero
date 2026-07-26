@@ -57,13 +57,18 @@ export const HINT_GOLD = 30;          // 힌트는 골드로 산다
 /* 소환 확률(%) — 고정. 전설은 소환으로 거의 안 나오고 조합으로 얻는 게 정석 */
 export const SUMMON_PROBS = [64, 26.5, 8, 1.5];
 
-/* ---------- 용사 ---------- */
+/* ---------- 용사 ----------
+ * 등급 사다리. 레벨 개념은 없다 — 강해지는 길은 오직 "조합".
+ * 신화(4)는 **조합 레시피로만** 도달할 수 있다(등급업으로는 전설이 천장). */
 export const TIERS = [
   { name: '일반', color: '#8a97a8', mult: 1 },
-  { name: '희귀', color: '#3b82f6', mult: 2.2 },
-  { name: '영웅', color: '#a855f7', mult: 5 },
-  { name: '전설', color: '#f59e0b', mult: 12 },
+  { name: '희귀', color: '#3b82f6', mult: 2.8 },
+  { name: '영웅', color: '#a855f7', mult: 7.2 },
+  { name: '전설', color: '#f59e0b', mult: 13 },
+  { name: '신화', color: '#ff4d9d', mult: 17 },
 ];
+export const MAX_TIER = 4;
+export const RANKUP_MAX_TIER = 3;      // 등급업(같은 용사 2명)의 천장 = 전설
 
 /* 직업 정의 — 기본 4종(소환으로만 등장) + 특수 6종(레시피 조합으로만 탄생)
  * atk: melee(근접 즉시) | arrow(화살 투사체) | orb(구슬 투사체)
@@ -123,6 +128,27 @@ export const CLASSES = {
     atk: 'arrow', dmg: 10, spd: 1.4, range: 190, splash: 40,
     desc: '화살이 별빛으로 폭발해요',
   },
+
+  /* --- 신화 (특수 + 특수 = 3세대 조합의 정점) --- */
+  swordsaint: {
+    name: '검성', emoji: '⚡', mythic: true, recipe: ['spellblade', 'windblade'],
+    atk: 'melee', dmg: 20, spd: 1.3, range: 115, hits: 2, burn: 0.3,
+    crit: { chance: 0.35, mul: 2.6 }, cleave: true,
+    desc: '사거리 안 모든 적을 2번씩 베고 불태운다! 치명타 35%',
+  },
+  archmage: {
+    name: '대마도사', emoji: '🌌', mythic: true, recipe: ['frostmage', 'spiritarcher'],
+    atk: 'orb', dmg: 22, spd: 0.85, range: 205, splash: 95,
+    splashSlow: { mul: 0.5, dur: 1.8 }, burn: 0.2,
+    desc: '거대한 별의 폭발 — 얼리고 불태우며 광범위를 쓸어버린다',
+  },
+  seraph: {
+    name: '수호천사', emoji: '😇', mythic: true, recipe: ['paladin', 'sentinel'],
+    atk: 'arrow', dmg: 24, spd: 0.95, range: 250,
+    slowOnHit: { mul: 0.55, dur: 1.5 }, block: { period: 4.5, dur: 1.5 },
+    healOnKill: 2, crit: { chance: 0.25, mul: 2.2 },
+    desc: '초장거리 저격 + 방패 장벽 + 처치마다 성 회복 2 — 완전체',
+  },
 };
 
 /* 정지(길막) 관련 */
@@ -131,12 +157,18 @@ export const STUN_BOSS_MUL = 0.35;      // 보스는 정지에 강하게 저항
 export const STUN_IMMUNE = 2.6;
 export const RANGE_MAX = 260;           // UI 사거리 바의 기준(최댓값)
 export const CLASS_KEYS = Object.keys(CLASSES);
-export const GACHA_KEYS = CLASS_KEYS.filter(k => !CLASSES[k].special);
+/* 소환으로는 기본 4종만 — 특수·신화는 조합으로만 얻는다 */
+export const GACHA_KEYS = CLASS_KEYS.filter(k => !CLASSES[k].special && !CLASSES[k].mythic);
 
-/* 레시피 목록 (UI 도감·봇 공용) */
+/* 레시피 목록 (UI 도감·봇 공용). gen 2 = 특수, gen 3 = 신화 */
 export const RECIPES = CLASS_KEYS
   .filter(k => CLASSES[k].recipe)
-  .map(k => ({ result: k, a: CLASSES[k].recipe[0], b: CLASSES[k].recipe[1] }));
+  .map(k => ({
+    result: k,
+    a: CLASSES[k].recipe[0],
+    b: CLASSES[k].recipe[1],
+    gen: CLASSES[k].mythic ? 3 : 2,
+  }));
 
 export function findRecipe(clsA, clsB) {
   return RECIPES.find(r => (r.a === clsA && r.b === clsB) || (r.a === clsB && r.b === clsA)) || null;
@@ -168,6 +200,33 @@ export const LEGEND_OVERRIDES = {
   frostmage:    { splashMul: 1.3, splashSlow: { mul: 0.45, dur: 2.0 } },
   sentinel:     { pierce: 2 },
   spiritarcher: { splashMul: 1.6, burn: 0.15 },
+  /* 신화 클래스가 전설 등급일 때 (신화 등급 전 단계) */
+  swordsaint:   { crit: { chance: 0.4, mul: 2.8 } },
+  archmage:     { splashMul: 1.15 },
+  seraph:       { pierce: 2 },
+};
+
+/* 신화(4) 등급에서 추가로 덮어씌워지는 수정자 — 등급 자체가 능력을 준다 */
+export const MYTHIC_OVERRIDES = {
+  knight:       { crit: { chance: 0.45, mul: 3.4 } },
+  guard:        { aura: 0.42, block: { period: 3.4, dur: 2.2 } },
+  archer:       { pierce: 4 },
+  mage:         { splashMul: 1.8, burn: 0.32 },
+  spellblade:   { burn: 0.6, cleave: true },
+  windblade:    { hits: 4 },
+  paladin:      { healOnKill: 5, block: { period: 4, dur: 1.9 } },
+  frostmage:    { splashMul: 1.6, splashSlow: { mul: 0.38, dur: 2.4 } },
+  sentinel:     { pierce: 3 },
+  spiritarcher: { splashMul: 1.9, burn: 0.25 },
+  swordsaint:   { hits: 3, crit: { chance: 0.45, mul: 3 }, burn: 0.45 },
+  archmage:     { splashMul: 1.35, burn: 0.3, splashSlow: { mul: 0.4, dur: 2.2 } },
+  seraph:       { pierce: 3, healOnKill: 4, block: { period: 3.8, dur: 1.9 } },
+};
+
+export const MYTHIC_ABILITIES = {
+  swordsaint:   { name: '천검난무',   desc: '사거리 안 모든 적을 3번씩 베고 강하게 불태운다!' },
+  archmage:     { name: '별의 종말',  desc: '폭발이 최대로 커지고 얼리며 불태운다!' },
+  seraph:       { name: '천상의 심판', desc: '적 3명 관통 + 장벽 + 처치마다 성 회복 4!' },
 };
 
 export const PIERCE_WIDTH = 46;
@@ -179,24 +238,18 @@ export const LUCKY_JUMP = 0.05;
 export const LUCKY_MAX_TIER = 2;
 
 /* ---------- 조합 비용 ----------
- * 결과 등급이 높을수록 급격히 비싸진다. 전설은 확실히 어렵게.
- * 인덱스 = 결과 등급 (희귀/영웅/전설) */
-export const COMBINE_COST = [0, 60, 300, 1200];
+ * 결과 등급이 높을수록 급격히 비싸진다. 인덱스 = 결과 등급 */
+export const COMBINE_COST = [0, 60, 300, 1200, 2800];
 /* 특수 레시피는 25% 프리미엄 (강력한 대신 값비싸다) */
 export const RECIPE_COST_MUL = 1.25;
 export const combineCost = (resultTier, isRecipe) =>
   Math.round(COMBINE_COST[resultTier] * (isRecipe ? RECIPE_COST_MUL : 1));
 
-/* ---------- 용사 강화 (레벨) ---------- */
-export const HERO_LEVEL_MAX = 5;
-export const LEVEL_DMG_BONUS = 0.25;
-export const LEVEL_COST_BASE = [30, 60, 140, 320];
-export const levelCost = (tier, level) => LEVEL_COST_BASE[tier] * level;
-
-export function heroStats(cls, tier, level = 1) {
+/* ---------- 용사 능력치 ----------
+ * 레벨 개념 없음 — 강해지는 유일한 길은 조합(등급 상승 / 상위 직업). */
+export function heroStats(cls, tier) {
   const C = CLASSES[cls];
-  const m = TIERS[tier].mult;
-  return { dmg: Math.round(C.dmg * m * (1 + LEVEL_DMG_BONUS * (level - 1))) };
+  return { dmg: Math.round(C.dmg * TIERS[tier].mult) };
 }
 
 /* ---------- 성 (맵 위쪽) ---------- */
@@ -253,7 +306,7 @@ export const DIFFICULTIES = {
 /* 마릿수가 늘어난 만큼 개체 체력 곡선은 완화 — "많이 몰려오지만 하나하나는 잡힌다"
  * + 12웨이브 이후 가속: 장기전(고수)만 조이고 초반은 건드리지 않는다 */
 export const hpScale = (w) =>
-  1 + 0.18 * (w - 1) + 0.04 * (w - 1) * (w - 1) + 0.03 * Math.pow(Math.max(0, w - 12), 2);
+  1 + 0.18 * (w - 1) + 0.04 * (w - 1) * (w - 1) + 0.055 * Math.pow(Math.max(0, w - 12), 2);
 export const enemyGoldScale = (w) => 1 + 0.03 * w;
 /* 마릿수: 초반부터 넉넉하게, 뒤로 갈수록 크게 증가 (타격감 + 압박) */
 export const waveCount = (w) => 8 + Math.round(w * 1.9);

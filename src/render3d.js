@@ -80,6 +80,10 @@ const CLASS_LOOK = {
   frostmage:    { tunic: 0x5db4e8, sleeve: 0x4394c8, pants: 0x2f5a78 },
   sentinel:     { tunic: 0x5a6478, sleeve: 0x454e60, pants: 0x32384a },
   spiritarcher: { tunic: 0x9a7fd8, sleeve: 0x7f64bd, pants: 0x54487a },
+  /* 신화 3종 */
+  swordsaint:   { tunic: 0xffe08a, sleeve: 0xe0b955, pants: 0x8a6a2a },
+  archmage:     { tunic: 0x3a2a6e, sleeve: 0x2a1e52, pants: 0x1e1640 },
+  seraph:       { tunic: 0xfaf6ea, sleeve: 0xe8e0c8, pants: 0xc8bfa0 },
 };
 
 function lam(color) { return new THREE.MeshLambertMaterial({ color }); }
@@ -289,6 +293,43 @@ function makeHumanHero(cls, tier) {
       refs.bow = bow;
       break;
     }
+    /* --- 신화 --- */
+    case 'swordsaint': {        /* 검성: 빛나는 쌍검 + 금투구 */
+      makeKnightHelm(head, 0xff4d9d);
+      const s1 = makeSword(glow(0xfff3b0)); holdRight(s1);
+      const s2 = makeSword(glow(0xfff3b0)); s2.position.set(0, -0.26, 0.06); s2.rotation.x = Math.PI / 5; armL.add(s2);
+      refs.flame = s1;
+      break;
+    }
+    case 'archmage': {          /* 대마도사: 별 지팡이 + 챙 넓은 모자 */
+      makeWizardHat(0x2a1e52, head);
+      const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 1), glow(0xff9ecb));
+      holdRight(makeStaff(star));
+      refs.staffOrb = star;
+      break;
+    }
+    case 'seraph': {            /* 수호천사: 후광 + 날개 + 빛나는 활 */
+      const halo = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.025, 8, 22), glow(0xfff3b0));
+      halo.rotation.x = Math.PI / 2.3;
+      halo.position.y = 0.32;
+      head.add(halo);
+      refs.halo = halo;
+      for (const sx of [-1, 1]) {
+        const wing = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.5, 0.62),
+          new THREE.MeshBasicMaterial({ color: 0xfffdf2, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
+        );
+        wing.position.set(0.22 * sx, 0.55, -0.2);
+        wing.rotation.y = 0.5 * sx;
+        g.add(wing);
+        if (!refs.wings) refs.wings = [];
+        refs.wings.push(wing);
+      }
+      const bow = makeBow(glow(0xfff3b0));
+      holdLeft(bow, 0.16);
+      refs.bow = bow;
+      break;
+    }
   }
 
   if (tier >= 1) {
@@ -301,7 +342,7 @@ function makeHumanHero(cls, tier) {
     g.add(cape);
     refs.cape = cape;
   }
-  if (tier === 3) {
+  if (tier >= 3) {
     const crown = new THREE.Group();
     const band = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.06, 10, 1, true),
       new THREE.MeshBasicMaterial({ color: 0xffd93d, side: THREE.DoubleSide }));
@@ -316,7 +357,7 @@ function makeHumanHero(cls, tier) {
     head.add(crown);
   }
 
-  g.scale.setScalar(1.18 + tier * 0.09);
+  g.scale.setScalar(1.18 + tier * 0.1);
   return { group: g, refs };
 }
 
@@ -819,10 +860,10 @@ export class Renderer3D {
     }
 
     let legendGlow = null;
-    if (hero.tier === 3) {
+    if (hero.tier >= 3) {
       legendGlow = new THREE.Mesh(
         new THREE.RingGeometry(0.76, 0.94, 26),
-        new THREE.MeshBasicMaterial({ color: 0xffc93d, transparent: true, opacity: 0.5, depthWrite: false })
+        new THREE.MeshBasicMaterial({ color: hero.tier >= 4 ? 0xff4d9d : 0xffc93d, transparent: true, opacity: 0.5, depthWrite: false })
       );
       legendGlow.rotation.x = -Math.PI / 2;
       legendGlow.position.y = 0.14;
@@ -1336,6 +1377,10 @@ export class Renderer3D {
       v.refs.head.position.y = 0.93 + Math.sin(t * 2.6 + id) * 0.012;
       if (v.refs.cape) v.refs.cape.rotation.x = 0.16 + Math.sin(t * 3 + id) * 0.09;
       if (v.refs.halo) v.refs.halo.rotation.z = t * 1.4;
+      if (v.refs.wings) {
+        v.refs.wings[0].rotation.y = 0.5 + Math.sin(t * 3 + id) * 0.22;
+        v.refs.wings[1].rotation.y = -0.5 - Math.sin(t * 3 + id) * 0.22;
+      }
       if (v.refs.flame && Math.random() < dt * 5) {
         this.burst(v.holder.position.x, 1.0, v.holder.position.z, 0xff8830, 1, 0.7, { grav: -1.4, ttl: 0.35, size: 0.45 });
       }

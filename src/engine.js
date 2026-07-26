@@ -36,29 +36,34 @@ export function createGame(opts = {}) {
     pendingWave: null,
 
     kills: 0, bossKills: 0, midBossKills: 0, summons: 0, combos: 0,
-    solved: 0, correct: 0, goldEarned: 0, upgrades: 0, hints: 0, firstTryWins: 0,
-    specialsMade: 0,
+    solved: 0, correct: 0, goldEarned: 0, hints: 0, firstTryWins: 0,
+    specialsMade: 0, mythicsMade: 0,
     shardsEarned: 0,
     combo: { count: 0, timer: 0 },
+    discovered: new Set(),      // 이번 판에 만들어 본 조합 결과 (도감 ✓)
     time: 0,
   };
   state.pendingWave = buildWave(state);
   return state;
 }
 
-export function makeHero(state, cls, tier, level = 1) {
-  const s = D.heroStats(cls, tier, level);
+export function makeHero(state, cls, tier) {
+  const s = D.heroStats(cls, tier);
   return {
-    id: state.nextId++, cls, tier, level,
+    id: state.nextId++, cls, tier,
     dmg: Math.round(s.dmg * state.dmgMul),
     padIndex: -1, x: 0, y: 0, cd: 0,
   };
 }
 
-/* 등급/전설 오버라이드를 합친 실효 수정자 */
+/* 등급 오버라이드를 합친 실효 수정자 (전설 → 신화 순으로 덮어씌움) */
 export function heroMods(h) {
   const C = D.CLASSES[h.cls];
-  const o = h.tier === 3 ? (D.LEGEND_OVERRIDES[h.cls] || {}) : {};
+  const o = Object.assign(
+    {},
+    h.tier >= 3 ? (D.LEGEND_OVERRIDES[h.cls] || {}) : {},
+    h.tier >= 4 ? (D.MYTHIC_OVERRIDES[h.cls] || {}) : {},
+  );
   return {
     atk: C.atk,
     range: C.range,
@@ -121,14 +126,14 @@ export function unitsOf(state, cls, tier) {
   ];
 }
 
-/* 결과를 놓을 발판 고르기: 배치돼 있던 재료 우선, 둘 다면 더 강한(레벨↑, 커버리지↑) 쪽 */
+/* 결과를 놓을 발판 고르기: 배치돼 있던 재료 우선, 둘 다면 더 강한(등급↑, 커버리지↑) 쪽 */
 function resultPad(mats, resultCls) {
   const placed = mats.filter(m => m.padIndex >= 0);
   if (!placed.length) return -1;
   if (placed.length === 1) return placed[0].padIndex;
   const range = D.CLASSES[resultCls].range;
   const best = placed.slice().sort((a, b) =>
-    b.level - a.level ||
+    b.tier - a.tier ||
     D.padCoverage(D.PADS[b.padIndex], range) - D.padCoverage(D.PADS[a.padIndex], range)
   )[0];
   return best.padIndex;
@@ -140,13 +145,34 @@ function consume(state, mats) {
   state.field = state.field.filter(h => !mats.includes(h));
 }
 
+/* 그 직업의 최고 보유 등급 (없으면 -1) */
+function bestTierOf(state, cls) {
+  let best = -1;
+  for (const h of [...state.bench, ...state.field]) {
+    if (h.cls === cls && h.tier > best) best = h.tier;
+  }
+  return best;
+}
+
+/* 레시피에 쓸 최선의 짝 — 서로 등급이 달라도 되고, 결과는 "낮은 쪽 +1"
+ * (등급이 맞아떨어지지 않아 조합이 막히던 애매함을 없앤다) */
+export function bestRecipePair(state, r) {
+  const ta = bestTierOf(state, r.a);
+  const tb = bestTierOf(state, r.b);
+  if (ta < 0 || tb < 0) return null;
+  const base = Math.min(ta, tb);
+  const resultTier = Math.min(base + 1, D.MAX_TIER);
+  if (base >= D.MAX_TIER) return null;
+  return { ta, tb, base, resultTier };
+}
+
 export function listCombos(state) {
   const out = [];
-  /* 등급업 — 벤치/필드 통합 집계 */
+  /* 등급업 — 벤치/필드 통합 집계 (천장 = 전설) */
   const seen = new Set();
   for (const h of [...state.bench, ...state.field]) {
     const key = `${h.cls}:${h.tier}`;
-    if (seen.has(key) || h.tier >= 3) continue;
+    if (seen.has(key) || h.tier >= D.RANKUP_MAX_TIER) continue;
     seen.add(key);
     if (unitsOf(state, h.cls, h.tier).length >= 2) {
       const cost = D.combineCost(h.tier + 1, false);
@@ -156,33 +182,32 @@ export function listCombos(state) {
       });
     }
   }
-  /* 레시피 */
+  /* 레시피 — 신화(4)까지 도달 가능한 유일한 길 */
   for (const r of D.RECIPES) {
-    for (let tier = 0; tier <= 2; tier++) {
-      if (unitsOf(state, r.a, tier).length >= 1 && unitsOf(state, r.b, tier).length >= 1) {
-        const cost = D.combineCost(tier + 1, true);
-        out.push({
-          kind: 'recipe', result: r.result, a: r.a, b: r.b, tier, resultTier: tier + 1,
-          cost, affordable: state.gold >= cost,
-        });
-      }
-    }
+    const pair = bestRecipePair(state, r);
+    if (!pair) continue;
+    const cost = D.combineCost(pair.resultTier, true);
+    out.push({
+      kind: 'recipe', result: r.result, a: r.a, b: r.b, gen: r.gen,
+      tier: pair.base, ta: pair.ta, tb: pair.tb, resultTier: pair.resultTier,
+      cost, affordable: state.gold >= cost,
+    });
   }
   return out;
 }
 
 export function combineRankUp(state, cls, tier) {
   const mats = unitsOf(state, cls, tier).slice(0, 2);
-  if (mats.length < 2 || tier >= 3) return { ok: false };
+  if (mats.length < 2 || tier >= D.RANKUP_MAX_TIER) return { ok: false };
   const cost = D.combineCost(tier + 1, false);
   if (state.gold < cost) return { ok: false, reason: 'gold', cost };
   state.gold -= cost;
-  /* 럭키! 낮은 확률로 두 등급 점프 (전설까지는 못 뛴다) */
+  /* 럭키! 낮은 확률로 두 등급 점프 (영웅까지) */
   const lucky = tier + 2 <= D.LUCKY_MAX_TIER && state.rng() < D.LUCKY_JUMP;
   const newTier = lucky ? tier + 2 : tier + 1;
   const pad = resultPad(mats, cls);
   consume(state, mats);
-  const hero = makeHero(state, cls, newTier, Math.max(mats[0].level, mats[1].level));
+  const hero = makeHero(state, cls, newTier);
   state.bench.push(hero);
   /* 재료가 배치돼 있었다면 결과도 그 자리에 바로 배치 (회수 불필요) */
   if (pad >= 0) placeHero(state, hero.id, pad);
@@ -190,23 +215,29 @@ export function combineRankUp(state, cls, tier) {
   return { ok: true, hero, lucky, cost, pad };
 }
 
-export function combineRecipe(state, result, tier) {
+/* 레시피 조합 — 재료 등급이 달라도 되고, 결과는 낮은 쪽 +1 (신화까지) */
+export function combineRecipe(state, result) {
   const R = D.CLASSES[result];
-  if (!R || !R.recipe || tier >= 3) return { ok: false };
-  const a = unitsOf(state, R.recipe[0], tier)[0];
-  const b = unitsOf(state, R.recipe[1], tier)[0];
-  if (!a || !b) return { ok: false };
-  const cost = D.combineCost(tier + 1, true);
+  if (!R || !R.recipe) return { ok: false };
+  const r = D.RECIPES.find(x => x.result === result);
+  const pair = bestRecipePair(state, r);
+  if (!pair) return { ok: false };
+  const a = unitsOf(state, r.a, pair.ta)[0];
+  const b = unitsOf(state, r.b, pair.tb)[0];
+  if (!a || !b || a === b) return { ok: false };
+  const cost = D.combineCost(pair.resultTier, true);
   if (state.gold < cost) return { ok: false, reason: 'gold', cost };
   state.gold -= cost;
   const mats = [a, b];
   const pad = resultPad(mats, result);
   consume(state, mats);
-  const hero = makeHero(state, result, tier + 1, Math.max(a.level, b.level));
+  const hero = makeHero(state, result, pair.resultTier);
   state.bench.push(hero);
   if (pad >= 0) placeHero(state, hero.id, pad);
   state.combos++;
-  state.specialsMade++;
+  state.discovered.add(result);
+  if (R.mythic) state.mythicsMade++;
+  else state.specialsMade++;
   return { ok: true, hero, cost, pad };
 }
 
@@ -261,19 +292,6 @@ export function sellHero(state, heroId) {
   const price = D.SELL_PRICE[h.tier];
   state.gold += price;
   return { ok: true, price };
-}
-
-export function upgradeHero(state, heroId) {
-  const h = state.field.find(v => v.id === heroId) || state.bench.find(v => v.id === heroId);
-  if (!h) return { ok: false };
-  if (h.level >= D.HERO_LEVEL_MAX) return { ok: false, reason: 'max' };
-  const cost = D.levelCost(h.tier, h.level);
-  if (state.gold < cost) return { ok: false, reason: 'gold', cost };
-  state.gold -= cost;
-  h.level++;
-  h.dmg = Math.round(D.heroStats(h.cls, h.tier, h.level).dmg * state.dmgMul);
-  state.upgrades++;
-  return { ok: true, hero: h, cost };
 }
 
 /* ---------- 성 업그레이드 ---------- */

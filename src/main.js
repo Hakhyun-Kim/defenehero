@@ -93,7 +93,7 @@ function openMath(mode, pending = null) {
 function newProblem() {
   modal.prob = MathGen.gen(grade);
   modal.tries = 0;
-  const cost = modal.pending ? D.combineCost(Number(modal.pending.tier) + 1, modal.pending.kind === 'recipe') : 0;
+  const cost = modal.pending ? Number(modal.pending.cost || 0) : 0;
   const refund = Math.round(cost * D.refundRatio(grade) * state.mathMul);
   ui.setProblem(grade, modal.prob.text,
     refund ? `한 번에 맞히면 조합 성공 + 💰${refund} 환급!` : '맞히면 조합 성공!');
@@ -110,7 +110,7 @@ function submitMath(value) {
       const firstTry = modal.tries === 1 && !modal.usedHint;
       const r = p.kind === 'rankup'
         ? E.combineRankUp(state, p.cls, Number(p.tier))
-        : E.combineRecipe(state, p.result, Number(p.tier));
+        : E.combineRecipe(state, p.result);
       if (!r.ok && r.reason === 'gold') {
         ui.mathFeedback(true, `정답! 그런데 조합 골드가 부족해요 (💰${r.cost} 필요)`, null);
         refreshAll();
@@ -134,6 +134,7 @@ function submitMath(value) {
           const back = E.refundFirstTry(state, r.cost, grade);
           msg += ` ✅ 한 번에 정답! 💰+${back} 환급`;
         }
+        if (r.hero.tier >= 4) ui.toast(`🌌 신화 등급 [${C.name}] 탄생!! 최강의 용사예요!`, 'good');
         /* 영웅(2) 이상 탄생은 확실한 연출로 */
         if (r.hero.tier >= 2) {
           renderer.combineFlourish(r.pad, r.hero.tier);
@@ -188,7 +189,7 @@ function chooseBestCombo() {
 function comboToAction(c) {
   return c.kind === 'rankup'
     ? { kind: 'rankup', cls: c.cls, tier: String(c.tier) }
-    : { kind: 'recipe', result: c.result, tier: String(c.tier) };
+    : { kind: 'recipe', result: c.result };
 }
 function advanceMath() {
   autoCloseToken++;
@@ -417,17 +418,6 @@ ui.bind({
     ui.toast(`💡 힌트를 봤어요 (💰-${r.cost}) — 환급은 없어요`, 'bad');
     refreshAll();
   },
-  onUpgrade() {
-    const r = E.upgradeHero(state, selHero);
-    if (!r.ok) {
-      if (r.reason === 'gold') ui.toast('골드가 부족해요!', 'bad');
-      return;
-    }
-    SFX.upgrade();
-    const h = r.hero;
-    ui.toast(`⬆ ${D.CLASSES[h.cls].name} Lv${h.level} 강화! (공격 ${h.dmg})`, 'good');
-    refreshAll();
-  },
   onRecall() { doRecall(selHero); },
   onSell() {
     const r = E.sellHero(state, selHero);
@@ -550,7 +540,7 @@ document.addEventListener('click', (ev) => {
 });
 
 /* 한글 IME 상태에서도 단축키가 통하도록 매핑 */
-const KO = { 'ㄴ': 's', 'ㅔ': 'p', 'ㅊ': 'c', 'ㅂ': 'q', 'ㅕ': 'u', 'ㄱ': 'r', 'ㅌ': 'x', 'ㅗ': 'h', 'ㄹ': 'f' };
+const KO = { 'ㄴ': 's', 'ㅔ': 'p', 'ㅊ': 'c', 'ㅂ': 'q', 'ㄱ': 'r', 'ㅌ': 'x', 'ㅗ': 'h', 'ㄹ': 'f' };
 
 document.addEventListener('keydown', (ev) => {
   let key = ev.key;
@@ -646,7 +636,6 @@ document.addEventListener('keydown', (ev) => {
       SFX.tap();
       return;
     case 'f': cycleField(1); return;
-    case 'u': if (selHero != null) ui.el.upgradeBtn.click(); return;
     case 'r': if (selHero != null && !ui.el.recallBtn.classList.contains('hidden')) ui.el.recallBtn.click(); return;
     case 'x': if (selHero != null) ui.el.sellBtn.click(); return;
     case '3': case '4': case '5': case '6': setGradeKey(Number(lower)); return;

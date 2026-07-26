@@ -987,3 +987,42 @@ button { font-family: inherit; }
   .wrap { flex-direction: column; }
   .right { width: 100%; }
 }
+
+/* ===== 신화(4) 등급 ===== */
+:root { --t4: #ff4d9d; }
+.hcard.t4 {
+  border-color: var(--t4);
+  background: #fff0f8;
+  box-shadow: 0 0 10px rgba(255, 77, 157, 0.6);
+  animation: mythicshine 1.6s ease-in-out infinite;
+}
+.hcard.t4 .tr { color: var(--t4); }
+@keyframes mythicshine {
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 77, 157, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(255, 77, 157, 1); }
+}
+.reveal.t4 {
+  border-color: var(--t4);
+  box-shadow: 0 0 50px rgba(255, 77, 157, 0.95);
+  animation: mythicglow 0.7s ease-in-out infinite alternate;
+}
+@keyframes mythicglow {
+  from { box-shadow: 0 0 32px rgba(255, 77, 157, 0.7); }
+  to   { box-shadow: 0 0 68px rgba(255, 77, 157, 1); }
+}
+#rarityFlash.mythic { background: radial-gradient(ellipse at center, rgba(255, 77, 157, 0.68) 0%, transparent 74%); }
+.prob.t4 { background: var(--t4); }
+
+/* 신화 조합 섹션 */
+.combine-sub.mythic { color: #c2185b; border-top-color: #ffc2dd; }
+.combine-row.mythic { background: linear-gradient(90deg, #fff0f8, transparent); border-radius: 8px; }
+.combine-row .found { color: #16a34a; font-weight: 900; }
+.tt-mythic {
+  margin-top: 5px;
+  background: rgba(255, 77, 157, 0.18);
+  border: 1px solid rgba(255, 77, 157, 0.6);
+  border-radius: 7px;
+  padding: 4px 7px;
+  color: #ff9ecb;
+}
+#hpInfo .tt-mythic { background: #fff0f8; border-color: #ff9ecb; color: #c2185b; }
