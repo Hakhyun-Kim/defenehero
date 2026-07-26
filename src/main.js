@@ -6,7 +6,7 @@ import * as E from './engine.js';
 import * as MathGen from './math.js';
 import { Renderer3D } from './render3d.js';
 import { UI } from './ui.js';
-import { SFX, toggleSfx, toggleMusic, toggleAll, isSfxMuted, isMusicMuted } from './sfx.js';
+import { SFX, toggleSfx, toggleMusic, toggleAll, isSfxMuted, isMusicMuted, getAc, getMaster } from './sfx.js';
 import { music } from './music.js';
 
 /* ---------- 저장 ---------- */
@@ -273,10 +273,10 @@ function handleEvents(events) {
   for (const ev of events) {
     switch (ev.type) {
       case 'enemyHit':
-        if (ev.kind === 'hit') SFX.hit();
-        else if (ev.kind === 'crit') SFX.crit();
+        if (ev.kind === 'hit') SFX.hit(ev.x);
+        else if (ev.kind === 'crit') SFX.crit(ev.x);
         break;
-      case 'block': SFX.block(); break;
+      case 'block': SFX.block(ev.x); break;
       case 'kill':
         if (ev.boss) {
           SFX.bossDown(true);
@@ -285,16 +285,16 @@ function handleEvents(events) {
           SFX.bossDown(false);
           ui.toast(`👊 중간보스 ${ev.name} 격파! 💰${ev.gold}`, 'good');
         } else {
-          SFX.kill(); SFX.coin();
+          SFX.kill(ev.x); SFX.coin();
         }
         if (ev.mul > 1 && (ev.combo === D.COMBO.x2At || ev.combo === D.COMBO.x3At)) SFX.combo(ev.mul);
         break;
       case 'shoot':
-        if (ev.kind === 'arrow') SFX.shoot();
-        else if (ev.kind === 'orb') SFX.orb();
-        else SFX.bolt();
+        if (ev.kind === 'arrow') SFX.shoot(ev.x);
+        else if (ev.kind === 'orb') SFX.orb(ev.x);
+        else SFX.bolt(ev.x);
         break;
-      case 'explode': SFX.explode(); break;
+      case 'explode': SFX.explode(ev.x); break;
       case 'castleHit':
         SFX.castleHit();
         ui.flashHit();
@@ -767,7 +767,7 @@ window.addEventListener('pointerdown', () => { music.sync(); }, { once: true });
 window.__game = {
   get state() { return state; },
   get modal() { return modal; },
-  E, D, renderer,
+  E, D, renderer, SFX, sfxCore: { getAc, getMaster },
   refresh: refreshAll,
   selectHero(id) { selHero = id; renderer.setSelectedHero(id); ui.renderHeroPanel(state, id); },
   gold(n) { state.gold += n; refreshAll(); },

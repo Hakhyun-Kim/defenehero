@@ -47,23 +47,134 @@ function blobTexture() {
   return blobTex;
 }
 
-const lvCache = new Map();
-function levelTexture(level) {
-  if (lvCache.has(level)) return lvCache.get(level);
+/* =====================================================
+ * 절차 생성 텍스처 — 외부 이미지 파일 없이 캔버스로 그린다
+ * (반복 타일링 가능하도록 wrap 설정)
+ * ===================================================== */
+const texCache = new Map();
+function cachedTex(key, draw, repeat = 1) {
+  if (texCache.has(key)) return texCache.get(key);
   const c = document.createElement('canvas');
-  c.width = 96; c.height = 48;
-  const g = c.getContext('2d');
-  g.font = 'bold 30px "Segoe UI", sans-serif';
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,0.65)';
-  g.strokeText(`Lv${level}`, 48, 26);
-  g.fillStyle = '#ffd93d';
-  g.fillText(`Lv${level}`, 48, 26);
+  c.width = c.height = 256;
+  draw(c.getContext('2d'), 256);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  lvCache.set(level, t);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeat, repeat);
+  t.anisotropy = 4;
+  texCache.set(key, t);
   return t;
 }
+
+/* 값 노이즈 (시드 고정) */
+function noiseGrid(n, seed = 1) {
+  let s = seed;
+  const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  const g = new Float32Array(n * n);
+  for (let i = 0; i < g.length; i++) g[i] = rnd();
+  return g;
+}
+function sampleNoise(g, n, x, y) {
+  const xi = ((x % n) + n) % n, yi = ((y % n) + n) % n;
+  return g[Math.floor(yi) * n + Math.floor(xi)];
+}
+
+/* 잔디: 색 얼룩 + 풀잎 스트로크 */
+function grassTexture() {
+  return cachedTex('grass', (g, S) => {
+    const N = 32, nz = noiseGrid(N, 7);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const v = sampleNoise(nz, N, x / 8, y / 8);
+        const h = 96 + v * 16;                    // 색상 각도
+        const l = 38 + v * 12;
+        g.fillStyle = `hsl(${h}, 45%, ${l}%)`;
+        g.fillRect(x, y, 1, 1);
+      }
+    }
+    /* 풀잎 */
+    for (let i = 0; i < 900; i++) {
+      const x = Math.random() * S, y = Math.random() * S;
+      const len = 3 + Math.random() * 5;
+      g.strokeStyle = `hsla(${95 + Math.random() * 20}, 55%, ${44 + Math.random() * 18}%, 0.7)`;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + (Math.random() - 0.5) * 2, y - len);
+      g.stroke();
+    }
+  }, 14);
+}
+
+/* 흙길: 자갈 + 발자국 얼룩 */
+function roadTexture() {
+  return cachedTex('road', (g, S) => {
+    const N = 24, nz = noiseGrid(N, 21);
+    for (let y = 0; y < S; y++) {
+      for (let x = 0; x < S; x++) {
+        const v = sampleNoise(nz, N, x / 10, y / 10);
+        g.fillStyle = `hsl(${32 + v * 8}, ${34 + v * 10}%, ${52 + v * 14}%)`;
+        g.fillRect(x, y, 1, 1);
+      }
+    }
+    for (let i = 0; i < 260; i++) {          // 자갈
+      const x = Math.random() * S, y = Math.random() * S, r = 1 + Math.random() * 2.6;
+      g.fillStyle = `hsla(${30 + Math.random() * 14}, 22%, ${Math.random() < 0.5 ? 42 : 72}%, 0.75)`;
+      g.beginPath(); g.ellipse(x, y, r, r * 0.75, Math.random() * 3, 0, 7); g.fill();
+    }
+    for (let i = 0; i < 26; i++) {           // 밟힌 자국
+      const x = Math.random() * S, y = Math.random() * S;
+      g.fillStyle = 'rgba(90,66,38,0.16)';
+      g.beginPath(); g.ellipse(x, y, 8 + Math.random() * 12, 5 + Math.random() * 8, Math.random() * 3, 0, 7); g.fill();
+    }
+  }, 3);
+}
+
+/* 성벽 돌: 벽돌 + 이음새 + 얼룩 */
+function stoneTexture() {
+  return cachedTex('stone', (g, S) => {
+    g.fillStyle = '#9aa1b5';
+    g.fillRect(0, 0, S, S);
+    const bh = 32, bw = 64;
+    for (let row = 0; row * bh < S; row++) {
+      const off = (row % 2) * (bw / 2);
+      for (let col = -1; col * bw < S + bw; col++) {
+        const x = col * bw + off, y = row * bh;
+        const l = 58 + Math.random() * 16;
+        g.fillStyle = `hsl(${216 + Math.random() * 12}, 12%, ${l}%)`;
+        g.fillRect(x + 1.5, y + 1.5, bw - 3, bh - 3);
+        /* 상단 하이라이트 · 하단 그림자 */
+        g.fillStyle = 'rgba(255,255,255,0.13)';
+        g.fillRect(x + 1.5, y + 1.5, bw - 3, 2.5);
+        g.fillStyle = 'rgba(0,0,0,0.16)';
+        g.fillRect(x + 1.5, y + bh - 4.5, bw - 3, 3);
+      }
+    }
+    for (let i = 0; i < 200; i++) {          // 얼룩/이끼
+      const x = Math.random() * S, y = Math.random() * S;
+      g.fillStyle = `rgba(${70 + Math.random() * 60},${80 + Math.random() * 50},${70 + Math.random() * 40},0.09)`;
+      g.beginPath(); g.arc(x, y, 2 + Math.random() * 7, 0, 7); g.fill();
+    }
+  }, 1);
+}
+
+/* 부드러운 발광 스프라이트 (파티클용) */
+let glowTex = null;
+function glowTexture() {
+  if (glowTex) return glowTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.35, 'rgba(255,255,255,0.55)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  glowTex = new THREE.CanvasTexture(c);
+  return glowTex;
+}
+
 
 /* =====================================================
  * 사람 모양 용사 (치비, +Z를 바라봄)
@@ -378,11 +489,21 @@ export class Renderer3D {
     });
     r.setPixelRatio(this._targetDpr());
     r.setClearColor(0xbfe3ff);
+    /* 톤매핑 + 실시간 그림자 — 값싼 "AAA 느낌"의 8할 */
+    r.toneMapping = THREE.ACESFilmicToneMapping;
+    r.toneMappingExposure = 1.08;
+    r.outputColorSpace = THREE.SRGBColorSpace;
+    if (this.quality === 'high') {
+      r.shadowMap.enabled = true;
+      r.shadowMap.type = THREE.PCFSoftShadowMap;
+    }
     container.appendChild(r.domElement);
     this.renderer = r;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0xcfe9ff, 20, 48);
+    this.fogNear = 24; this.fogFar = 44;
+    this.scene.fog = new THREE.Fog(0xcfe9ff, this.fogNear, this.fogFar);
+    this.scene.background = new THREE.Color(0xcfe9ff);
     /* 보스 분위기 전환용 기준값 */
     this.baseFog = new THREE.Color(0xcfe9ff);
     this.baseClear = new THREE.Color(0xbfe3ff);
@@ -394,11 +515,21 @@ export class Renderer3D {
     this.camera.position.copy(this.camBase);
     this.camera.lookAt(0, 0, -0.6);
 
-    this.hemi = new THREE.HemisphereLight(0xeaf6ff, 0x5d8742, 1.05);
+    this.hemi = new THREE.HemisphereLight(0xeaf6ff, 0x5d8742, 1.25);
     this.scene.add(this.hemi);
-    const sun = new THREE.DirectionalLight(0xfff2d8, 1.35);
-    sun.position.set(7, 12, 5);
+    const sun = new THREE.DirectionalLight(0xfff2d8, 1.9);
+    sun.position.set(8, 14, 6);
+    if (this.quality === 'high') {
+      sun.castShadow = true;
+      sun.shadow.mapSize.set(2048, 2048);
+      const c = sun.shadow.camera;
+      c.left = -14; c.right = 14; c.top = 11; c.bottom = -11;
+      c.near = 1; c.far = 40;
+      sun.shadow.bias = -0.0006;
+      sun.shadow.normalBias = 0.02;
+    }
     this.scene.add(sun);
+    this.scene.add(sun.target);
     this.sun = sun;
 
     this._buildTerrain();
@@ -466,26 +597,18 @@ export class Renderer3D {
   /* ---------- 지형: 잔디 + 세 갈래 길 + 발판 ---------- */
   _buildTerrain() {
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(80, 52),
-      new THREE.MeshLambertMaterial({ color: 0x67a94a })
+      new THREE.PlaneGeometry(74, 40),
+      new THREE.MeshLambertMaterial({ map: grassTexture(), color: 0xd2e3c2 })
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -0.08;
+    ground.receiveShadow = true;
     this.scene.add(ground);
-
-    const patchMat = new THREE.MeshLambertMaterial({ color: 0x74b854 });
-    const rnd = (() => { let s = 7; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
-    for (let k = 0; k < 24; k++) {
-      const p = new THREE.Mesh(new THREE.CircleGeometry(0.5 + rnd() * 0.9, 8), patchMat);
-      p.rotation.x = -Math.PI / 2;
-      p.position.set(-10 + rnd() * 21, -0.06, -6 + rnd() * 13);
-      this.scene.add(p);
-    }
 
     /* 길 (모든 루트, 공유 구간은 겹쳐 그려짐) */
     const roadW = (D.ROAD_HALF * 2 + 10) * S;
-    const edgeMat = lam(0x9c7a4e);
-    const roadMat = lam(0xc9a36b);
+    const edgeMat = lam(0x8d6a42);
+    const roadMat = new THREE.MeshLambertMaterial({ map: roadTexture(), color: 0xe8d7bd });
     for (const segs of D.ROUTE_SEGS) {
       for (const seg of segs) {
         const len = seg.len * S;
@@ -549,8 +672,11 @@ export class Renderer3D {
       const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.74, 0.8, 0.1, 18), lam(0x8d94a8));
       rim.position.set(px, 0.02, pz);
       this.scene.add(rim);
-      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.66, 0.1, 18), lam(0xbfc6d4));
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.66, 0.1, 18),
+        new THREE.MeshLambertMaterial({ map: stoneTexture(), color: 0xdfe4ee }));
       top.position.set(px, 0.07, pz);
+      top.receiveShadow = true;
+      rim.castShadow = true;
       this.scene.add(top);
       const hl = new THREE.Mesh(
         new THREE.CircleGeometry(0.62, 18),
@@ -595,7 +721,8 @@ export class Renderer3D {
     this.rangeGroup.visible = false;
     this.scene.add(this.rangeGroup);
 
-    /* 장식 나무/바위 (좌우 바깥) */
+    /* 장식 나무/바위 (좌우 바깥) — 시드 고정이라 매 실행 배치가 같다 */
+    const rnd = (() => { let s = 7; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
     const treeTrunk = lam(0x7a5230);
     const treeLeaf = lam(0x3f8f3f);
     const rockMat = lam(0x9aa0a8);
@@ -611,6 +738,7 @@ export class Renderer3D {
         leaf.position.y = 1.1;
         g.add(trunk, leaf);
         g.position.set(x, 0, z);
+        trunk.castShadow = leaf.castShadow = true;
         this.scene.add(g);
       } else {
         const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.2 + rnd() * 0.2), rockMat);
@@ -626,7 +754,7 @@ export class Renderer3D {
     const g = new THREE.Group();
     this.castleStoneMats = [];
     const stone = (color) => {
-      const m = new THREE.MeshLambertMaterial({ color });
+      const m = new THREE.MeshLambertMaterial({ color, map: stoneTexture() });
       m.userData.baseColor = new THREE.Color(color);
       this.castleStoneMats.push(m);
       return m;
@@ -709,6 +837,7 @@ export class Renderer3D {
       g.add(band);
     }
 
+    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     this.castle = g;
     this.scene.add(g);
   }
@@ -803,7 +932,7 @@ export class Renderer3D {
     if (!slot) slot = this.dmgPool[0];
     const g = slot.c.getContext('2d');
     g.clearRect(0, 0, 256, 96);
-    g.font = `bold ${Math.round(52 * Math.min(scale, 1.35))}px "Segoe UI", "Segoe UI Emoji", sans-serif`;
+    g.font = `bold ${Math.round(52 * Math.min(scale, 1.35))}px Jua, "Segoe UI", "Segoe UI Emoji", sans-serif`;
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.lineWidth = 10; g.strokeStyle = 'rgba(0,0,0,0.6)';
     g.strokeText(text, 128, 48);
@@ -829,6 +958,7 @@ export class Renderer3D {
   /* ---------- 뷰 생성 ---------- */
   _makeHeroView(hero) {
     const { group, refs } = makeHumanHero(hero.cls, hero.tier);
+    group.traverse(o => { if (o.isMesh) o.castShadow = true; });
     const holder = new THREE.Group();
     holder.add(group);
 
@@ -870,17 +1000,9 @@ export class Renderer3D {
       holder.add(legendGlow);
     }
 
-    const lv = new THREE.Sprite(new THREE.SpriteMaterial({ map: levelTexture(hero.level), transparent: true, depthTest: false }));
-    lv.scale.set(0.85, 0.42, 1);
-    lv.position.set(0.55, 1.85, 0);
-    lv.renderOrder = 42;
-    lv.visible = hero.level > 1;
-    holder.add(lv);
-
     this.scene.add(holder);
     return {
       holder, model: group, refs, legendGlow,
-      lvSprite: lv, level: hero.level,
       attackT: 0, faceY: Math.PI, targetFaceY: Math.PI,
       cls: hero.cls,
     };
@@ -900,7 +1022,7 @@ export class Renderer3D {
     const clearCol = this.baseClear.clone().lerp(tint, strength * 0.9);
     this.scene.fog.color.copy(fogCol);
     this.renderer.setClearColor(clearCol);
-    this.scene.fog.far = 48 - Math.min(1, k) * 14;      // 안개가 조여든다
+    this.scene.fog.far = this.fogFar - Math.min(1, k) * 10;   // 안개가 조여든다
     this.hemi.intensity = 1.05 - Math.min(1, k) * 0.42;
     this.sun.intensity = 1.35 - Math.min(1, k) * 0.55;
   }
@@ -985,11 +1107,6 @@ export class Renderer3D {
         }
         v.faceY = v.targetFaceY = Math.atan2(wx(bx) - wx(h.x), wz(bz) - wz(h.y));
         this.heroViews.set(h.id, v);
-      }
-      if (v.level !== h.level) {
-        v.level = h.level;
-        v.lvSprite.material.map = levelTexture(h.level);
-        v.lvSprite.visible = h.level > 1;
       }
       v.holder.position.set(wx(h.x), 0, wz(h.y));
     }

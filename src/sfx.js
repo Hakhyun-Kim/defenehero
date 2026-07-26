@@ -1,9 +1,15 @@
 /* =====================================================
  * 효과음 (Web Audio 합성, 음원 파일 0개)
  * tone() + noise() 두 가지 원시 도구로 모든 소리를 만든다.
+ *
+ * 외부 음원을 쓰지 않는 대신, 합성음이 "삑삑"거리지 않도록 세 가지를 건다:
+ *   ① 마스터 리미터  — 전투 중 소리 20개가 겹쳐도 찢어지지 않는다
+ *   ② 스테레오 패닝  — 적의 필드 x좌표를 좌우 위치로 옮긴다
+ *   ③ 피치 랜덤화    — 같은 소리를 연타해도 기계적으로 들리지 않는다
  * ===================================================== */
 let ctx = null;
-let master = null;
+let master = null;      // 음악 + 효과음이 함께 들어오는 지점
+let sfxBus = null;      // 효과음 전용 (여기에만 살짝 공간감을 준다)
 /* 효과음과 배경음을 따로 끌 수 있다 — 배경음만 끄고 싶은 요구가 가장 흔하다 */
 let sfxMuted = localStorage.getItem('mathdef_mute_sfx') === '1';
 let musicMuted = localStorage.getItem('mathdef_mute_bgm') === '1';
@@ -12,9 +18,30 @@ export function getAc() {
   if (!ctx) {
     try {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+      /* 리미터: 합성음이 동시에 터질 때 생기는 클리핑(찌직) 제거 */
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -10;
+      limiter.knee.value = 6;
+      limiter.ratio.value = 12;
+      limiter.attack.value = 0.003;
+      limiter.release.value = 0.18;
+
+      /* 고역 셸빙: 사각파·톱니파의 날카로운 배음을 눌러 귀가 편하게 */
+      const tame = ctx.createBiquadFilter();
+      tame.type = 'highshelf';
+      tame.frequency.value = 5200;
+      tame.gain.value = -5;
+
       master = ctx.createGain();
       master.gain.value = 0.9;
-      master.connect(ctx.destination);
+      master.connect(tame);
+      tame.connect(limiter);
+      limiter.connect(ctx.destination);
+
+      sfxBus = ctx.createGain();
+      sfxBus.gain.value = 1;
+      sfxBus.connect(master);
     } catch (e) { /* 오디오 미지원 */ }
   }
   if (ctx && ctx.state === 'suspended') ctx.resume();
@@ -22,22 +49,46 @@ export function getAc() {
 }
 export const getMaster = () => { getAc(); return master; };
 
-export function tone(freq, start = 0, dur = 0.1, type = 'triangle', vol = 0.1, glideTo = 0) {
+/* 필드 x좌표(0~700)를 좌우 위치로. 패너가 없는 브라우저면 그냥 통과 */
+function panNode(pan) {
+  const c = getAc();
+  if (pan == null || !c || !c.createStereoPanner) return null;
+  const p = c.createStereoPanner();
+  p.pan.value = Math.max(-1, Math.min(1, pan));
+  return p;
+}
+export const panOf = (x) => (x == null ? null : Math.max(-0.85, Math.min(0.85, ((x - 350) / 350) * 0.8)));
+
+/* 랜덤 피치 흔들기: cents 단위 (100 = 반음) */
+const wobble = (cents) => (cents ? Math.pow(2, ((Math.random() * 2 - 1) * cents) / 1200) : 1);
+
+/* opts: { pan, cutoff, vary(cents) } */
+export function tone(freq, start = 0, dur = 0.1, type = 'triangle', vol = 0.1, glideTo = 0, opts = {}) {
   if (sfxMuted) return;
   const c = getAc(); if (!c) return;
   const t0 = c.currentTime + start;
+  const k = wobble(opts.vary);
   const o = c.createOscillator(), g = c.createGain();
   o.type = type;
-  o.frequency.setValueAtTime(freq, t0);
-  if (glideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20, glideTo), t0 + dur);
+  o.frequency.setValueAtTime(freq * k, t0);
+  if (glideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20, glideTo * k), t0 + dur);
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.exponentialRampToValueAtTime(vol, t0 + 0.015);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  o.connect(g); g.connect(master);
+  o.connect(g);
+  let node = g;
+  if (opts.cutoff) {
+    const f = c.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = opts.cutoff; f.Q.value = 0.7;
+    node.connect(f); node = f;
+  }
+  const p = panNode(opts.pan);
+  if (p) { node.connect(p); node = p; }
+  node.connect(sfxBus);
   o.start(t0); o.stop(t0 + dur + 0.05);
 }
 
-export function noise(start = 0, dur = 0.08, vol = 0.1, freq = 1200, q = 0.8) {
+export function noise(start = 0, dur = 0.08, vol = 0.1, freq = 1200, q = 0.8, opts = {}) {
   if (sfxMuted) return;
   const c = getAc(); if (!c) return;
   const t0 = c.currentTime + start;
@@ -48,11 +99,15 @@ export function noise(start = 0, dur = 0.08, vol = 0.1, freq = 1200, q = 0.8) {
   const src = c.createBufferSource();
   src.buffer = buf;
   const f = c.createBiquadFilter();
-  f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
+  f.type = 'bandpass'; f.frequency.value = freq * wobble(opts.vary); f.Q.value = q;
   const g = c.createGain();
   g.gain.setValueAtTime(vol, t0);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  src.connect(f); f.connect(g); g.connect(master);
+  src.connect(f); f.connect(g);
+  let node = g;
+  const p = panNode(opts.pan);
+  if (p) { node.connect(p); node = p; }
+  node.connect(sfxBus);
   src.start(t0);
 }
 
@@ -115,21 +170,32 @@ export const SFX = {
     tone(262, 0.18, 0.26, 'sine', 0.08, 220);
   },
 
-  shoot()      { if (limit('shoot', 70)) return; tone(880, 0, 0.04, 'triangle', 0.03, 440); },
-  orb()        { if (limit('orb', 90)) return; tone(520, 0, 0.09, 'sine', 0.04, 260); },
-  bolt()       { if (limit('bolt', 90)) return; tone(1200, 0, 0.07, 'sawtooth', 0.03, 500); },
-  hit()        { if (limit('hit', 60)) return; noise(0, 0.045, 0.06, 1600, 0.7); },
+  /* --- 전투음: x(필드 좌표)를 받아 좌우로 벌리고, 매번 피치를 살짝 흔든다 --- */
+  shoot(x)     { if (limit('shoot', 55)) return; const p = panOf(x); tone(880, 0, 0.045, 'triangle', 0.032, 440, { pan: p, vary: 55, cutoff: 4200 }); },
+  orb(x)       { if (limit('orb', 80)) return; const p = panOf(x); tone(520, 0, 0.09, 'sine', 0.042, 260, { pan: p, vary: 45 }); },
+  bolt(x)      { if (limit('bolt', 80)) return; const p = panOf(x); tone(1200, 0, 0.07, 'sawtooth', 0.03, 500, { pan: p, vary: 60, cutoff: 3600 }); },
+  hit(x)       { if (limit('hit', 45)) return; noise(0, 0.045, 0.06, 1600, 0.7, { pan: panOf(x), vary: 90 }); },
   /* 치명타: 쨍! 하고 시원하게 */
-  crit()       { if (limit('crit', 90)) return; tone(1320, 0, 0.09, 'square', 0.055, 660); noise(0, 0.08, 0.07, 2600, 0.6); },
+  crit(x)      { if (limit('crit', 80)) return; const p = panOf(x);
+                 tone(1320, 0, 0.09, 'square', 0.055, 660, { pan: p, vary: 40, cutoff: 5000 });
+                 noise(0, 0.08, 0.07, 2600, 0.6, { pan: p, vary: 60 }); },
   /* 방패 장벽: 금속 쿵 + 지면 울림 */
-  block()      { if (limit('block', 200)) return; tone(180, 0, 0.16, 'square', 0.09, 90); noise(0, 0.2, 0.08, 700, 0.5); tone(90, 0.05, 0.25, 'sine', 0.08, 55); },
-  kill()       { if (limit('kill', 70)) return; tone(300, 0, 0.08, 'square', 0.06, 90); noise(0, 0.07, 0.06, 900, 0.6); },
-  coin()       { if (limit('coin', 110)) return; tone(988, 0, 0.05, 'square', 0.045); tone(1319, 0.05, 0.08, 'square', 0.045); },
-  combo(mul)   { tone(784 * (mul >= 3 ? 1.5 : 1), 0, 0.1, 'square', 0.07, 1175); },
-  explode()    { if (limit('explode', 120)) return; noise(0, 0.22, 0.1, 400, 0.5); tone(140, 0, 0.2, 'sine', 0.09, 60); },
-  thorns()     { if (limit('thorns', 150)) return; tone(1400, 0, 0.05, 'sawtooth', 0.035, 700); },
+  block(x)     { if (limit('block', 180)) return; const p = panOf(x);
+                 tone(180, 0, 0.16, 'square', 0.09, 90, { pan: p, vary: 30, cutoff: 1800 });
+                 noise(0, 0.2, 0.08, 700, 0.5, { pan: p });
+                 tone(90, 0.05, 0.25, 'sine', 0.08, 55, { pan: p }); },
+  kill(x)      { if (limit('kill', 55)) return; const p = panOf(x);
+                 tone(300, 0, 0.08, 'square', 0.06, 90, { pan: p, vary: 70, cutoff: 2400 });
+                 noise(0, 0.07, 0.06, 900, 0.6, { pan: p, vary: 70 }); },
+  coin()       { if (limit('coin', 100)) return; tone(988, 0, 0.05, 'square', 0.045, 0, { vary: 35, cutoff: 5200 }); tone(1319, 0.05, 0.08, 'square', 0.045, 0, { vary: 35, cutoff: 5200 }); },
+  combo(mul)   { tone(784 * (mul >= 3 ? 1.5 : 1), 0, 0.1, 'square', 0.07, 1175, { cutoff: 5200 }); },
+  explode(x)   { if (limit('explode', 100)) return; const p = panOf(x);
+                 noise(0, 0.22, 0.1, 400, 0.5, { pan: p, vary: 60 });
+                 tone(140, 0, 0.2, 'sine', 0.09, 60, { pan: p, vary: 50 }); },
+  thorns(x)    { if (limit('thorns', 140)) return; tone(1400, 0, 0.05, 'sawtooth', 0.035, 700, { pan: panOf(x), vary: 80, cutoff: 3800 }); },
 
-  heroHurt()   { if (limit('hurt', 140)) return; tone(180, 0, 0.09, 'sine', 0.07, 90); noise(0, 0.06, 0.05, 500, 0.7); },
+  heroHurt(x)  { if (limit('hurt', 130)) return; const p = panOf(x);
+                 tone(180, 0, 0.09, 'sine', 0.07, 90, { pan: p, vary: 60 }); noise(0, 0.06, 0.05, 500, 0.7, { pan: p }); },
   heroDead()   { tone(220, 0, 0.2, 'sine', 0.08, 80); },
   castleHit()  { tone(90, 0, 0.34, 'sawtooth', 0.13, 45); noise(0, 0.3, 0.11, 250, 0.4); },
   heartbeat()  { tone(70, 0, 0.1, 'sine', 0.12); tone(60, 0.16, 0.12, 'sine', 0.1); },

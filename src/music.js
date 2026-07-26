@@ -134,6 +134,13 @@ function voice(freq, t, dur, type, vol, opts = {}) {
     g.connect(f);
     node = f;
   }
+  /* 스테레오 폭: 디튠된 두 겹을 좌우로 벌리면 합성 패드가 훨씬 넓게 들린다 */
+  if (opts.pan != null && c.createStereoPanner) {
+    const p = c.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, opts.pan));
+    node.connect(p);
+    node = p;
+  }
   o.connect(g);
   node.connect(dryGain);
   if (opts.wet !== false) node.connect(delayA);
@@ -201,8 +208,8 @@ function schedule() {
     if (i === 0 && T.pad) {
       const dur = stepDur * barSteps * 0.98;
       for (const s of shape) {
-        voice(NOTE(root + s, T.pad.base), t, dur, 'sawtooth', T.pad.vol, { atk: 0.12, cutoff: T.pad.cutoff, detune: -6 });
-        voice(NOTE(root + s, T.pad.base), t, dur, 'sawtooth', T.pad.vol * 0.8, { atk: 0.14, cutoff: T.pad.cutoff, detune: +7 });
+        voice(NOTE(root + s, T.pad.base), t, dur, 'sawtooth', T.pad.vol, { atk: 0.12, cutoff: T.pad.cutoff, detune: -6, pan: -0.38 });
+        voice(NOTE(root + s, T.pad.base), t, dur, 'sawtooth', T.pad.vol * 0.8, { atk: 0.14, cutoff: T.pad.cutoff, detune: +7, pan: +0.38 });
       }
     }
     /* 아르페지오: 코드 구성음을 순서대로 */
@@ -210,7 +217,8 @@ function schedule() {
       const idx = T.arp.steps[i];
       if (idx != null) {
         const s = shape[idx % shape.length] + (idx >= shape.length ? 12 : 0);
-        voice(NOTE(root + s, T.arp.base), t, T.arp.len, T.arp.type, T.arp.vol);
+        /* 아르페지오가 좌우로 살짝 튀면 단조로움이 줄어든다 */
+        voice(NOTE(root + s, T.arp.base), t, T.arp.len, T.arp.type, T.arp.vol, { pan: (i % 4 - 1.5) * 0.16 });
       }
     }
     /* 베이스 */

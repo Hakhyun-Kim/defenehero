@@ -11,7 +11,8 @@
 
 html, body { height: 100%; }
 body {
-  font-family: "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  font-family: "Jua", "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  /* 폰트 미로딩(오프라인) 시에도 위 시스템 폰트로 자연스럽게 대체된다 */
   background: linear-gradient(180deg, #bfe3ff 0%, #dff3ff 45%, #e8f7dd 100%);
   color: var(--ink);
   padding: 14px;
@@ -879,7 +880,9 @@ button { font-family: inherit; }
   margin-bottom: 12px;
 }
 .mproblem {
-  font-size: 22px;
+  /* 손글씨풍 Gaegu — 숫자·수식이 또렷하고 아이들 눈에 친근하다 */
+  font-family: "Gaegu", "Jua", system-ui, sans-serif;
+  font-size: 27px;
   font-weight: 800;
   line-height: 1.5;
   background: #f5f8fc;
@@ -892,13 +895,13 @@ button { font-family: inherit; }
 .mrow { display: flex; gap: 8px; margin-bottom: 10px; justify-content: center; }
 .mrow input {
   flex: 1;
-  font-size: 20px;
+  font-family: "Gaegu", "Jua", system-ui, sans-serif;
+  font-size: 25px;
   font-weight: 700;
   padding: 10px 12px;
   border: 2px solid #cdd6e2;
   border-radius: 10px;
   text-align: center;
-  font-family: inherit;
 }
 .mrow input:focus { outline: none; border-color: #2478e0; }
 .mrow .big { width: auto; padding: 10px 20px; }

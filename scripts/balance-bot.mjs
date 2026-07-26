@@ -190,6 +190,9 @@ const nums = args.filter(a => /^\d+$/.test(a));
 const runs = Number(nums[0]) || 150;
 const diffArg = args.find(a => ['easy', 'normal', 'hard'].includes(a));
 const diffs = diffArg ? [diffArg] : ['easy', 'normal', 'hard'];
+/* 프로필도 하나만 돌릴 수 있다 — 게이트가 판을 잘게 쪼개 돌리기 위해서다 */
+const profArg = args.find(a => Object.keys(PROFILES).includes(a));
+const profs = profArg ? [profArg] : Object.keys(PROFILES);
 
 console.log(`\n=== 용사 수학 디펜스 밸런스 봇 (판수: ${runs}${checkMode ? ', 기준선 검증 모드' : ''}) ===\n`);
 
@@ -201,7 +204,7 @@ if (checkMode) {
 
 let drift = false;
 for (const d of diffs) {
-  for (const p of Object.keys(PROFILES)) {
+  for (const p of profs) {
     const r = runProfile(p, d, runs);
     let flag = '';
     if (baseline) {
