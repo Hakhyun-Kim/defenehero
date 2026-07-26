@@ -1035,3 +1035,27 @@ button { font-family: inherit; }
   color: #ff9ecb;
 }
 #hpInfo .tt-mythic { background: #fff0f8; border-color: #ff9ecb; color: #c2185b; }
+
+/* 조합 규칙 안내 */
+.combine-rule {
+  background: #eef4fb;
+  border: 1px solid #d5e2f2;
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 11px;
+  line-height: 1.65;
+  color: #35507a;
+  margin-bottom: 6px;
+}
+.combine-rule b { color: #1a5cb0; }
+/* 재료 등급 배지 */
+.combine-row .ingt {
+  display: inline-block;
+  font-size: 8.5px;
+  font-weight: 900;
+  color: #fff;
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-left: 1px;
+  vertical-align: super;
+}

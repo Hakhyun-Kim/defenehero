@@ -161,8 +161,10 @@ export function bestRecipePair(state, r) {
   const tb = bestTierOf(state, r.b);
   if (ta < 0 || tb < 0) return null;
   const base = Math.min(ta, tb);
-  const resultTier = Math.min(base + 1, D.MAX_TIER);
-  if (base >= D.MAX_TIER) return null;
+  const cap = D.maxTierOf(r.result);
+  const resultTier = Math.min(base + 1, cap);
+  /* 등급이 오르지 않는 조합은 손해뿐이니 아예 제안하지 않는다 */
+  if (resultTier <= base) return null;
   return { ta, tb, base, resultTier };
 }
 
@@ -172,7 +174,7 @@ export function listCombos(state) {
   const seen = new Set();
   for (const h of [...state.bench, ...state.field]) {
     const key = `${h.cls}:${h.tier}`;
-    if (seen.has(key) || h.tier >= D.RANKUP_MAX_TIER) continue;
+    if (seen.has(key) || h.tier >= D.maxTierOf(h.cls)) continue;
     seen.add(key);
     if (unitsOf(state, h.cls, h.tier).length >= 2) {
       const cost = D.combineCost(h.tier + 1, false);
@@ -198,7 +200,7 @@ export function listCombos(state) {
 
 export function combineRankUp(state, cls, tier) {
   const mats = unitsOf(state, cls, tier).slice(0, 2);
-  if (mats.length < 2 || tier >= D.RANKUP_MAX_TIER) return { ok: false };
+  if (mats.length < 2 || tier >= D.maxTierOf(cls)) return { ok: false };
   const cost = D.combineCost(tier + 1, false);
   if (state.gold < cost) return { ok: false, reason: 'gold', cost };
   state.gold -= cost;

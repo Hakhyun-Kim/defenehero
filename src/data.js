@@ -65,10 +65,16 @@ export const TIERS = [
   { name: '희귀', color: '#3b82f6', mult: 2.8 },
   { name: '영웅', color: '#a855f7', mult: 7.2 },
   { name: '전설', color: '#f59e0b', mult: 13 },
-  { name: '신화', color: '#ff4d9d', mult: 17 },
+  { name: '신화', color: '#ff4d9d', mult: 14 },
 ];
 export const MAX_TIER = 4;
-export const RANKUP_MAX_TIER = 3;      // 등급업(같은 용사 2명)의 천장 = 전설
+/* 등급 천장은 "직업 세대"로 정해진다 — 규칙이 하나라 헷갈리지 않는다:
+ *   기본·특수 용사 → 전설(3)이 최고
+ *   신화 용사(검성/대마도사/수호천사) → 신화(4)까지
+ * 즉 신화 등급은 "신화 용사"만 될 수 있다. 신화 용사는
+ *   ① 특수 2종 조합(전설 재료면 곧바로 신화)  ② 전설 신화용사 2명 등급업
+ * 두 경로 모두로 만들 수 있다. */
+export const maxTierOf = (cls) => (CLASSES[cls] && CLASSES[cls].mythic ? 4 : 3);
 
 /* 직업 정의 — 기본 4종(소환으로만 등장) + 특수 6종(레시피 조합으로만 탄생)
  * atk: melee(근접 즉시) | arrow(화살 투사체) | orb(구슬 투사체)
@@ -306,7 +312,7 @@ export const DIFFICULTIES = {
 /* 마릿수가 늘어난 만큼 개체 체력 곡선은 완화 — "많이 몰려오지만 하나하나는 잡힌다"
  * + 12웨이브 이후 가속: 장기전(고수)만 조이고 초반은 건드리지 않는다 */
 export const hpScale = (w) =>
-  1 + 0.18 * (w - 1) + 0.04 * (w - 1) * (w - 1) + 0.055 * Math.pow(Math.max(0, w - 12), 2);
+  1 + 0.18 * (w - 1) + 0.04 * (w - 1) * (w - 1) + 0.075 * Math.pow(Math.max(0, w - 12), 2);
 export const enemyGoldScale = (w) => 1 + 0.03 * w;
 /* 마릿수: 초반부터 넉넉하게, 뒤로 갈수록 크게 증가 (타격감 + 압박) */
 export const waveCount = (w) => 8 + Math.round(w * 1.9);

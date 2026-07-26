@@ -56,9 +56,13 @@ export function describeHero(hero, state, preview) {
   }
   const barPct = Math.round((m.range / D.RANGE_MAX) * 100);
   const onField = hero.padIndex >= 0;
+  const cap = D.maxTierOf(hero.cls);
+  const capNote = hero.tier >= cap
+    ? `🔒 최고 등급(${D.TIERS[cap].name})`
+    : `⬆ ${D.TIERS[cap].name}까지 성장 가능`;
   const foot = preview
     ? '🔮 조합하면 이렇게 나와요 (미리보기)'
-    : (onField ? '배치됨 · 빈 발판 클릭으로 이동 · 우클릭 회수' : '벤치 · 발판을 눌러 배치');
+    : `${onField ? '배치됨 · 빈 발판 클릭으로 이동 · 우클릭 회수' : '벤치 · 발판을 눌러 배치'} · ${capNote}`;
 
   return `
     <div class="tt-head">
@@ -251,11 +255,25 @@ export class UI {
     const byResult = new Map(combos.filter(c => c.kind === 'recipe').map(c => [c.result, c]));
     let html = '';
 
-    /* ① 등급업 — 같은 용사 2명 (천장: 전설) */
+    /* 규칙을 화면에 못 박아 둔다 — 헷갈리면 조합을 안 하게 된다 */
+    html += `<div class="combine-rule">
+      <b>규칙</b> ① 같은 용사 2명 = 등급 UP ② 다른 용사 2명 = 새 직업(등급 UP)<br>
+      기본·특수 용사는 <b>전설</b>이 최고 · <b>신화</b> 등급은 <b>신화 용사</b>만 (⚡😇🌌)
+    </div>`;
+
+    /* ① 등급업 — 같은 용사 2명 */
     const rankups = combos.filter(c => c.kind === 'rankup');
-    html += `<div class="combine-sub">⬆ 등급업 <span class="cnt">같은 용사 2명 · 전설까지 (배치된 용사도 재료 OK)</span></div>`;
+    html += `<div class="combine-sub">⬆ 등급업 <span class="cnt">같은 용사·같은 등급 2명 (배치된 용사도 재료 OK)</span></div>`;
     if (!rankups.length) {
       html += `<div class="combine-empty">같은 직업·같은 등급 용사 2명을 모아 보세요</div>`;
+    }
+    /* 전설에서 막힌 용사가 있으면 왜 막혔는지 알려준다 */
+    const capped = [...new Set([...state.bench, ...state.field]
+      .filter(h => h.tier >= D.maxTierOf(h.cls) && !D.CLASSES[h.cls].mythic)
+      .map(h => h.cls))];
+    if (capped.length) {
+      html += `<div class="combine-empty">${capped.map(c => D.CLASSES[c].emoji).join('')} 전설은 최고 등급이에요 —
+        <b>신화</b>가 되려면 아래 <b>신화 조합</b>으로 신화 용사를 만들어야 해요</div>`;
     }
     for (const c of rankups) {
       const C = D.CLASSES[c.cls];
@@ -285,8 +303,12 @@ export class UI {
         } else {
           right = `<span class="cnt need">${has(r.a) || has(r.b) ? '재료 하나 더' : '재료 모으기'}</span>`;
         }
+        /* 보유한 재료의 최고 등급을 배지로 — "왜 전설이 안 나오지?"를 없앤다 */
+        const tierBadge = (cls, t) => t == null || t < 0 ? ''
+          : `<span class="ingt" style="background:${D.TIERS[t].color}">${D.TIERS[t].name[0]}</span>`;
+        const ta = c ? c.ta : null, tb = c ? c.tb : null;
         out += `<div class="combine-row recipe${canPay ? ' ready' : ''}${gen === 3 ? ' mythic' : ''}">
-          <span class="ing${has(r.a) ? ' have' : ''}">${A.emoji}</span>+<span class="ing${has(r.b) ? ' have' : ''}">${B.emoji}</span>
+          <span class="ing${has(r.a) ? ' have' : ''}">${A.emoji}${tierBadge(r.a, ta)}</span>+<span class="ing${has(r.b) ? ' have' : ''}">${B.emoji}${tierBadge(r.b, tb)}</span>
           <span class="rarrow">→</span>
           <span class="peek" data-cls="${r.result}" data-rtier="${rtier}">${R.emoji} <b>${R.name}</b>${made ? ' <span class="found">✓</span>' : ''}</span>
           ${right}
@@ -297,7 +319,7 @@ export class UI {
 
     html += `<div class="combine-sub">✨ 특수 조합 <span class="cnt">서로 다른 두 용사 · 등급이 달라도 OK(낮은 쪽 +1)</span></div>`;
     html += renderRecipes(2);
-    html += `<div class="combine-sub mythic">🌌 신화 조합 <span class="cnt">특수 + 특수 = 최강! 신화 등급은 이 길로만</span></div>`;
+    html += `<div class="combine-sub mythic">🌌 신화 조합 <span class="cnt">특수 2종 → 신화 용사 · 재료가 <b>전설</b>이면 결과가 <b>신화</b>!</span></div>`;
     html += renderRecipes(3);
 
     this.el.combineRows.innerHTML = html;
