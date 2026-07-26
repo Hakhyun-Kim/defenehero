@@ -124,6 +124,10 @@ function submitMath(value) {
           ui.toast(`✨ 특수 용사 [${C.name}] 탄생! ${C.desc}`, 'good');
           renderer.celebrate(0xd8b4ff, true);
         }
+        if (r.pad >= 0) {
+          msg += ' 🎯 그 자리에 바로 배치!';
+          renderer.burst((D.PADS[r.pad].x - D.FIELD_W / 2) / 36, 0.5, (D.PADS[r.pad].y - D.FIELD_H / 2) / 36, 0x7fff9e, 12, 2.4);
+        }
         modal.pending = null;
         /* 예측형 흐름: 더 조합할 게 있으면 Enter로 연쇄, 없으면 자동으로 닫힌다 */
         if (more) {
@@ -211,6 +215,39 @@ function doPlace(padIndex) {
   selBench = null;
   renderer.setPlacementMode(false);
   renderer.setSelectedHero(selHero);
+  refreshAll();
+}
+
+/* 배치된 용사 선택 — 선택 시 빈 발판이 빛나 바로 이동할 수 있다 */
+function selectField(hero) {
+  selBench = null;
+  selHero = hero ? hero.id : null;
+  renderer.setSelectedHero(selHero);
+  renderer.setPlacementMode(!!hero, hero ? D.CLASSES[hero.cls].range : 0);
+  ui.renderBench(state, null);
+  ui.renderHeroPanel(state, selHero);
+  if (hero) SFX.tap();
+}
+
+function doMove(padIndex) {
+  const r = E.moveHero(state, selHero, padIndex);
+  if (!r.ok) {
+    if (r.reason === 'occupied') ui.toast('그 발판에는 이미 용사가 있어요!', 'bad');
+    return;
+  }
+  SFX.place();
+  renderer.burst((r.hero.x - D.FIELD_W / 2) / 36, 0.5, (r.hero.y - D.FIELD_H / 2) / 36, 0x9fdcff, 8, 2);
+  kbPad = null;
+  renderer.setHover(null);
+  refreshAll();
+}
+
+function doRecall(heroId) {
+  const r = E.recallHero(state, heroId);
+  if (!r.ok) { ui.toast('벤치가 가득 차서 회수할 수 없어요!', 'bad'); return; }
+  SFX.tap();
+  if (selHero === heroId) { selHero = null; renderer.setSelectedHero(null); renderer.setPlacementMode(false); }
+  ui.toast('↩ 용사를 벤치로 회수했어요.');
   refreshAll();
 }
 
@@ -317,17 +354,22 @@ ui.bind({
   },
   onSceneClick(cx, cy) {
     const pad = renderer.screenToPad(cx, cy);
-    if (pad == null) {
-      selHero = null; renderer.setSelectedHero(null);
-      ui.renderHeroPanel(state, null);
-      return;
-    }
+    if (pad == null) { deselectAll(); return; }
     if (selBench != null) { doPlace(pad); return; }
     const hero = E.padOccupant(state, pad);
-    selHero = hero ? hero.id : null;
-    renderer.setSelectedHero(selHero);
-    ui.renderHeroPanel(state, selHero);
-    if (hero) SFX.tap();
+    /* 배치된 용사를 고른 뒤 빈 발판을 누르면 → 회수 없이 이동 */
+    if (!hero && selHero != null && state.field.some(h => h.id === selHero)) {
+      doMove(pad);
+      return;
+    }
+    selectField(hero);
+  },
+  onSceneRightClick(cx, cy) {
+    const pad = renderer.screenToPad(cx, cy);
+    if (pad == null) return;
+    const hero = E.padOccupant(state, pad);
+    if (!hero) return;
+    doRecall(hero.id);
   },
   onSceneMove(cx, cy) {
     if (cx == null) { renderer.setHover(null); return; }
@@ -352,13 +394,7 @@ ui.bind({
     ui.toast(`⬆ ${D.CLASSES[h.cls].name} Lv${h.level} 강화! (공격 ${h.dmg})`, 'good');
     refreshAll();
   },
-  onRecall() {
-    const r = E.recallHero(state, selHero);
-    if (!r.ok) { ui.toast('벤치가 가득 차서 회수할 수 없어요!', 'bad'); return; }
-    SFX.tap();
-    renderer.setSelectedHero(null);
-    refreshAll();
-  },
+  onRecall() { doRecall(selHero); },
   onSell() {
     const r = E.sellHero(state, selHero);
     if (!r.ok) return;
@@ -448,6 +484,16 @@ function deselectAll() {
   ui.renderHeroPanel(state, null);
 }
 
+/* 필드 용사 순환 선택 (F키) — 회수 없이 이동/강화 대상 고르기 */
+function cycleField(dir) {
+  if (!state.field.length) { ui.toast('배치된 용사가 없어요.', 'bad'); return; }
+  const sorted = [...state.field].sort((a, b) => a.padIndex - b.padIndex);
+  let idx = sorted.findIndex(h => h.id === selHero);
+  idx = (idx + dir + sorted.length) % sorted.length;
+  selectField(sorted[idx]);
+  kbPad = null;
+}
+
 function setGradeKey(g) {
   grade = g;
   ui.setGradeActive(g);
@@ -470,7 +516,7 @@ document.addEventListener('click', (ev) => {
 });
 
 /* 한글 IME 상태에서도 단축키가 통하도록 매핑 */
-const KO = { 'ㄴ': 's', 'ㅔ': 'p', 'ㅊ': 'c', 'ㅂ': 'q', 'ㅕ': 'u', 'ㄱ': 'r', 'ㅌ': 'x', 'ㅗ': 'h' };
+const KO = { 'ㄴ': 's', 'ㅔ': 'p', 'ㅊ': 'c', 'ㅂ': 'q', 'ㅕ': 'u', 'ㄱ': 'r', 'ㅌ': 'x', 'ㅗ': 'h', 'ㄹ': 'f' };
 
 document.addEventListener('keydown', (ev) => {
   let key = ev.key;
@@ -516,17 +562,21 @@ document.addEventListener('keydown', (ev) => {
   /* --- 게임 화면 --- */
   switch (key) {
     case ' ':
-    case 'Enter':
+    case 'Enter': {
       ev.preventDefault();
+      const onField = selHero != null && state.field.some(h => h.id === selHero);
       if (selBench != null && kbPad != null) {
         const pad = kbPad;
         kbPad = null;
         renderer.setHover(null);
         doPlace(pad);
+      } else if (onField && kbPad != null) {
+        doMove(kbPad);                      // 배치된 용사를 골라둔 발판으로 이동
       } else if (state.phase === 'prep') {
         tryStartWave();
       }
       return;
+    }
     case 'Escape':
       deselectAll();
       return;
@@ -536,11 +586,11 @@ document.addEventListener('keydown', (ev) => {
       return;
     case 'ArrowLeft':
     case 'ArrowUp':
-      if (selBench != null) { ev.preventDefault(); cyclePad(-1); }
+      if (selBench != null || selHero != null) { ev.preventDefault(); cyclePad(-1); }
       return;
     case 'ArrowRight':
     case 'ArrowDown':
-      if (selBench != null) { ev.preventDefault(); cyclePad(1); }
+      if (selBench != null || selHero != null) { ev.preventDefault(); cyclePad(1); }
       return;
   }
   switch (lower) {
@@ -562,6 +612,7 @@ document.addEventListener('keydown', (ev) => {
       ui.setSpeedLabel(speed);
       SFX.tap();
       return;
+    case 'f': cycleField(1); return;
     case 'u': if (selHero != null) ui.el.upgradeBtn.click(); return;
     case 'r': if (selHero != null && !ui.el.recallBtn.classList.contains('hidden')) ui.el.recallBtn.click(); return;
     case 'x': if (selHero != null) ui.el.sellBtn.click(); return;

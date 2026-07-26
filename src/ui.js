@@ -14,7 +14,7 @@ export class UI {
       'scene3d', 'hitFlash', 'lowHpVignette', 'bossBanner', 'comboChip', 'waveInfo', 'remainN',
       'waveBtn', 'coachChip', 'toasts', 'gold', 'waveNo', 'know', 'speedBtn', 'muteBtn',
       'grades', 'practiceBtn', 'probs', 'summonBtn', 'benchHint', 'bench', 'combineRows',
-      'castleRows', 'heroPanel', 'hpTitle', 'hpInfo', 'upgradeBtn', 'recallBtn', 'sellBtn',
+      'castleRows', 'heroPanel', 'hpTitle', 'hpInfo', 'upgradeBtn', 'recallBtn', 'sellBtn', 'moveHint',
       'diffRow', 'mathModal', 'mTitle', 'mGrade', 'mProblem', 'mInput', 'mSubmit', 'mFeedback', 'mNext', 'mClose',
       'mHintBtn', 'mHint',
       'wavePreview', 'bossBar', 'bossBarFill', 'bossBarName', 'bossWarnBanner',
@@ -63,6 +63,10 @@ export class UI {
     /* 3D 씬 입력 */
     const scene = el.scene3d;
     scene.addEventListener('click', (ev) => h.onSceneClick(ev.clientX, ev.clientY));
+    scene.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();                 // 우클릭 = 즉시 회수
+      h.onSceneRightClick(ev.clientX, ev.clientY);
+    });
     scene.addEventListener('mousemove', (ev) => h.onSceneMove(ev.clientX, ev.clientY));
     scene.addEventListener('mouseleave', () => h.onSceneMove(null, null));
   }
@@ -156,7 +160,7 @@ export class UI {
 
     /* ① 등급업: 같은 용사 2명 → 등급+1 (가능한 것만 표시) */
     const rankups = E.listCombos(state).filter(c => c.kind === 'rankup');
-    html += `<div class="combine-sub">⬆ 등급업 <span class="cnt">같은 용사 2명 + 골드 (가끔 🍀2단계!)</span></div>`;
+    html += `<div class="combine-sub">⬆ 등급업 <span class="cnt">같은 용사 2명 + 골드 · 배치된 용사도 재료 OK</span></div>`;
     if (!rankups.length) {
       html += `<div class="combine-empty">같은 직업·같은 등급 용사 2명을 모아 보세요</div>`;
     }
@@ -176,10 +180,11 @@ export class UI {
       const A = D.CLASSES[r.a], B = D.CLASSES[r.b], R = D.CLASSES[r.result];
       let readyTier = -1;
       for (let t = 0; t <= 2; t++) {
-        if (E.benchOf(state, r.a, t).length >= 1 && E.benchOf(state, r.b, t).length >= 1) { readyTier = t; break; }
+        if (E.unitsOf(state, r.a, t).length >= 1 && E.unitsOf(state, r.b, t).length >= 1) { readyTier = t; break; }
       }
-      const hasA = state.bench.some(h => h.cls === r.a);
-      const hasB = state.bench.some(h => h.cls === r.b);
+      const all = [...state.bench, ...state.field];
+      const hasA = all.some(h => h.cls === r.a);
+      const hasB = all.some(h => h.cls === r.b);
       const ready = readyTier >= 0;
       const cost = ready ? D.combineCost(readyTier + 1, true) : 0;
       const canPay = ready && state.gold >= cost;
@@ -254,9 +259,10 @@ export class UI {
       el.upgradeBtn.textContent = `⬆ 강화 Lv${hero.level + 1} (💰${cost} · U)`;
       el.upgradeBtn.disabled = state.gold < cost;
     }
-    el.recallBtn.textContent = '↩ 회수 (R)';
+    el.recallBtn.textContent = '↩ 회수 (R / 우클릭)';
     el.recallBtn.classList.toggle('hidden', !onField);
     el.sellBtn.textContent = `💰 판매 +${D.SELL_PRICE[hero.tier]} (X)`;
+    el.moveHint.classList.toggle('hidden', !onField);
   }
 
   /* ---------- 다음 웨이브 미리보기 ---------- */

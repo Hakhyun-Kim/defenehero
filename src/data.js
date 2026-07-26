@@ -161,7 +161,7 @@ export const LUCKY_MAX_TIER = 2;
 /* ---------- 조합 비용 ----------
  * 결과 등급이 높을수록 급격히 비싸진다. 전설은 확실히 어렵게.
  * 인덱스 = 결과 등급 (희귀/영웅/전설) */
-export const COMBINE_COST = [0, 50, 240, 950];
+export const COMBINE_COST = [0, 60, 340, 1500];
 /* 특수 레시피는 25% 프리미엄 (강력한 대신 값비싸다) */
 export const RECIPE_COST_MUL = 1.25;
 export const combineCost = (resultTier, isRecipe) =>
@@ -230,8 +230,10 @@ export const DIFFICULTIES = {
   hard:   { name: '어려움', emoji: '🔥', hpMul: 1.3,  countMul: 1.15, goldMul: 0.95 },
 };
 
-/* 마릿수가 늘어난 만큼 개체 체력 곡선은 완화 — "많이 몰려오지만 하나하나는 잡힌다" */
-export const hpScale = (w) => 1 + 0.18 * (w - 1) + 0.035 * (w - 1) * (w - 1);
+/* 마릿수가 늘어난 만큼 개체 체력 곡선은 완화 — "많이 몰려오지만 하나하나는 잡힌다"
+ * + 12웨이브 이후 가속: 장기전(고수)만 조이고 초반은 건드리지 않는다 */
+export const hpScale = (w) =>
+  1 + 0.18 * (w - 1) + 0.04 * (w - 1) * (w - 1) + 0.03 * Math.pow(Math.max(0, w - 12), 2);
 export const enemyGoldScale = (w) => 1 + 0.02 * w;
 /* 마릿수: 초반부터 넉넉하게, 뒤로 갈수록 크게 증가 (타격감 + 압박) */
 export const waveCount = (w) => 8 + Math.round(w * 1.9);

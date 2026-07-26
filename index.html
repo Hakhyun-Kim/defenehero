@@ -57,7 +57,7 @@
         <button data-d="normal" class="on">⚔️ 보통</button>
         <button data-d="hard">🔥 어려움</button>
       </div>
-      <p class="hint keys">⌨️ <b>Space</b> 웨이브 · <b>S</b> 소환 · <b>P</b> 문제 · <b>C</b> 조합 · <b>Tab</b> 용사 고르기 · <b>←→</b> 발판 이동 · <b>Enter</b> 배치 · <b>U</b> 강화 <b>R</b> 회수 <b>X</b> 판매 · <b>3~6</b> 학년 · <b>7~9</b> 성 관리 · <b>Esc</b> 취소</p>
+      <p class="hint keys">⌨️ <b>Space</b> 웨이브 · <b>S</b> 소환 · <b>P</b> 문제 · <b>C</b> 조합 · <b>Tab</b> 벤치 <b>F</b> 배치된 용사 · <b>←→</b> 발판 · <b>Enter</b> 배치/이동 · <b>U</b> 강화 <b>R</b>/우클릭 회수 <b>X</b> 판매 · <b>3~6</b> 학년 · <b>7~9</b> 성 · <b>Esc</b> 취소</p>
       <p class="hint">💡 몬스터는 세 갈래 길로 성에 와요(가운데는 보스 지름길!). 용사는 길 옆 <b>돌 발판</b>에만 배치할 수 있어요.</p>
     </div>
   </div>
@@ -107,6 +107,7 @@
     <section class="card hidden" id="heroPanel">
       <h2 id="hpTitle">🧍 선택한 용사</h2>
       <div id="hpInfo"></div>
+      <div id="moveHint" class="movehint hidden">🎯 <b>빈 발판</b>을 클릭(또는 ←→ + Enter)하면 <b>회수 없이 이동</b>해요!</div>
       <button id="upgradeBtn" class="big green">⬆ 강화</button>
       <div class="rowbtns">
         <button id="recallBtn">↩ 벤치로 회수</button>

@@ -104,15 +104,43 @@ export function benchOf(state, cls, tier) {
   return state.bench.filter(h => h.cls === cls && h.tier === tier);
 }
 
+/* 조합 재료 후보: 벤치 + 배치된 용사 모두 (회수하지 않아도 조합 가능)
+ * 벤치를 먼저 소비해 필드 방어를 최대한 유지한다. */
+export function unitsOf(state, cls, tier) {
+  return [
+    ...state.bench.filter(h => h.cls === cls && h.tier === tier),
+    ...state.field.filter(h => h.cls === cls && h.tier === tier),
+  ];
+}
+
+/* 결과를 놓을 발판 고르기: 배치돼 있던 재료 우선, 둘 다면 더 강한(레벨↑, 커버리지↑) 쪽 */
+function resultPad(mats, resultCls) {
+  const placed = mats.filter(m => m.padIndex >= 0);
+  if (!placed.length) return -1;
+  if (placed.length === 1) return placed[0].padIndex;
+  const range = D.CLASSES[resultCls].range;
+  const best = placed.slice().sort((a, b) =>
+    b.level - a.level ||
+    D.padCoverage(D.PADS[b.padIndex], range) - D.padCoverage(D.PADS[a.padIndex], range)
+  )[0];
+  return best.padIndex;
+}
+
+/* 재료를 벤치/필드에서 제거 */
+function consume(state, mats) {
+  state.bench = state.bench.filter(h => !mats.includes(h));
+  state.field = state.field.filter(h => !mats.includes(h));
+}
+
 export function listCombos(state) {
   const out = [];
-  /* 등급업 */
+  /* 등급업 — 벤치/필드 통합 집계 */
   const seen = new Set();
-  for (const h of state.bench) {
+  for (const h of [...state.bench, ...state.field]) {
     const key = `${h.cls}:${h.tier}`;
     if (seen.has(key) || h.tier >= 3) continue;
     seen.add(key);
-    if (benchOf(state, h.cls, h.tier).length >= 2) {
+    if (unitsOf(state, h.cls, h.tier).length >= 2) {
       const cost = D.combineCost(h.tier + 1, false);
       out.push({
         kind: 'rankup', cls: h.cls, tier: h.tier, result: h.cls, resultTier: h.tier + 1,
@@ -123,7 +151,7 @@ export function listCombos(state) {
   /* 레시피 */
   for (const r of D.RECIPES) {
     for (let tier = 0; tier <= 2; tier++) {
-      if (benchOf(state, r.a, tier).length >= 1 && benchOf(state, r.b, tier).length >= 1) {
+      if (unitsOf(state, r.a, tier).length >= 1 && unitsOf(state, r.b, tier).length >= 1) {
         const cost = D.combineCost(tier + 1, true);
         out.push({
           kind: 'recipe', result: r.result, a: r.a, b: r.b, tier, resultTier: tier + 1,
@@ -136,36 +164,57 @@ export function listCombos(state) {
 }
 
 export function combineRankUp(state, cls, tier) {
-  const mats = benchOf(state, cls, tier).slice(0, 2);
+  const mats = unitsOf(state, cls, tier).slice(0, 2);
   if (mats.length < 2 || tier >= 3) return { ok: false };
   const cost = D.combineCost(tier + 1, false);
   if (state.gold < cost) return { ok: false, reason: 'gold', cost };
   state.gold -= cost;
-  state.bench = state.bench.filter(h => !mats.includes(h));
   /* 럭키! 낮은 확률로 두 등급 점프 (전설까지는 못 뛴다) */
   const lucky = tier + 2 <= D.LUCKY_MAX_TIER && state.rng() < D.LUCKY_JUMP;
   const newTier = lucky ? tier + 2 : tier + 1;
+  const pad = resultPad(mats, cls);
+  consume(state, mats);
   const hero = makeHero(state, cls, newTier, Math.max(mats[0].level, mats[1].level));
   state.bench.push(hero);
+  /* 재료가 배치돼 있었다면 결과도 그 자리에 바로 배치 (회수 불필요) */
+  if (pad >= 0) placeHero(state, hero.id, pad);
   state.combos++;
-  return { ok: true, hero, lucky, cost };
+  return { ok: true, hero, lucky, cost, pad };
 }
 
 export function combineRecipe(state, result, tier) {
   const R = D.CLASSES[result];
   if (!R || !R.recipe || tier >= 3) return { ok: false };
-  const a = benchOf(state, R.recipe[0], tier)[0];
-  const b = benchOf(state, R.recipe[1], tier)[0];
+  const a = unitsOf(state, R.recipe[0], tier)[0];
+  const b = unitsOf(state, R.recipe[1], tier)[0];
   if (!a || !b) return { ok: false };
   const cost = D.combineCost(tier + 1, true);
   if (state.gold < cost) return { ok: false, reason: 'gold', cost };
   state.gold -= cost;
-  state.bench = state.bench.filter(h => h !== a && h !== b);
+  const mats = [a, b];
+  const pad = resultPad(mats, result);
+  consume(state, mats);
   const hero = makeHero(state, result, tier + 1, Math.max(a.level, b.level));
   state.bench.push(hero);
+  if (pad >= 0) placeHero(state, hero.id, pad);
   state.combos++;
   state.specialsMade++;
-  return { ok: true, hero, cost };
+  return { ok: true, hero, cost, pad };
+}
+
+/* 배치된 용사를 다른 빈 발판으로 이동 (회수 없이) */
+export function moveHero(state, heroId, padIndex) {
+  const h = state.field.find(v => v.id === heroId);
+  if (!h) return { ok: false };
+  if (padIndex < 0 || padIndex >= D.PADS.length) return { ok: false };
+  if (padIndex === h.padIndex) return { ok: false, reason: 'same' };
+  const occupant = padOccupant(state, padIndex);
+  if (occupant) return { ok: false, reason: 'occupied' };
+  h.padIndex = padIndex;
+  h.x = D.PADS[padIndex].x;
+  h.y = D.PADS[padIndex].y;
+  h.cd = 0;
+  return { ok: true, hero: h };
 }
 
 /* ---------- 배치 / 회수 / 판매 / 강화 ---------- */
