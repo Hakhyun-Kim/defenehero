@@ -763,6 +763,17 @@ requestAnimationFrame(frame);
 /* 첫 사용자 입력에서 오디오 잠금 해제 */
 window.addEventListener('pointerdown', () => { music.sync(); }, { once: true });
 
+/* 폰트를 미리 받아 둔다.
+ * 브라우저는 "화면에 실제로 그려질 때"만 폰트를 내려받는다. 그냥 두면 ① 첫 문제창이 열리는
+ * 순간 기본 폰트로 그려졌다가 바뀌고(아이가 문제를 읽는 바로 그 타이밍에 깜빡인다)
+ * ② 3D 캔버스에 그리는 글자는 아예 폴백 폰트로 구워져 텍스처에 박힌다. */
+if (document.fonts && document.fonts.load) {
+  Promise.all([
+    document.fonts.load('16px Jua', '용사 수학 디펜스'),
+    document.fonts.load('700 27px Gaegu', '0123456789 문제'),
+  ]).catch(() => {});
+}
+
 /* 디버그 훅 (자동 검증/테스트용) */
 window.__game = {
   get state() { return state; },
