@@ -71,10 +71,23 @@ export const TIERS = [
 /* 직업 정의 — 기본 4종(소환으로만 등장) + 특수 6종(레시피 조합으로만 탄생)
  * atk: melee(근접 즉시) | arrow(화살 투사체) | orb(구슬 투사체)
  * 수정자: hits(다단타), burn(화상 비율), slowOnHit, splash, splashSlow, healOnKill, pierce */
+/* 사거리가 짧을수록 "확실한 기술"로 보상한다:
+ *  - 검사 계열 → 치명타(crit): 압도적 순간 화력
+ *  - 수호병 계열 → 방패 장벽(block): 적을 잠시 완전히 멈춘다 (킹덤러시식 길막)
+ *  - 성기사 = 둘 다 가진 프리미엄 근접 */
 export const CLASSES = {
   /* --- 기본 --- */
-  knight: { name: '검사',   emoji: '⚔️', atk: 'melee', dmg: 14, spd: 1.1, range: 100, desc: '가까운 적을 강하게 벱니다' },
-  guard:  { name: '수호병', emoji: '🛡️', atk: 'melee', dmg: 6,  spd: 0.9, range: 105, slowOnHit: { mul: 0.55, dur: 1.6 }, desc: '방패로 쳐서 적을 느리게 만들어요' },
+  knight: {
+    name: '검사', emoji: '⚔️', atk: 'melee', dmg: 15, spd: 1.1, range: 100,
+    crit: { chance: 0.3, mul: 2.5 },
+    desc: '짧은 사거리 대신 압도적 한 방! 치명타로 크게 벱니다',
+  },
+  guard: {
+    name: '수호병', emoji: '🛡️', atk: 'melee', dmg: 8, spd: 0.9, range: 105,
+    slowOnHit: { mul: 0.55, dur: 1.6 },
+    block: { period: 5.5, dur: 1.3 },
+    desc: '방패 장벽으로 적을 잠시 멈춰 세워요! 때린 적은 느려집니다',
+  },
   archer: { name: '궁수',   emoji: '🏹', atk: 'arrow', dmg: 9,  spd: 1.6, range: 200, desc: '멀리까지 화살을 쏘아요' },
   mage:   { name: '마법사', emoji: '🔮', atk: 'orb',   dmg: 14, spd: 0.7, range: 155, splash: 62, desc: '폭발 마법으로 여럿을 공격해요' },
 
@@ -82,17 +95,21 @@ export const CLASSES = {
   spellblade: {
     name: '마검사', emoji: '🗡️', special: true, recipe: ['knight', 'mage'],
     atk: 'melee', dmg: 15, spd: 1.0, range: 105, burn: 0.22,
-    desc: '불타는 검! 벤 적이 계속 불타요',
+    crit: { chance: 0.22, mul: 2.2 },
+    desc: '불타는 검! 벤 적이 계속 불타고, 치명타도 터져요',
   },
   windblade: {
     name: '질풍검객', emoji: '🌪️', special: true, recipe: ['knight', 'archer'],
-    atk: 'melee', dmg: 8, spd: 1.4, range: 100, hits: 2,
-    desc: '바람처럼 빠른 2연속 베기!',
+    atk: 'melee', dmg: 8, spd: 1.4, range: 105, hits: 2,
+    crit: { chance: 0.25, mul: 2.0 },
+    desc: '2연속 베기! 각 타격마다 치명타 기회',
   },
   paladin: {
     name: '성기사', emoji: '⚜️', special: true, recipe: ['knight', 'guard'],
-    atk: 'melee', dmg: 11, spd: 0.9, range: 100, healOnKill: 1,
-    desc: '적을 물리칠 때마다 성을 회복해요',
+    atk: 'melee', dmg: 12, spd: 0.95, range: 105, healOnKill: 1,
+    crit: { chance: 0.25, mul: 2.2 },
+    block: { period: 7, dur: 1.0 },
+    desc: '치명타 + 방패 장벽 + 처치 시 성 회복까지! 최강 근접',
   },
   frostmage: {
     name: '빙결사', emoji: '❄️', special: true, recipe: ['guard', 'mage'],
@@ -110,6 +127,12 @@ export const CLASSES = {
     desc: '화살이 별빛으로 폭발해요',
   },
 };
+
+/* 정지(길막) 관련 */
+export const STUN_BOSS_MUL = 0.35;      // 보스는 정지에 강하게 저항
+/* 한 번 멈춘 적은 잠시 면역 — 수호병을 여러 명 겹쳐 영구 정지시키는 것을 막는다 */
+export const STUN_IMMUNE = 2.6;
+export const RANGE_MAX = 260;           // UI 사거리 바의 기준(최댓값)
 export const CLASS_KEYS = Object.keys(CLASSES);
 export const GACHA_KEYS = CLASS_KEYS.filter(k => !CLASSES[k].special);
 
@@ -124,13 +147,13 @@ export function findRecipe(clsA, clsB) {
 
 /* 전설 등급 특수능력: 수치가 아니라 "행동"이 바뀐다 */
 export const LEGEND_ABILITIES = {
-  knight:       { name: '회전베기',   desc: '사거리 안 모든 적을 한 번에 벤다!' },
-  guard:        { name: '서리 결계',  desc: '사거리 안 모든 적이 계속 느려진다!' },
+  knight:       { name: '회전베기',   desc: '사거리 안 모든 적을 한 번에 벤다! 치명타 40%·3배' },
+  guard:        { name: '서리 결계',  desc: '주변이 계속 느려지고, 방패 장벽이 더 자주·더 길게!' },
   archer:       { name: '관통 화살',  desc: '화살이 일직선의 적 3명을 꿰뚫는다!' },
   mage:         { name: '화염 폭발',  desc: '폭발이 커지고 적을 3초간 불태운다!' },
   spellblade:   { name: '화염 폭풍',  desc: '화상이 두 배로 강해진다!' },
   windblade:    { name: '삼연격',     desc: '한 번에 3번 벤다!' },
-  paladin:      { name: '축복',       desc: '처치할 때마다 성이 3 회복!' },
+  paladin:      { name: '축복',       desc: '처치할 때마다 성이 3 회복! 장벽도 더 강하게' },
   frostmage:    { name: '절대영도',   desc: '폭발이 커지고 더 강하게 얼린다!' },
   sentinel:     { name: '이중 저격',  desc: '화살이 2명을 꿰뚫는다!' },
   spiritarcher: { name: '유성우',     desc: '폭발이 커지고 적을 불태운다!' },
@@ -138,13 +161,13 @@ export const LEGEND_ABILITIES = {
 
 /* 전설이 되면 덮어씌워지는 수정자 */
 export const LEGEND_OVERRIDES = {
-  knight:       { cleave: true },
-  guard:        { aura: 0.5 },
+  knight:       { cleave: true, crit: { chance: 0.4, mul: 3 } },
+  guard:        { aura: 0.5, block: { period: 4, dur: 1.9 } },
   archer:       { pierce: 3 },
   mage:         { splashMul: 1.5, burn: 0.25 },
   spellblade:   { burn: 0.45 },
   windblade:    { hits: 3 },
-  paladin:      { healOnKill: 3 },
+  paladin:      { healOnKill: 3, block: { period: 5, dur: 1.5 } },
   frostmage:    { splashMul: 1.3, splashSlow: { mul: 0.45, dur: 2.0 } },
   sentinel:     { pierce: 2 },
   spiritarcher: { splashMul: 1.6, burn: 0.15 },

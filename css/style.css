@@ -548,9 +548,128 @@ button { font-family: inherit; }
   transition: transform 0.08s;
 }
 .hcard:hover { transform: translateY(-2px); }
-.hcard .em { font-size: 22px; line-height: 1.1; }
+.hcard .em { font-size: 22px; line-height: 1.1; position: relative; }
 .hcard .nm { font-size: 10px; font-weight: 700; }
 .hcard .tr { font-size: 9px; font-weight: 800; }
+/* 카드에 표시되는 사거리 */
+.hcard .rg {
+  font-size: 9.5px;
+  font-weight: 800;
+  border-radius: 4px;
+  margin: 1px 3px;
+  padding: 0 2px;
+  color: #fff;
+}
+.hcard .rg.r1 { background: #e07a5f; }   /* 근접 */
+.hcard .rg.r2 { background: #d9a13b; }   /* 중거리 */
+.hcard .rg.r3 { background: #4f9e57; }   /* 장거리 */
+.hcard .rg.r4 { background: #3b82f6; }   /* 초장거리 */
+.hcard .bdgs {
+  position: absolute;
+  top: -2px;
+  right: -6px;
+  font-size: 9px;
+  line-height: 1;
+}
+.hcard .bdg { display: block; }
+
+/* ===== 상세 정보 툴팁 ===== */
+#tooltip {
+  position: fixed;
+  z-index: 100;
+  width: 268px;
+  background: rgba(20, 28, 44, 0.96);
+  color: #e8eefb;
+  border: 1.5px solid #4a5a7a;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+#tooltip b { color: #ffd93d; }
+.tt-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+.tt-head .tt-emoji { font-size: 18px; }
+.tt-head .tt-name { flex: 1; }
+.tt-head .tt-tier {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #fff;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.tt-head .tt-lv { font-size: 10px; color: #ffd93d; }
+.tt-range { margin-bottom: 6px; }
+.tt-rlabel {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+  border-radius: 4px;
+  padding: 0 6px;
+  margin-right: 5px;
+}
+.tt-rlabel.r1 { background: #e07a5f; }
+.tt-rlabel.r2 { background: #d9a13b; }
+.tt-rlabel.r3 { background: #4f9e57; }
+.tt-rlabel.r4 { background: #3b82f6; }
+.tt-rnum { font-size: 11px; color: #b8c6de; }
+.tt-rbar {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  margin-top: 3px;
+  overflow: hidden;
+}
+.tt-rfill { height: 100%; border-radius: 999px; }
+.tt-rfill.r1 { background: #e07a5f; }
+.tt-rfill.r2 { background: #d9a13b; }
+.tt-rfill.r3 { background: #4f9e57; }
+.tt-rfill.r4 { background: #3b82f6; }
+.tt-rows { border-top: 1px solid rgba(255,255,255,0.12); padding-top: 5px; }
+.tt-legend {
+  margin-top: 5px;
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: 7px;
+  padding: 4px 7px;
+  color: #ffd98a;
+}
+.tt-recipe {
+  margin-top: 5px;
+  background: rgba(168, 85, 247, 0.18);
+  border: 1px solid rgba(168, 85, 247, 0.5);
+  border-radius: 7px;
+  padding: 4px 7px;
+  color: #d8b4ff;
+}
+.tt-desc { margin-top: 5px; color: #9fb0cc; font-style: italic; }
+.tt-foot {
+  margin-top: 5px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  font-size: 10px;
+  color: #8496b4;
+}
+/* 용사 패널에서도 같은 마크업 재사용 */
+#hpInfo #tooltip, #hpInfo .tt-head { color: var(--ink); }
+#hpInfo .tt-head .tt-lv { color: #c98a00; }
+#hpInfo b { color: #23304a; }
+#hpInfo .tt-rnum { color: #6a7a94; }
+#hpInfo .tt-rows { border-color: #e3e9f2; }
+#hpInfo .tt-rbar { background: #e3e9f2; }
+#hpInfo .tt-legend { background: #fff7e0; border-color: #f2cf5b; color: #8a6400; }
+#hpInfo .tt-recipe { background: #f3ebff; border-color: #c4a8f0; color: #5b2fb8; }
+#hpInfo .tt-desc { color: #7a879c; }
+#hpInfo .tt-foot { color: #93a0b4; border-color: #e3e9f2; }
 .hcard .lv { color: #c98a00; }
 .hcard.t0 { border-color: var(--t0); } .hcard.t0 .tr { color: var(--t0); }
 .hcard.t1 { border-color: var(--t1); } .hcard.t1 .tr { color: var(--t1); }

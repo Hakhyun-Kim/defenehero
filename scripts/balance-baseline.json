@@ -1,17 +1,17 @@
 {
-  "comment": "밸런스 회귀 기준선 (v7 배치 편의성: 필드 용사 조합 가능 + 후반 가속). node scripts/balance-bot.mjs 120 check (Bash 권장).",
+  "comment": "밸런스 회귀 기준선 (v8 근접 필살기: 치명타/방패 장벽). node scripts/balance-bot.mjs 120 check (Bash 권장).",
   "date": "2026-07-26",
   "runs": 150,
   "tolerance": 3,
   "medians": {
-    "easy/초보": 7,
-    "easy/보통": 10,
-    "easy/고수": 18,
-    "normal/초보": 6,
-    "normal/보통": 9,
-    "normal/고수": 14,
-    "hard/초보": 5,
-    "hard/보통": 7,
-    "hard/고수": 11
+    "easy/초보": 8,
+    "easy/보통": 12,
+    "easy/고수": 20,
+    "normal/초보": 7,
+    "normal/보통": 10,
+    "normal/고수": 15,
+    "hard/초보": 6,
+    "hard/보통": 8,
+    "hard/고수": 13
   }
 }

@@ -73,7 +73,16 @@ export function heroMods(h) {
     pierce: o.pierce ?? C.pierce ?? 1,
     cleave: !!o.cleave,
     aura: o.aura || 0,
+    crit: o.crit ?? C.crit ?? null,
+    block: o.block ?? C.block ?? null,
   };
+}
+
+/* 초당 기대 피해 — 툴팁/정보 표시용 (치명타·다단타 반영) */
+export function heroDps(h) {
+  const m = heroMods(h);
+  const critMul = m.crit ? 1 + m.crit.chance * (m.crit.mul - 1) : 1;
+  return Math.round(h.dmg * m.hits * m.spd * critMul * 10) / 10;
 }
 
 /* ---------- 소환 ---------- */
@@ -410,7 +419,7 @@ function spawnEnemy(state, type, events, presetRoute) {
     enrageAt: E.enrageAt || 0, enrageSpd: E.enrageSpd || 1, enraged: false,
     heal: E.heal || 0, healPeriod: E.healPeriod || 0, healRange: E.healRange || 0,
     healCd: E.healPeriod || 0,
-    slowT: 0, slowMul: 1, auraMul: 1,
+    slowT: 0, slowMul: 1, auraMul: 1, stunT: 0, stunImmuneT: 0, stunned: false,
     dead: false,
   };
   state.enemies.push(e);
@@ -457,6 +466,15 @@ function applySlow(e, s) {
   e.slowT = Math.max(e.slowT, s.dur);
 }
 
+/* 방패 장벽: 적을 완전히 멈춘다 (보스는 강하게 저항, 직후 잠시 면역) */
+function applyStun(e, dur) {
+  if (e.stunImmuneT > 0) return false;
+  const d = dur * ((e.boss || e.midBoss) ? D.STUN_BOSS_MUL : 1);
+  e.stunT = d;
+  e.stunImmuneT = d + D.STUN_IMMUNE;
+  return true;
+}
+
 function firstInRange(state, x, y, range) {
   let target = null, best = -1;
   for (const e of state.enemies) {
@@ -472,7 +490,10 @@ function firstInRange(state, x, y, range) {
 
 function meleeStrike(state, h, mods, e, events) {
   for (let k = 0; k < mods.hits; k++) {
-    damageEnemy(state, e, h.dmg, events, 'hit', mods.healOnKill);
+    /* 치명타: 짧은 사거리를 보상하는 한 방 */
+    const crit = mods.crit && state.rng() < mods.crit.chance;
+    const dmg = crit ? Math.round(h.dmg * mods.crit.mul) : h.dmg;
+    damageEnemy(state, e, dmg, events, crit ? 'crit' : 'hit', mods.healOnKill);
     if (e.dead) break;
   }
   if (!e.dead) {
@@ -483,9 +504,30 @@ function meleeStrike(state, h, mods, e, events) {
 
 function updateHeroes(state, dt, events) {
   for (const h of state.field) {
+    const mods = heroMods(h);
+
+    /* 방패 장벽: 주기적으로 사거리 안 모든 적을 잠시 멈춘다 */
+    if (mods.block) {
+      h.blockCd = (h.blockCd == null ? mods.block.period * 0.5 : h.blockCd) - dt;
+      if (h.blockCd <= 0) {
+        const inRange = state.enemies.filter(e =>
+          !e.dead && Math.hypot(e.x - h.x, e.y - h.y) <= mods.range);
+        let stunned = 0;
+        for (const e of inRange) if (applyStun(e, mods.block.dur)) stunned++;
+        if (stunned) {
+          h.blockCd = mods.block.period;
+          events.push({
+            type: 'block', x: h.x, y: h.y, heroId: h.id,
+            range: mods.range, count: stunned, dur: mods.block.dur,
+          });
+        } else {
+          h.blockCd = 0;                    // 멈출 대상이 없으면 대기
+        }
+      }
+    }
+
     h.cd -= dt;
     if (h.cd > 0) continue;
-    const mods = heroMods(h);
     const target = firstInRange(state, h.x, h.y, mods.range);
     if (!target) continue;
     h.cd = 1 / mods.spd;
@@ -601,6 +643,15 @@ function updateEnemies(state, dt, events) {
     if (e.slowT > 0) mul = Math.min(mul, e.slowMul);
     mul = Math.min(mul, e.auraMul);
     e.slowed = mul < 1;
+
+    if (e.stunImmuneT > 0) e.stunImmuneT -= dt;
+    /* 정지(방패 장벽)에 걸리면 아예 못 움직인다 */
+    if (e.stunT > 0) {
+      e.stunT -= dt;
+      e.stunned = true;
+      continue;
+    }
+    e.stunned = false;
 
     e.s += e.spd * mul * dt;
     const routeLen = D.ROUTE_LENS[e.route];

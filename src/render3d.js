@@ -972,6 +972,7 @@ export class Renderer3D {
       v.burning = !!e.burn;
       v.slowed = !!e.slowed;
       v.enraged = !!e.enraged;
+      v.stunned = !!e.stunned;
     }
     for (const [id, v] of this.enemyViews) {
       if (!enemyIds.has(id)) { this.scene.remove(v.group); this.enemyViews.delete(id); }
@@ -1085,9 +1086,22 @@ export class Renderer3D {
         case 'enemyHit': {
           if (ev.kind === 'burn') {
             if (Math.random() < 0.4) this.showNumber(x3, 1.7, z3, `${ev.dmg}`, '#ff9a3d', 0.72);
+          } else if (ev.kind === 'crit') {
+            /* 치명타는 크고 노랗게 — 근접의 쾌감 */
+            this.showNumber(x3, 2.0, z3, `${ev.dmg}!`, '#ffd93d', 1.35);
+            this.burst(x3, 1.0, z3, 0xffd93d, 10, 4, { grav: 3, ttl: 0.3 });
+            this.addShake(0.14);
           } else {
             this.showNumber(x3, 1.8, z3, `${ev.dmg}`, '#ffffff', ev.dmg >= 100 ? 1.15 : 0.85);
           }
+          break;
+        }
+        case 'block': {
+          /* 방패 장벽: 바닥에 퍼지는 충격파 + 정지 표시 */
+          this._blockWave(x3, z3, ev.range * S);
+          this.burst(x3, 0.5, z3, 0x9fd0ff, 16, 3.2, { grav: 1.5, ttl: 0.4 });
+          this.showNumber(x3, 2.4, z3, '🛡️ 멈춰!', '#9fd0ff', 1.1);
+          this.addShake(0.2);
           break;
         }
         case 'kill': {
@@ -1184,6 +1198,41 @@ export class Renderer3D {
     }
   }
 
+  /* 방패 장벽 충격파 링 (풀에서 재사용) */
+  _blockWave(x3, z3, radius) {
+    if (!this.waves) {
+      this.waves = [];
+      for (let i = 0; i < 4; i++) {
+        const m = new THREE.Mesh(
+          new THREE.RingGeometry(0.86, 1, 40),
+          new THREE.MeshBasicMaterial({ color: 0x9fd0ff, transparent: true, opacity: 0, depthWrite: false })
+        );
+        m.rotation.x = -Math.PI / 2;
+        m.position.y = 0.18;
+        m.visible = false;
+        this.scene.add(m);
+        this.waves.push({ mesh: m, ttl: 0, radius: 1 });
+      }
+    }
+    const slot = this.waves.find(w => w.ttl <= 0) || this.waves[0];
+    slot.mesh.position.set(x3, 0.18, z3);
+    slot.radius = radius;
+    slot.ttl = 0.5;
+    slot.mesh.visible = true;
+  }
+
+  _updateWaves(dt) {
+    if (!this.waves) return;
+    for (const w of this.waves) {
+      if (w.ttl <= 0) continue;
+      w.ttl -= dt;
+      const k = 1 - w.ttl / 0.5;
+      w.mesh.scale.setScalar(w.radius * (0.25 + k * 0.85));
+      w.mesh.material.opacity = 0.8 * (1 - k);
+      if (w.ttl <= 0) w.mesh.visible = false;
+    }
+  }
+
   /* 조합 성공 연출 (특수 직업 탄생 등) — 벤치라 위치가 없으니 화면 중앙에 */
   celebrate(color = 0xffd93d, big = false) {
     this.burst(0, 2.2, 2, color, big ? 40 : 20, big ? 5 : 3.4, { grav: 3 });
@@ -1269,11 +1318,22 @@ export class Renderer3D {
       if (v.enraged && Math.random() < dt * 9) {
         this.burst(v.group.position.x, 0.8, v.group.position.z, 0xff3311, 1, 1.4, { grav: -2, ttl: 0.5, size: 0.8 });
       }
+      /* 정지된 적: 제자리에서 부르르 떨고 파란 기운 */
+      if (v.stunned) {
+        v.spr.position.x = Math.sin(t * 40 + id) * 0.05;
+        if (Math.random() < dt * 5) {
+          this.burst(v.group.position.x, 1.2, v.group.position.z, 0x9fd0ff, 1, 0.8, { grav: -1, ttl: 0.4, size: 0.6 });
+        }
+      } else {
+        v.spr.position.x = 0;
+      }
       if (v.burning) {
         v.spr.material.color.setRGB(1, 0.72, 0.5);
         if (Math.random() < dt * 7) {
           this.burst(v.group.position.x, 0.7, v.group.position.z, 0xff8830, 1, 1.1, { grav: -2.2, ttl: 0.45, size: 0.6 });
         }
+      } else if (v.stunned) {
+        v.spr.material.color.setRGB(0.72, 0.86, 1);
       } else if (v.enraged) {
         v.spr.material.color.setRGB(1, 0.55, 0.5);
       } else if (v.slowed) {
@@ -1311,6 +1371,7 @@ export class Renderer3D {
 
     this._updateParticles(dt);
     this._updateNumbers(dt);
+    this._updateWaves(dt);
     this._updateBossMood(dt);
 
     this.shake = Math.max(0, this.shake - dt * 1.7);

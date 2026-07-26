@@ -6,6 +6,69 @@ import * as E from './engine.js';
 
 const $ = (id) => document.getElementById(id);
 
+/* 사거리 등급 라벨 — 숫자만으론 감이 안 오니 말로도 알려준다 */
+function rangeLabel(range) {
+  if (range >= 240) return { text: '초장거리', cls: 'r4' };
+  if (range >= 180) return { text: '장거리', cls: 'r3' };
+  if (range >= 140) return { text: '중거리', cls: 'r2' };
+  return { text: '근접', cls: 'r1' };
+}
+
+/* 용사 상세 정보(툴팁/패널 공용) */
+export function describeHero(hero, state) {
+  const C = D.CLASSES[hero.cls];
+  const T = D.TIERS[hero.tier];
+  const m = E.heroMods(hero);
+  const rl = rangeLabel(m.range);
+  const rows = [];
+  rows.push(`⚔ 공격력 <b>${hero.dmg}</b>${m.hits > 1 ? ` × ${m.hits}타` : ''}`);
+  rows.push(`⏱ 공격속도 <b>${m.spd.toFixed(2)}</b>/초 · 초당 <b>${E.heroDps(hero)}</b>`);
+  if (m.crit) rows.push(`💥 <b>치명타 ${Math.round(m.crit.chance * 100)}%</b> · 피해 <b>×${m.crit.mul}</b>`);
+  if (m.block) rows.push(`🛡️ <b>방패 장벽</b>: ${m.block.period}초마다 사거리 안 적을 <b>${m.block.dur}초 정지</b>`);
+  if (m.slowOnHit) rows.push(`❄ 맞은 적 <b>${Math.round((1 - m.slowOnHit.mul) * 100)}% 감속</b> ${m.slowOnHit.dur}초`);
+  if (m.aura) rows.push(`❄ <b>결계</b>: 사거리 안 모든 적 상시 ${Math.round((1 - m.aura) * 100)}% 감속`);
+  if (m.splash) rows.push(`💥 <b>범위 폭발</b> 반경 ${Math.round(m.splash)}`);
+  if (m.splashSlow) rows.push(`🧊 폭발에 맞은 적 ${Math.round((1 - m.splashSlow.mul) * 100)}% 감속`);
+  if (m.burn) rows.push(`🔥 <b>화상</b>: 초당 공격력의 ${Math.round(m.burn * 100)}% (${D.BURN_DUR}초)`);
+  if (m.pierce > 1) rows.push(`🎯 <b>관통</b> ${m.pierce}명`);
+  if (m.cleave) rows.push(`🌀 <b>회전베기</b>: 사거리 안 전부 타격`);
+  if (m.healOnKill) rows.push(`💚 처치 시 성 회복 <b>+${m.healOnKill}</b>`);
+
+  let ability = '';
+  if (hero.tier === 3) {
+    const A = D.LEGEND_ABILITIES[hero.cls];
+    ability = `<div class="tt-legend">⭐ ${A.name} — ${A.desc}</div>`;
+  }
+  let recipe = '';
+  if (C.special) {
+    const [a, b] = C.recipe;
+    recipe = `<div class="tt-recipe">✨ ${D.CLASSES[a].emoji}+${D.CLASSES[b].emoji} 조합 전용 특수 용사</div>`;
+  }
+  const barPct = Math.round((m.range / D.RANGE_MAX) * 100);
+  const onField = hero.padIndex >= 0;
+  const upgradeLine = hero.level >= D.HERO_LEVEL_MAX
+    ? '최고 레벨'
+    : `강화 Lv${hero.level + 1} 💰${D.levelCost(hero.tier, hero.level)}`;
+
+  return `
+    <div class="tt-head">
+      <span class="tt-emoji">${C.emoji}</span>
+      <span class="tt-name">${C.name}</span>
+      <span class="tt-tier" style="background:${T.color}">${T.name}</span>
+      <span class="tt-lv">Lv${hero.level}</span>
+    </div>
+    <div class="tt-range">
+      <span class="tt-rlabel ${rl.cls}">${rl.text}</span>
+      <span class="tt-rnum">🎯 사거리 ${m.range}</span>
+      <div class="tt-rbar"><div class="tt-rfill ${rl.cls}" style="width:${barPct}%"></div></div>
+    </div>
+    <div class="tt-rows">${rows.map(r => `<div>${r}</div>`).join('')}</div>
+    ${ability}${recipe}
+    <div class="tt-desc">${C.desc}</div>
+    <div class="tt-foot">${onField ? '배치됨 · 빈 발판 클릭으로 이동 · 우클릭 회수' : '벤치 · 발판을 눌러 배치'} · ${upgradeLine}</div>
+  `;
+}
+
 export class UI {
   constructor() {
     this.el = {};
@@ -19,7 +82,7 @@ export class UI {
       'mHintBtn', 'mHint',
       'wavePreview', 'bossBar', 'bossBarFill', 'bossBarName', 'bossWarnBanner',
       'overModal', 'overStats', 'overShards', 'restartBtn', 'shareBtn', 'overMetaBtn',
-      'metaModal', 'metaShards', 'metaRows', 'metaClose',
+      'metaModal', 'metaShards', 'metaRows', 'metaClose', 'tooltip',
     ].forEach(id => this.el[id] = $(id));
     this._lastKnow = -1;
     this._lastProbSig = '';
@@ -145,10 +208,23 @@ export class UI {
       const C = D.CLASSES[hero.cls], T = D.TIERS[hero.tier];
       const d = document.createElement('div');
       d.className = `hcard t${hero.tier}` + (selId === hero.id ? ' sel' : '') + (C.special ? ' sp' : '');
-      d.innerHTML = `<div class="em">${C.emoji}</div><div class="nm">${C.name}</div>` +
+      const m = E.heroMods(hero);
+      const rl = rangeLabel(m.range);
+      /* 사거리를 카드에 직접 표시 — 배치 판단의 핵심 정보 */
+      const badges = [
+        m.crit ? '<span class="bdg">💥</span>' : '',
+        m.block ? '<span class="bdg">🛡️</span>' : '',
+        m.splash ? '<span class="bdg">✹</span>' : '',
+      ].join('');
+      d.innerHTML =
+        `<div class="em">${C.emoji}${badges ? `<span class="bdgs">${badges}</span>` : ''}</div>` +
+        `<div class="nm">${C.name}</div>` +
+        `<div class="rg ${rl.cls}">🎯${m.range}</div>` +
         `<div class="tr">${T.name}${hero.level > 1 ? ` <span class="lv">Lv${hero.level}</span>` : ''}</div>`;
-      d.title = `${T.name} ${C.name}\n공격력 ${hero.dmg} · 체력 ${hero.maxHp}`;
       d.addEventListener('click', () => this.h.onBenchSelect(hero.id));
+      d.addEventListener('mouseenter', (ev) => this.showTooltip(hero, state, ev.clientX, ev.clientY));
+      d.addEventListener('mousemove', (ev) => this.moveTooltip(ev.clientX, ev.clientY));
+      d.addEventListener('mouseleave', () => this.hideTooltip());
       el.appendChild(d);
     }
     this.el.benchHint.classList.toggle('hidden', selId == null);
@@ -236,21 +312,7 @@ export class UI {
     const onField = hero.padIndex >= 0;
     el.heroPanel.classList.remove('hidden');
     el.hpTitle.textContent = onField ? '🧍 선택한 용사 (배치됨)' : '🧍 선택한 용사 (벤치)';
-    let abilityHtml = '';
-    if (hero.tier === 3) {
-      const A = D.LEGEND_ABILITIES[hero.cls];
-      abilityHtml = `<div class="ability">⭐ ${A.name}: ${A.desc}</div>`;
-    }
-    let specialHtml = '';
-    if (C.special) {
-      const [a, b] = C.recipe;
-      specialHtml = `<div class="ability sp">✨ 특수 용사 (${D.CLASSES[a].emoji}+${D.CLASSES[b].emoji} 조합으로만 탄생)</div>`;
-    }
-    const extra = C.slowOnHit ? ` · ❄ 감속 ${Math.round((1 - C.slowOnHit.mul) * 100)}%` : '';
-    el.hpInfo.innerHTML =
-      `<b style="color:${T.color}">[${T.name}]</b> ${C.emoji} <b>${C.name}</b> <span class="lv">Lv${hero.level}</span><br>
-       ⚔ 공격력 ${hero.dmg} · 🎯 사거리 ${C.range}${extra}<br>
-       <span class="cdesc">${C.desc}</span>${specialHtml}${abilityHtml}`;
+    el.hpInfo.innerHTML = describeHero(hero, state);
     if (hero.level >= D.HERO_LEVEL_MAX) {
       el.upgradeBtn.textContent = '⬆ 최고 레벨!';
       el.upgradeBtn.disabled = true;
@@ -264,6 +326,25 @@ export class UI {
     el.sellBtn.textContent = `💰 판매 +${D.SELL_PRICE[hero.tier]} (X)`;
     el.moveHint.classList.toggle('hidden', !onField);
   }
+
+  /* ---------- 상세 정보 툴팁 ---------- */
+  showTooltip(hero, state, cx, cy) {
+    const tt = this.el.tooltip;
+    tt.innerHTML = describeHero(hero, state);
+    tt.classList.remove('hidden');
+    this.moveTooltip(cx, cy);
+  }
+  moveTooltip(cx, cy) {
+    const tt = this.el.tooltip;
+    if (tt.classList.contains('hidden')) return;
+    const r = tt.getBoundingClientRect();
+    let x = cx + 16, y = cy + 14;
+    if (x + r.width > window.innerWidth - 8) x = cx - r.width - 16;
+    if (y + r.height > window.innerHeight - 8) y = Math.max(8, cy - r.height - 14);
+    tt.style.left = `${Math.max(8, x)}px`;
+    tt.style.top = `${Math.max(8, y)}px`;
+  }
+  hideTooltip() { this.el.tooltip.classList.add('hidden'); }
 
   /* ---------- 다음 웨이브 미리보기 ---------- */
   renderWavePreview(state, counts) {

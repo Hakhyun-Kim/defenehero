@@ -38,6 +38,7 @@ let grade = 3;
 let speed = 1;
 let selBench = null;      // 배치 대기 중인 벤치 용사
 let selHero = null;       // 정보 패널에 표시 중인 용사 (벤치/필드)
+let hoverHeroId = null;   // 툴팁 표시 중인 필드 용사
 let overHandled = false;
 let heartbeatT = 0;
 let panelT = 0;
@@ -254,7 +255,11 @@ function doRecall(heroId) {
 function handleEvents(events) {
   for (const ev of events) {
     switch (ev.type) {
-      case 'enemyHit': if (ev.kind === 'hit') SFX.hit(); break;
+      case 'enemyHit':
+        if (ev.kind === 'hit') SFX.hit();
+        else if (ev.kind === 'crit') SFX.crit();
+        break;
+      case 'block': SFX.block(); break;
       case 'kill':
         if (ev.boss) {
           SFX.bossDown(true);
@@ -372,8 +377,20 @@ ui.bind({
     doRecall(hero.id);
   },
   onSceneMove(cx, cy) {
-    if (cx == null) { renderer.setHover(null); return; }
-    renderer.setHover(renderer.screenToPad(cx, cy));
+    if (cx == null) { renderer.setHover(null); ui.hideTooltip(); return; }
+    const pad = renderer.screenToPad(cx, cy);
+    renderer.setHover(pad);
+    /* 배치된 용사에 마우스를 올리면 상세 정보 */
+    const hero = pad == null ? null : E.padOccupant(state, pad);
+    if (hero) {
+      if (hoverHeroId !== hero.id) {
+        hoverHeroId = hero.id;
+        ui.showTooltip(hero, state, cx, cy);
+      } else ui.moveTooltip(cx, cy);
+    } else if (hoverHeroId != null) {
+      hoverHeroId = null;
+      ui.hideTooltip();
+    }
   },
   onHint() {
     if (!modal.prob) return;

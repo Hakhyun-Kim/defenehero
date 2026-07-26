@@ -102,6 +102,10 @@ export const SFX = {
   orb()        { if (limit('orb', 90)) return; tone(520, 0, 0.09, 'sine', 0.04, 260); },
   bolt()       { if (limit('bolt', 90)) return; tone(1200, 0, 0.07, 'sawtooth', 0.03, 500); },
   hit()        { if (limit('hit', 60)) return; noise(0, 0.045, 0.06, 1600, 0.7); },
+  /* 치명타: 쨍! 하고 시원하게 */
+  crit()       { if (limit('crit', 90)) return; tone(1320, 0, 0.09, 'square', 0.055, 660); noise(0, 0.08, 0.07, 2600, 0.6); },
+  /* 방패 장벽: 금속 쿵 + 지면 울림 */
+  block()      { if (limit('block', 200)) return; tone(180, 0, 0.16, 'square', 0.09, 90); noise(0, 0.2, 0.08, 700, 0.5); tone(90, 0.05, 0.25, 'sine', 0.08, 55); },
   kill()       { if (limit('kill', 70)) return; tone(300, 0, 0.08, 'square', 0.06, 90); noise(0, 0.07, 0.06, 900, 0.6); },
   coin()       { if (limit('coin', 110)) return; tone(988, 0, 0.05, 'square', 0.045); tone(1319, 0.05, 0.08, 'square', 0.045); },
   combo(mul)   { tone(784 * (mul >= 3 ? 1.5 : 1), 0, 0.1, 'square', 0.07, 1175); },
