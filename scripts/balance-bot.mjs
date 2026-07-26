@@ -71,10 +71,7 @@ function placeAll(state, sloppy = 0) {
 
 /* ---------- 준비 페이즈 정책 ---------- */
 function prepActions(state, P) {
-  /* 1) 수학 문제 풀기 */
-  for (let i = 0; i < P.problemsPerPrep; i++) {
-    E.applyMathResult(state, state.rng() < P.acc, P.grade);
-  }
+  /* 수학 문제는 조합할 때만 나온다 — 따로 푸는 행동은 없음 */
   /* 2) 소환 */
   while (state.gold >= D.SUMMON_COST + P.reserve && state.bench.length < D.BENCH_MAX) {
     if (!summonOk(state)) break;
@@ -86,16 +83,19 @@ function prepActions(state, P) {
       .sort((a, b) => b.resultTier - a.resultTier ||
         (b.kind === 'recipe' ? 1 : 0) - (a.kind === 'recipe' ? 1 : 0));
     if (!combos.length || state.rng() >= P.combineChance) break;
-    let passed = false;
-    for (let tryN = 0; tryN < 3; tryN++) {
+    /* 조합 관문: 정답까지 최대 3회 시도. 첫 시도 정답이면 비용 일부 환급 */
+    let passed = false, tries = 0;
+    for (; tries < 3; tries++) {
       const ok = state.rng() < P.acc;
-      E.applyMathResult(state, ok, P.grade);
+      E.applyMathResult(state, ok);
       if (ok) { passed = true; break; }
     }
     if (!passed) break;
     const pick = combos[0];
-    if (pick.kind === 'recipe') E.combineRecipe(state, pick.result, pick.tier);
-    else E.combineRankUp(state, pick.cls, pick.tier);
+    const r = pick.kind === 'recipe'
+      ? E.combineRecipe(state, pick.result, pick.tier)
+      : E.combineRankUp(state, pick.cls, pick.tier);
+    if (r.ok && tries === 0) E.refundFirstTry(state, r.cost, P.grade);
   }
   /* 4) 배치 */
   placeAll(state, P.sloppy || 0);

@@ -494,22 +494,54 @@ button { font-family: inherit; }
 }
 .grades button.on { border-color: #2478e0; background: #e3f0ff; color: #1a5cb0; }
 
-/* ===== 확률 ===== */
-.probs { display: flex; gap: 5px; margin-top: 8px; }
-.prob {
-  flex: 1;
-  text-align: center;
-  border-radius: 8px;
-  padding: 5px 2px;
-  font-size: 11px;
-  font-weight: 700;
-  color: #fff;
+/* ===== 소환 공개 카드 / 등급 플래시 ===== */
+#rarityFlash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 7;
 }
-.prob small { display: block; font-size: 12px; font-weight: 800; }
-.prob.t0 { background: var(--t0); }
-.prob.t1 { background: var(--t1); }
-.prob.t2 { background: var(--t2); }
-.prob.t3 { background: var(--t3); }
+#rarityFlash.on { animation: rarityflash 0.9s ease-out; }
+#rarityFlash.hero { background: radial-gradient(ellipse at center, rgba(168, 85, 247, 0.5) 0%, transparent 70%); }
+#rarityFlash.legend { background: radial-gradient(ellipse at center, rgba(255, 217, 61, 0.62) 0%, transparent 72%); }
+@keyframes rarityflash { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+.reveal {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.97);
+  border: 4px solid var(--t0);
+  border-radius: 18px;
+  padding: 14px 26px;
+  text-align: center;
+  z-index: 9;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.4);
+}
+.reveal .rv-em { font-size: 52px; line-height: 1.1; }
+.reveal .rv-tier { font-size: 14px; font-weight: 900; }
+.reveal .rv-name { font-size: 18px; font-weight: 800; }
+.reveal.t0 { border-color: var(--t0); }
+.reveal.t1 { border-color: var(--t1); }
+.reveal.t2 { border-color: var(--t2); box-shadow: 0 0 30px rgba(168, 85, 247, 0.75); }
+.reveal.t3 {
+  border-color: var(--t3);
+  box-shadow: 0 0 44px rgba(255, 217, 61, 0.9);
+  animation: legendglow 0.8s ease-in-out infinite alternate;
+}
+@keyframes legendglow {
+  from { box-shadow: 0 0 30px rgba(255, 217, 61, 0.7); }
+  to   { box-shadow: 0 0 60px rgba(255, 217, 61, 1); }
+}
+.reveal.pop { animation: revealpop 0.45s cubic-bezier(0.2, 1.7, 0.4, 1); }
+.reveal.t3.pop { animation: revealpop 0.45s cubic-bezier(0.2, 1.7, 0.4, 1), legendglow 0.8s ease-in-out 0.45s infinite alternate; }
+@keyframes revealpop {
+  0%   { transform: translate(-50%, -50%) scale(0.2) rotate(-12deg); opacity: 0; }
+  60%  { transform: translate(-50%, -50%) scale(1.14) rotate(3deg); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1) rotate(0); }
+}
 
 /* ===== 벤치 ===== */
 .benchhint {
@@ -725,6 +757,20 @@ button { font-family: inherit; }
 .combine-row .ing { opacity: 0.35; filter: grayscale(0.8); }
 .combine-row .ing.have { opacity: 1; filter: none; }
 .combine-row .need { font-size: 10px; margin-left: auto; }
+.combine-row .peek {
+  cursor: help;
+  border-bottom: 1.5px dotted #9aa7ba;
+}
+.combine-row .peek:hover { background: #fff7e0; border-radius: 4px; }
+.tt-preview {
+  background: #6d43e8;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+#tooltip.preview { border-color: #9d7bff; }
 .combine-row.ready {
   background: #f4fff2;
   border-radius: 8px;

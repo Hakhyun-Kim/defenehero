@@ -28,7 +28,6 @@ export function createGame(opts = {}) {
     castleHp: castleMax, castleMax,
     castle: { fortify: 0, tower: 0 },
     towerCd: 0,
-    knowledge: 0,
 
     nextId: 1,
     bench: [], field: [],
@@ -37,7 +36,7 @@ export function createGame(opts = {}) {
     pendingWave: null,
 
     kills: 0, bossKills: 0, midBossKills: 0, summons: 0, combos: 0,
-    solved: 0, correct: 0, goldEarned: 0, upgrades: 0, hints: 0,
+    solved: 0, correct: 0, goldEarned: 0, upgrades: 0, hints: 0, firstTryWins: 0,
     specialsMade: 0,
     shardsEarned: 0,
     combo: { count: 0, timer: 0 },
@@ -87,7 +86,7 @@ export function heroDps(h) {
 
 /* ---------- 소환 ---------- */
 export function rollTier(state) {
-  const p = D.tierProbs(state.knowledge);
+  const p = D.SUMMON_PROBS;
   let r = state.rng() * 100;
   for (let i = 0; i < 4; i++) { r -= p[i]; if (r < 0) return i; }
   return 3;
@@ -300,25 +299,26 @@ export function castleUpgrade(state, key) {
 }
 
 /* ---------- 수학 / 힌트 ---------- */
-export function applyMathResult(state, correct, grade) {
+export function applyMathResult(state, correct) {
   state.solved++;
-  if (correct) {
-    state.correct++;
-    const gold = Math.round(D.MATH_GOLD(grade) * state.mathMul);
-    const kp = D.MATH_KP(grade);
-    state.gold += gold;
-    state.goldEarned += gold;
-    state.knowledge = Math.min(D.KNOW_MAX, state.knowledge + kp);
-    return { gold, kp };
-  }
-  state.knowledge = Math.max(0, state.knowledge + D.WRONG_KP);
-  return { gold: 0, kp: D.WRONG_KP };
+  if (correct) state.correct++;
+  return { correct };
+}
+
+/* 첫 시도에 맞히면 조합 비용 일부를 환급 — 정확도 × 학년이 곧 골드 */
+export function refundFirstTry(state, cost, grade) {
+  const back = Math.round(cost * D.refundRatio(grade) * state.mathMul);
+  state.gold += back;
+  state.goldEarned += back;
+  state.firstTryWins++;
+  return back;
 }
 
 export function useHint(state) {
+  if (state.gold < D.HINT_GOLD) return { ok: false, reason: 'gold', cost: D.HINT_GOLD };
+  state.gold -= D.HINT_GOLD;
   state.hints++;
-  state.knowledge = Math.max(0, state.knowledge - D.HINT_COST);
-  return { knowledge: state.knowledge };
+  return { ok: true, cost: D.HINT_GOLD };
 }
 
 /* ---------- 웨이브 ---------- */
@@ -693,7 +693,7 @@ function updateProjectiles(state, dt, events) {
     if (d <= step + 14) {
       p.dead = true;
       if (p.splash > 0) {
-        events.push({ type: 'explode', x: t.x, y: t.y, big: p.splash > 66, frost: !!p.splashSlow });
+        events.push({ type: 'explode', x: t.x, y: t.y, radius: p.splash, big: p.splash > 66, frost: !!p.splashSlow });
         for (const e of state.enemies) {
           if (e.dead) continue;
           if (Math.hypot(e.x - t.x, e.y - t.y) <= p.splash) {

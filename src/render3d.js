@@ -1132,16 +1132,23 @@ export class Renderer3D {
         case 'shoot':
           this._heroAttackAnim(ev.heroId, ev.tx, ev.ty);
           break;
-        case 'explode':
+        case 'explode': {
+          /* 폭발 반경을 링으로 그려 "어디까지 맞았는지" 확실히 보인다 */
+          const r3 = (ev.radius || 62) * S;
           if (ev.frost) {
-            this.burst(x3, 0.9, z3, 0x9fdcff, ev.big ? 24 : 14, ev.big ? 4.2 : 3.2);
-            this.burst(x3, 0.9, z3, 0xe8fbff, 8, 2.2);
+            this._shockRing(x3, z3, r3, 0x9fdcff, 0.45, 0.2);
+            this._shockRing(x3, z3, r3 * 0.6, 0xe8fbff, 0.35, 0.22);
+            this.burst(x3, 0.9, z3, 0x9fdcff, ev.big ? 26 : 16, ev.big ? 4.2 : 3.2);
+            this.burst(x3, 1.1, z3, 0xe8fbff, 10, 2.2, { grav: -0.5, ttl: 0.6 });
           } else {
-            this.burst(x3, 0.9, z3, 0xffa040, ev.big ? 26 : 14, ev.big ? 4.6 : 3.4);
-            if (ev.big) this.burst(x3, 0.9, z3, 0xff5533, 10, 2.6);
+            this._shockRing(x3, z3, r3, 0xffa040, 0.45, 0.2);
+            this._shockRing(x3, z3, r3 * 0.55, 0xffe08a, 0.32, 0.22);
+            this.burst(x3, 0.9, z3, 0xffa040, ev.big ? 30 : 18, ev.big ? 4.6 : 3.4);
+            this.burst(x3, 0.9, z3, 0xff5533, ev.big ? 14 : 8, 2.6);
           }
-          this.addShake(ev.big ? 0.2 : 0.1);
+          this.addShake(ev.big ? 0.22 : 0.12);
           break;
+        }
         case 'boltHit':
           this.burst(x3, 1.1, z3, 0x8df3ff, 8, 3);
           break;
@@ -1198,38 +1205,100 @@ export class Renderer3D {
     }
   }
 
-  /* 방패 장벽 충격파 링 (풀에서 재사용) */
-  _blockWave(x3, z3, radius) {
+  /* 퍼지는 충격파 링 (방패 장벽·범위 폭발 공용, 풀에서 재사용) */
+  _shockRing(x3, z3, radius, color = 0x9fd0ff, life = 0.5, y = 0.18) {
     if (!this.waves) {
       this.waves = [];
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 10; i++) {
         const m = new THREE.Mesh(
-          new THREE.RingGeometry(0.86, 1, 40),
+          new THREE.RingGeometry(0.84, 1, 40),
           new THREE.MeshBasicMaterial({ color: 0x9fd0ff, transparent: true, opacity: 0, depthWrite: false })
         );
         m.rotation.x = -Math.PI / 2;
-        m.position.y = 0.18;
         m.visible = false;
         this.scene.add(m);
-        this.waves.push({ mesh: m, ttl: 0, radius: 1 });
+        this.waves.push({ mesh: m, ttl: 0, life: 0.5, radius: 1 });
       }
     }
     const slot = this.waves.find(w => w.ttl <= 0) || this.waves[0];
-    slot.mesh.position.set(x3, 0.18, z3);
+    slot.mesh.position.set(x3, y, z3);
+    slot.mesh.material.color.setHex(color);
     slot.radius = radius;
-    slot.ttl = 0.5;
+    slot.ttl = slot.life = life;
     slot.mesh.visible = true;
   }
+  _blockWave(x3, z3, radius) { this._shockRing(x3, z3, radius, 0x9fd0ff, 0.5); }
 
   _updateWaves(dt) {
     if (!this.waves) return;
     for (const w of this.waves) {
       if (w.ttl <= 0) continue;
       w.ttl -= dt;
-      const k = 1 - w.ttl / 0.5;
+      const k = 1 - w.ttl / w.life;
       w.mesh.scale.setScalar(w.radius * (0.25 + k * 0.85));
-      w.mesh.material.opacity = 0.8 * (1 - k);
+      w.mesh.material.opacity = 0.85 * (1 - k);
       if (w.ttl <= 0) w.mesh.visible = false;
+    }
+  }
+
+  /* 소환 연출 — 성 앞 광장에서 등급에 비례해 화려하게 */
+  summonBurst(tier) {
+    const x = 0, z = 2.6;
+    const col = new THREE.Color(D.TIERS[tier].color).getHex();
+    const n = [10, 18, 34, 60][tier];
+    const spd = [2.4, 3.2, 4.4, 6][tier];
+    this.burst(x, 0.8, z, col, n, spd, { grav: 4 });
+    this._shockRing(x, z, 1.2 + tier * 0.5, col, 0.55);
+    if (tier >= 2) {
+      /* 빛의 기둥 */
+      this._lightPillar(x, z, tier);
+      this.burst(x, 1.6, z, 0xffffff, 16, 3, { grav: 1.5, ttl: 0.6 });
+      this.addShake(tier === 3 ? 0.32 : 0.16);
+    }
+    if (tier === 3) {
+      this._shockRing(x, z, 3.2, 0xffd93d, 0.8);
+      for (let k = 0; k < 3; k++) {
+        setTimeout(() => this.burst(x + (Math.random() - 0.5) * 2, 1 + Math.random() * 2, z + (Math.random() - 0.5) * 2,
+          0xffd93d, 14, 4, { grav: 3 }), k * 130);
+      }
+    }
+  }
+
+  /* 조합 성공 연출 (영웅 이상) — 결과 발판(없으면 광장)에서 */
+  combineFlourish(padIndex, tier) {
+    const x = padIndex >= 0 ? wx(D.PADS[padIndex].x) : 0;
+    const z = padIndex >= 0 ? wz(D.PADS[padIndex].y) : 2.6;
+    const col = new THREE.Color(D.TIERS[tier].color).getHex();
+    this._lightPillar(x, z, tier);
+    this._shockRing(x, z, 1.6 + tier * 0.6, col, 0.6);
+    this._shockRing(x, z, 2.6 + tier * 0.6, 0xffffff, 0.8);
+    this.burst(x, 1.0, z, col, 26 + tier * 12, 4 + tier, { grav: 3 });
+    this.burst(x, 1.8, z, 0xffffff, 14, 2.6, { grav: 1 });
+    this.addShake(tier === 3 ? 0.4 : 0.22);
+  }
+
+  /* 위로 솟는 빛기둥 (풀 없이 즉석 생성 후 자동 제거) */
+  _lightPillar(x, z, tier) {
+    const col = new THREE.Color(D.TIERS[tier].color);
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5 + tier * 0.12, 0.7 + tier * 0.15, 6, 16, 1, true),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false })
+    );
+    mesh.position.set(x, 3, z);
+    this.scene.add(mesh);
+    if (!this.pillars) this.pillars = [];
+    this.pillars.push({ mesh, ttl: 0.7, life: 0.7 });
+  }
+  _updatePillars(dt) {
+    if (!this.pillars) return;
+    for (let i = this.pillars.length - 1; i >= 0; i--) {
+      const p = this.pillars[i];
+      p.ttl -= dt;
+      const k = 1 - p.ttl / p.life;
+      p.mesh.material.opacity = 0.55 * (1 - k);
+      p.mesh.scale.set(1 + k * 0.8, 1 + k * 0.4, 1 + k * 0.8);
+      p.mesh.rotation.y += dt * 3;
+      if (p.ttl <= 0) { this.scene.remove(p.mesh); this.pillars.splice(i, 1); }
     }
   }
 
@@ -1337,11 +1406,26 @@ export class Renderer3D {
       } else if (v.enraged) {
         v.spr.material.color.setRGB(1, 0.55, 0.5);
       } else if (v.slowed) {
-        v.spr.material.color.setRGB(0.62, 0.82, 1);
-        if (Math.random() < dt * 3) {
-          this.burst(v.group.position.x, 0.5, v.group.position.z, 0x9fdcff, 1, 0.7, { grav: -1, ttl: 0.5, size: 0.5 });
+        /* 감속: 더 진한 청색 + 발밑 서리 고리 + 눈발 */
+        v.spr.material.color.setRGB(0.48, 0.74, 1);
+        if (!v.frostRing) {
+          const fr = new THREE.Mesh(
+            new THREE.RingGeometry(v.baseScale * 0.34, v.baseScale * 0.5, 20),
+            new THREE.MeshBasicMaterial({ color: 0x9fdcff, transparent: true, opacity: 0.8, depthWrite: false })
+          );
+          fr.rotation.x = -Math.PI / 2;
+          fr.position.y = 0.07;
+          v.group.add(fr);
+          v.frostRing = fr;
+        }
+        v.frostRing.visible = true;
+        v.frostRing.rotation.z = t * 1.4;
+        v.frostRing.material.opacity = 0.55 + Math.sin(t * 6 + id) * 0.25;
+        if (Math.random() < dt * 6) {
+          this.burst(v.group.position.x, 0.5, v.group.position.z, 0x9fdcff, 1, 0.7, { grav: -1, ttl: 0.55, size: 0.6 });
         }
       } else {
+        if (v.frostRing) v.frostRing.visible = false;
         v.spr.material.color.setRGB(1, 1, 1);
       }
     }
@@ -1372,6 +1456,7 @@ export class Renderer3D {
     this._updateParticles(dt);
     this._updateNumbers(dt);
     this._updateWaves(dt);
+    this._updatePillars(dt);
     this._updateBossMood(dt);
 
     this.shake = Math.max(0, this.shake - dt * 1.7);

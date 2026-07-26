@@ -14,8 +14,17 @@ function rangeLabel(range) {
   return { text: '근접', cls: 'r1' };
 }
 
+/* 조합 결과 미리보기용 가상 용사 (상태를 바꾸지 않는다) */
+function previewHero(cls, tier, state) {
+  const s = D.heroStats(cls, tier, 1);
+  return {
+    id: -1, cls, tier, level: 1, padIndex: -1,
+    dmg: Math.round(s.dmg * (state ? state.dmgMul : 1)),
+  };
+}
+
 /* 용사 상세 정보(툴팁/패널 공용) */
-export function describeHero(hero, state) {
+export function describeHero(hero, state, preview) {
   const C = D.CLASSES[hero.cls];
   const T = D.TIERS[hero.tier];
   const m = E.heroMods(hero);
@@ -49,13 +58,17 @@ export function describeHero(hero, state) {
   const upgradeLine = hero.level >= D.HERO_LEVEL_MAX
     ? '최고 레벨'
     : `강화 Lv${hero.level + 1} 💰${D.levelCost(hero.tier, hero.level)}`;
+  const foot = preview
+    ? '🔮 조합하면 이렇게 나와요 (미리보기)'
+    : `${onField ? '배치됨 · 빈 발판 클릭으로 이동 · 우클릭 회수' : '벤치 · 발판을 눌러 배치'} · ${upgradeLine}`;
 
   return `
     <div class="tt-head">
+      ${preview ? '<span class="tt-preview">미리보기</span>' : ''}
       <span class="tt-emoji">${C.emoji}</span>
       <span class="tt-name">${C.name}</span>
       <span class="tt-tier" style="background:${T.color}">${T.name}</span>
-      <span class="tt-lv">Lv${hero.level}</span>
+      ${preview ? '' : `<span class="tt-lv">Lv${hero.level}</span>`}
     </div>
     <div class="tt-range">
       <span class="tt-rlabel ${rl.cls}">${rl.text}</span>
@@ -65,7 +78,7 @@ export function describeHero(hero, state) {
     <div class="tt-rows">${rows.map(r => `<div>${r}</div>`).join('')}</div>
     ${ability}${recipe}
     <div class="tt-desc">${C.desc}</div>
-    <div class="tt-foot">${onField ? '배치됨 · 빈 발판 클릭으로 이동 · 우클릭 회수' : '벤치 · 발판을 눌러 배치'} · ${upgradeLine}</div>
+    <div class="tt-foot">${foot}</div>
   `;
 }
 
@@ -75,14 +88,15 @@ export class UI {
     [
       'bestWave', 'shards', 'metaBtn', 'castleText', 'castleFill', 'castleGhost',
       'scene3d', 'hitFlash', 'lowHpVignette', 'bossBanner', 'comboChip', 'waveInfo', 'remainN',
-      'waveBtn', 'coachChip', 'toasts', 'gold', 'waveNo', 'know', 'speedBtn', 'muteBtn',
-      'grades', 'practiceBtn', 'probs', 'summonBtn', 'benchHint', 'bench', 'combineRows',
+      'waveBtn', 'coachChip', 'toasts', 'gold', 'waveNo', 'speedBtn', 'muteBtn',
+      'grades', 'summonBtn', 'benchHint', 'bench', 'combineRows',
       'castleRows', 'heroPanel', 'hpTitle', 'hpInfo', 'upgradeBtn', 'recallBtn', 'sellBtn', 'moveHint',
       'diffRow', 'mathModal', 'mTitle', 'mGrade', 'mProblem', 'mInput', 'mSubmit', 'mFeedback', 'mNext', 'mClose',
       'mHintBtn', 'mHint',
       'wavePreview', 'bossBar', 'bossBarFill', 'bossBarName', 'bossWarnBanner',
       'overModal', 'overStats', 'overShards', 'restartBtn', 'shareBtn', 'overMetaBtn',
       'metaModal', 'metaShards', 'metaRows', 'metaClose', 'tooltip',
+      'revealCard', 'rarityFlash',
     ].forEach(id => this.el[id] = $(id));
     this._lastKnow = -1;
     this._lastProbSig = '';
@@ -93,7 +107,6 @@ export class UI {
     const el = this.el;
     el.waveBtn.addEventListener('click', h.onWaveStart);
     el.summonBtn.addEventListener('click', h.onSummon);
-    el.practiceBtn.addEventListener('click', h.onPractice);
     el.speedBtn.addEventListener('click', h.onSpeed);
     el.muteBtn.addEventListener('click', h.onMute);
     el.metaBtn.addEventListener('click', h.onMetaOpen);
@@ -139,7 +152,6 @@ export class UI {
     const el = this.el;
     el.gold.textContent = state.gold;
     el.waveNo.textContent = state.wave;
-    el.know.textContent = state.knowledge;
     el.shards.textContent = shards;
     el.bestWave.textContent = best || '-';
     el.castleText.textContent = `${state.castleHp} / ${state.castleMax}`;
@@ -148,13 +160,6 @@ export class UI {
     el.castleGhost.style.width = `${pct}%`;
     el.summonBtn.disabled = state.gold < D.SUMMON_COST || state.bench.length >= D.BENCH_MAX || state.phase === 'over';
 
-    if (this._lastKnow !== state.knowledge) {
-      this._lastKnow = state.knowledge;
-      const p = D.tierProbs(state.knowledge);
-      el.probs.innerHTML = D.TIERS.map((t, i) =>
-        `<div class="prob t${i}">${t.name}<small>${p[i].toFixed(1).replace(/\.0$/, '')}%</small></div>`
-      ).join('');
-    }
   }
 
   setWaveUI(state) {
@@ -243,7 +248,7 @@ export class UI {
     for (const c of rankups) {
       const C = D.CLASSES[c.cls];
       html += `<div class="combine-row${c.affordable ? ' ready' : ''}">
-        <span>${C.emoji}</span> ${C.name}
+        <span class="peek" data-cls="${c.cls}" data-rtier="${c.resultTier}">${C.emoji}</span> ${C.name}
         <span class="cnt" style="color:${D.TIERS[c.tier].color}">${D.TIERS[c.tier].name}×2</span>
         <button data-kind="rankup" data-cls="${c.cls}" data-tier="${c.tier}"
           ${c.affordable ? '' : 'disabled'}>⚗ ${D.TIERS[c.resultTier].name} 💰${c.cost}</button>
@@ -266,7 +271,8 @@ export class UI {
       const canPay = ready && state.gold >= cost;
       html += `<div class="combine-row recipe${canPay ? ' ready' : ''}">
         <span class="ing${hasA ? ' have' : ''}">${A.emoji}</span>+<span class="ing${hasB ? ' have' : ''}">${B.emoji}</span>
-        <span class="rarrow">→</span> <span>${R.emoji}</span> <b>${R.name}</b>
+        <span class="rarrow">→</span>
+        <span class="peek" data-cls="${r.result}" data-rtier="${ready ? readyTier + 1 : 1}">${R.emoji} <b>${R.name}</b></span>
         ${ready
           ? `<button data-kind="recipe" data-result="${r.result}" data-tier="${readyTier}"
                ${canPay ? '' : 'disabled'}>⚗ ${D.TIERS[readyTier + 1].name} 💰${cost}</button>`
@@ -277,6 +283,15 @@ export class UI {
     this.el.combineRows.innerHTML = html;
     this.el.combineRows.querySelectorAll('button').forEach(b => {
       b.addEventListener('click', () => this.h.onCombine({ ...b.dataset }));
+    });
+    /* 결과 캐릭터에 커서를 올리면 "무엇이 나올지" 미리 보여준다 */
+    this.el.combineRows.querySelectorAll('.peek').forEach(sp => {
+      const cls = sp.dataset.cls;
+      const tier = Number(sp.dataset.rtier);
+      sp.addEventListener('mouseenter', (ev) =>
+        this.showTooltip(previewHero(cls, tier, state), state, ev.clientX, ev.clientY, true));
+      sp.addEventListener('mousemove', (ev) => this.moveTooltip(ev.clientX, ev.clientY));
+      sp.addEventListener('mouseleave', () => this.hideTooltip());
     });
   }
 
@@ -328,9 +343,10 @@ export class UI {
   }
 
   /* ---------- 상세 정보 툴팁 ---------- */
-  showTooltip(hero, state, cx, cy) {
+  showTooltip(hero, state, cx, cy, preview) {
     const tt = this.el.tooltip;
-    tt.innerHTML = describeHero(hero, state);
+    tt.innerHTML = describeHero(hero, state, preview);
+    tt.classList.toggle('preview', !!preview);
     tt.classList.remove('hidden');
     this.moveTooltip(cx, cy);
   }
@@ -461,7 +477,7 @@ export class UI {
     el.mHint.classList.add('hidden');
     el.mHint.textContent = '';
     el.mHintBtn.disabled = false;
-    el.mHintBtn.textContent = `💡 힌트 (🧠 -${D.HINT_COST} · H)`;
+    el.mHintBtn.textContent = `💡 힌트 (💰${D.HINT_GOLD} · H)`;
     setTimeout(() => el.mInput.focus(), 30);
   }
   showHint(text) {
@@ -505,6 +521,35 @@ export class UI {
     this.el.overModal.classList.remove('hidden');
   }
   hideOver() { this.el.overModal.classList.add('hidden'); }
+
+  /* ---------- 소환/조합 연출 ---------- */
+  summonReveal(hero, tier) {
+    const C = D.CLASSES[hero.cls], T = D.TIERS[tier];
+    const el = this.el.revealCard;
+    el.className = `reveal t${tier}`;
+    el.innerHTML =
+      `<div class="rv-em">${C.emoji}</div>` +
+      `<div class="rv-tier" style="color:${T.color}">${T.name}</div>` +
+      `<div class="rv-name">${C.name}</div>`;
+    el.classList.remove('hidden');
+    void el.offsetWidth;
+    el.classList.add('pop');
+    clearTimeout(this._revealT);
+    this._revealT = setTimeout(() => { el.classList.add('hidden'); el.classList.remove('pop'); },
+      tier >= 2 ? 1500 : 900);
+    if (tier >= 2) this.flashScreen(tier === 3 ? 'legend' : 'hero');
+  }
+
+  flashCombine(tier) { this.flashScreen(tier === 3 ? 'legend' : 'hero'); }
+
+  flashScreen(kind) {
+    const el = this.el.rarityFlash;
+    el.className = kind;
+    void el.offsetWidth;
+    el.classList.add('on');
+    clearTimeout(this._flashT);
+    this._flashT = setTimeout(() => el.classList.remove('on'), 900);
+  }
 
   /* ---------- 연출 ---------- */
   toast(msg, kind = '') {

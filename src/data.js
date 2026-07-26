@@ -42,23 +42,20 @@ export const START_GOLD = 150;
 export const SUMMON_COST = 50;
 export const BENCH_MAX = 12;
 export const SELL_PRICE = [12, 30, 70, 160];
-export const WAVE_BONUS = (w) => 20 + w * 6;
+/* 수학 문제로 골드를 벌던 창구가 없어졌으니 전투 보상이 주 수입원 */
+export const WAVE_BONUS = (w) => 30 + w * 9;
 
-/* ---------- 지식(수학) ---------- */
-export const KNOW_MAX = 20;
-/* 수학 보상은 실력 격차의 핵심 레버 — 넉넉하게 유지하고, 대신 조합 비용으로 조인다 */
-export const MATH_GOLD = (grade) => grade * 9;
-export const MATH_KP = (grade) => grade - 2;
-export const WRONG_KP = -1;
-export const HINT_COST = 2;
+/* ---------- 수학 (조합 전용) ----------
+ * 수학 문제는 "조합의 관문"으로만 등장한다 — 따로 풀 이유를 억지로 만들지 않고,
+ * 게임 진행에 반드시 필요한 순간에만 자연스럽게 만난다.
+ * 첫 시도에 맞히면 조합 비용의 일부를 환급해 정확도를 보상한다. */
+/* 첫 시도 정답 환급률 — 높은 학년 문제를 고르면 크게 돌려받는다
+ * (3학년 15% … 6학년 45%) → 어려운 수학에 도전할 이유가 생긴다 */
+export const refundRatio = (grade) => 0.15 + (Math.max(3, Math.min(6, grade)) - 3) * 0.10;
+export const HINT_GOLD = 30;          // 힌트는 골드로 산다
 
-/* 소환 확률(%): 전설은 소환으로 거의 안 나온다 — 조합으로 얻는 게 정석 */
-export function tierProbs(k) {
-  const legend = 0.3 + 0.07 * k;     // 지식 20에서도 1.7%
-  const hero = 6 + 0.4 * k;
-  const rare = 26 + 0.8 * k;
-  return [100 - legend - hero - rare, rare, hero, legend];
-}
+/* 소환 확률(%) — 고정. 전설은 소환으로 거의 안 나오고 조합으로 얻는 게 정석 */
+export const SUMMON_PROBS = [64, 26.5, 8, 1.5];
 
 /* ---------- 용사 ---------- */
 export const TIERS = [
@@ -184,7 +181,7 @@ export const LUCKY_MAX_TIER = 2;
 /* ---------- 조합 비용 ----------
  * 결과 등급이 높을수록 급격히 비싸진다. 전설은 확실히 어렵게.
  * 인덱스 = 결과 등급 (희귀/영웅/전설) */
-export const COMBINE_COST = [0, 60, 340, 1500];
+export const COMBINE_COST = [0, 60, 300, 1200];
 /* 특수 레시피는 25% 프리미엄 (강력한 대신 값비싸다) */
 export const RECIPE_COST_MUL = 1.25;
 export const combineCost = (resultTier, isRecipe) =>
@@ -257,7 +254,7 @@ export const DIFFICULTIES = {
  * + 12웨이브 이후 가속: 장기전(고수)만 조이고 초반은 건드리지 않는다 */
 export const hpScale = (w) =>
   1 + 0.18 * (w - 1) + 0.04 * (w - 1) * (w - 1) + 0.03 * Math.pow(Math.max(0, w - 12), 2);
-export const enemyGoldScale = (w) => 1 + 0.02 * w;
+export const enemyGoldScale = (w) => 1 + 0.03 * w;
 /* 마릿수: 초반부터 넉넉하게, 뒤로 갈수록 크게 증가 (타격감 + 압박) */
 export const waveCount = (w) => 8 + Math.round(w * 1.9);
 export const castleDmgScale = (w) => 1 + Math.max(0, w - 15) * 0.08;

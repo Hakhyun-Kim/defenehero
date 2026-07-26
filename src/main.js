@@ -76,6 +76,7 @@ function openMath(mode, pending = null) {
   if (state.phase === 'over') return;
   modal.mode = mode;
   modal.pending = pending;
+  modal.usedHint = false;
   let title = '✏️ 지혜의 시험!';
   if (mode === 'combine' && pending) {
     if (pending.kind === 'rankup') {
@@ -91,18 +92,22 @@ function openMath(mode, pending = null) {
 }
 function newProblem() {
   modal.prob = MathGen.gen(grade);
-  const goldReward = Math.round(modal.prob.gold * state.mathMul);
+  modal.tries = 0;
+  const cost = modal.pending ? D.combineCost(Number(modal.pending.tier) + 1, modal.pending.kind === 'recipe') : 0;
+  const refund = Math.round(cost * D.refundRatio(grade) * state.mathMul);
   ui.setProblem(grade, modal.prob.text,
-    modal.mode === 'combine' ? '맞히면 조합 성공!' : `맞히면 💰${goldReward} + 🧠지식 ${modal.prob.kp} UP!`);
+    refund ? `한 번에 맞히면 조합 성공 + 💰${refund} 환급!` : '맞히면 조합 성공!');
 }
 function submitMath(value) {
   if (!modal.prob || !String(value).trim()) return;
+  modal.tries = (modal.tries || 0) + 1;
   const ok = MathGen.check(value, modal.prob.answer);
-  const res = E.applyMathResult(state, ok, grade);
+  E.applyMathResult(state, ok);
   if (ok) {
     SFX.correct();
     if (modal.mode === 'combine' && modal.pending) {
       const p = modal.pending;
+      const firstTry = modal.tries === 1 && !modal.usedHint;
       const r = p.kind === 'rankup'
         ? E.combineRankUp(state, p.cls, Number(p.tier))
         : E.combineRecipe(state, p.result, Number(p.tier));
@@ -125,6 +130,15 @@ function submitMath(value) {
           ui.toast(`✨ 특수 용사 [${C.name}] 탄생! ${C.desc}`, 'good');
           renderer.celebrate(0xd8b4ff, true);
         }
+        if (firstTry) {
+          const back = E.refundFirstTry(state, r.cost, grade);
+          msg += ` ✅ 한 번에 정답! 💰+${back} 환급`;
+        }
+        /* 영웅(2) 이상 탄생은 확실한 연출로 */
+        if (r.hero.tier >= 2) {
+          renderer.combineFlourish(r.pad, r.hero.tier);
+          ui.flashCombine(r.hero.tier);
+        }
         if (r.pad >= 0) {
           msg += ' 🎯 그 자리에 바로 배치!';
           renderer.burst((D.PADS[r.pad].x - D.FIELD_W / 2) / 36, 0.5, (D.PADS[r.pad].y - D.FIELD_H / 2) / 36, 0x7fff9e, 12, 2.4);
@@ -145,12 +159,11 @@ function submitMath(value) {
         ui.mathFeedback(true, '정답! 그런데 조합 재료가 부족해요…', null);
       }
     } else {
-      ui.mathFeedback(true, `🎉 정답! 💰+${res.gold} · 🧠 지식+${res.kp}`, '➡ 다음 문제 (Enter)');
+      ui.mathFeedback(true, '🎉 정답!', null);
     }
   } else {
     SFX.wrong();
-    ui.mathFeedback(false, `😢 아쉬워요! 정답은 ${modal.prob.answer} 이에요. (지식 -1)`,
-      modal.mode === 'combine' ? '🔁 다시 도전 (Enter)' : '➡ 다음 문제 (Enter)');
+    ui.mathFeedback(false, `😢 아쉬워요! 정답은 ${modal.prob.answer} 이에요.`, '🔁 다시 도전 (Enter)');
   }
   refreshAll();
 }
@@ -199,6 +212,9 @@ function doSummon() {
   }
   SFX.summon(r.hero.tier);
   const C = D.CLASSES[r.hero.cls], T = D.TIERS[r.hero.tier];
+  /* 등급이 높을수록 화려하게 */
+  renderer.summonBurst(r.hero.tier);
+  ui.summonReveal(r.hero, r.hero.tier);
   ui.toast(`${T.name} 등급 ${C.name} ${C.emoji} 등장!`, r.hero.tier >= 2 ? 'good' : '');
   if (r.hero.tier === 3) ui.toast(`👑 전설! [${D.LEGEND_ABILITIES[r.hero.cls].name}] ${D.LEGEND_ABILITIES[r.hero.cls].desc}`, 'good');
   refreshAll();
@@ -324,7 +340,6 @@ function onGameOver() {
 ui.bind({
   onWaveStart() { tryStartWave(); },
   onSummon: doSummon,
-  onPractice() { openMath('practice'); },
   onCombine(action) { openMath('combine', action); },
   onSpeed() {
     speed = speed === 1 ? 2 : 1;
@@ -394,11 +409,13 @@ ui.bind({
   },
   onHint() {
     if (!modal.prob) return;
-    E.useHint(state);
+    const r = E.useHint(state);
+    if (!r.ok) { ui.toast(`힌트에는 💰${r.cost}이 필요해요!`, 'bad'); return; }
+    modal.usedHint = true;
     SFX.tap();
     ui.showHint(modal.prob.hint);
-    ui.toast(`💡 힌트! 대신 지식 레벨이 ${D.HINT_COST} 내려갔어요. (소환 확률 ↓)`, 'bad');
-    ui.updateHud(state, store.shards, store.best(state.difficulty));
+    ui.toast(`💡 힌트를 봤어요 (💰-${r.cost}) — 환급은 없어요`, 'bad');
+    refreshAll();
   },
   onUpgrade() {
     const r = E.upgradeHero(state, selHero);
@@ -612,7 +629,6 @@ document.addEventListener('keydown', (ev) => {
   }
   switch (lower) {
     case 's': doSummon(); return;
-    case 'p': openMath('practice'); return;
     case 'c': {
       const combo = chooseBestCombo();
       if (combo) openMath('combine', comboToAction(combo));

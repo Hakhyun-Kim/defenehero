@@ -1,131 +1,254 @@
 /* =====================================================
- * 절차 생성 BGM (16분음표 스텝 시퀀서 + 미리 예약 스케줄링)
- * 트랙: prep(준비) / battle(전투) / boss(보스전)
- * 웨이브가 오를수록 전투 템포가 빨라진다.
+ * 절차 생성 BGM v2 — 음원 파일 0개 (라이선스 걱정 없음)
+ *
+ * 이전판은 단선 베이스 + 단음 멜로디여서 "삑삑" 소리가 났다.
+ * 이번엔 실제 음악의 최소 요소를 갖춘다:
+ *   ① 코드 진행(화성)  ② 패드(지속음)  ③ 아르페지오  ④ 베이스
+ *   ⑤ 드럼(킥·스네어·하이햇)  ⑥ 리버브(피드백 딜레이)
+ * 트랙: prep(준비) / battle(전투) / midboss(중간보스) / boss(대보스)
  * ===================================================== */
 import { getAc, getMaster, isMuted } from './sfx.js';
 
-const F = (semi, base = 110) => base * Math.pow(2, semi / 12);
+const semi = (n) => Math.pow(2, n / 12);
+const NOTE = (s, base = 220) => base * semi(s);
 
-/* 패턴: 반음 오프셋 배열(16스텝), null = 쉼표 */
+/* ---------- 코드 정의 (근음 반음 + 구성음) ---------- */
+const MIN7 = [0, 3, 7, 10];
+const MAJ  = [0, 4, 7];
+const MAJ7 = [0, 4, 7, 11];
+const MIN  = [0, 3, 7];
+const SUS4 = [0, 5, 7];
+const DIM  = [0, 3, 6];
+
+/* ---------- 트랙 ----------
+ * chords: [근음 반음, 코드 종류] × 마디
+ * arp: 코드 구성음 인덱스 패턴(16스텝, null=쉼표)
+ * bass: 마디당 스텝 패턴 (0=근음, 다른 수=반음 오프셋)
+ * drums: k(킥) s(스네어) h(하이햇) 문자열 16칸
+ */
 const TRACKS = {
+  /* 준비: 평화롭고 따뜻한 왈츠풍 — Am7 - Fmaj7 - Cmaj - Gsus4 */
   prep: {
-    bpm: 84,
-    bass:   { base: 110, type: 'sine', vol: 0.055, len: 0.28,
-      steps: [0, null, null, null, 5, null, null, null, 3, null, null, null, 7, null, 5, null] },
-    melody: { base: 440, type: 'triangle', vol: 0.035, len: 0.22,
-      steps: [null, null, 7, null, null, 12, null, 10, null, null, 7, null, 5, null, 3, null] },
+    bpm: 96, swing: 0.14,
+    chords: [[0, MIN7], [-4, MAJ7], [3, MAJ], [-2, SUS4]],
+    pad: { vol: 0.030, base: 220, cutoff: 1400 },
+    arp: { steps: [0, null, 1, null, 2, null, 3, null, 2, null, 1, null, 2, null, 1, null],
+           vol: 0.026, base: 440, type: 'triangle', len: 0.3 },
+    bass: { steps: [0, null, null, null, 7, null, null, null, 0, null, null, null, 5, null, null, null],
+            vol: 0.048, base: 110, type: 'sine', len: 0.34 },
+    drums: 'h...h...h...h..h',
   },
+
+  /* 전투: 몰아치는 록/칩튠 — Am - F - G - Am */
   battle: {
-    bpm: 112,
-    bass:   { base: 110, type: 'square', vol: 0.045, len: 0.14,
-      steps: [0, null, 0, null, 0, null, -2, null, 3, null, 3, null, -2, null, 0, null] },
-    melody: { base: 440, type: 'square', vol: 0.028, len: 0.15,
-      steps: [12, null, null, 10, null, null, 7, null, null, 3, 5, null, 7, null, null, null] },
-    perc:   { steps: [1, null, null, null, 1, null, null, null, 1, null, null, null, 1, null, 1, null] },
+    bpm: 132, swing: 0,
+    chords: [[0, MIN], [-4, MAJ], [-2, MAJ], [0, MIN]],
+    pad: { vol: 0.020, base: 220, cutoff: 1100 },
+    arp: { steps: [0, 1, 2, 1, 0, 2, 1, 2, 0, 1, 2, 3, 2, 1, 0, 2],
+           vol: 0.020, base: 440, type: 'square', len: 0.12 },
+    bass: { steps: [0, 0, null, 0, 0, null, 0, 0, 0, null, 0, 0, 7, null, 5, null],
+            vol: 0.050, base: 110, type: 'sawtooth', len: 0.11 },
+    drums: 'k..hs..hk.khs..h',
   },
-  /* 중간보스: 전투곡보다 무겁고 불안한 반음 진행 */
+
+  /* 중간보스: 무겁고 불안한 반음 진행 — Am - A#dim - Am - Gm */
   midboss: {
-    bpm: 120,
-    bass:   { base: 82, type: 'square', vol: 0.055, len: 0.14,
-      steps: [0, null, 0, null, 1, null, 0, null, 0, null, 0, null, -2, null, -1, null] },
-    melody: { base: 330, type: 'sawtooth', vol: 0.022, len: 0.16,
-      steps: [null, null, 8, null, 7, null, null, null, null, null, 8, null, 10, null, 7, null] },
-    perc:   { steps: [1, null, null, 1, 1, null, null, null, 1, null, null, 1, 1, null, 1, null] },
+    bpm: 118, swing: 0,
+    chords: [[0, MIN], [1, DIM], [0, MIN], [-2, MIN]],
+    pad: { vol: 0.030, base: 110, cutoff: 800 },
+    arp: { steps: [0, null, 2, null, 1, null, 2, null, 0, null, 2, null, 3, null, 2, null],
+           vol: 0.018, base: 330, type: 'sawtooth', len: 0.16 },
+    bass: { steps: [0, null, 0, null, 1, null, 0, null, 0, null, 0, null, -2, null, -1, null],
+            vol: 0.056, base: 82, type: 'square', len: 0.16 },
+    drums: 'k..ks..hk.k.s.h.',
   },
+
+  /* 대보스: 질주하는 오스티나토 — Dm - Bb - C - Dm (반음 낮게) */
   boss: {
-    bpm: 132,
-    bass:   { base: 55, type: 'sawtooth', vol: 0.06, len: 0.13,
-      steps: [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, 2, 1, 0] },
-    melody: { base: 220, type: 'sawtooth', vol: 0.025, len: 0.18,
-      steps: [null, null, 12, null, null, null, 11, null, null, null, 12, null, 14, null, 11, null] },
-    perc:   { steps: [1, null, 1, null, 1, null, 1, null, 1, null, 1, null, 1, 1, 1, null] },
+    bpm: 148, swing: 0,
+    chords: [[0, MIN], [-3, MAJ], [-1, MAJ], [0, MIN]],
+    pad: { vol: 0.026, base: 110, cutoff: 1300 },
+    arp: { steps: [0, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1, 3, 2, 1, 0],
+           vol: 0.022, base: 440, type: 'sawtooth', len: 0.1 },
+    bass: { steps: [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, 2, 1, 0],
+            vol: 0.060, base: 55, type: 'sawtooth', len: 0.1 },
+    drums: 'k.khs.khk.khs.kh',
   },
 };
 
-let current = null;        // 트랙 이름
-let step = 0;
-let nextTime = 0;
-let timer = null;
-let waveTempoBoost = 0;    // 웨이브에 따른 bpm 가산
-let musicGain = null;
+/* ---------- 오디오 그래프 ---------- */
+let musicGain = null;   // 음악 전체 볼륨
+let dryGain = null;
+let wetGain = null;
+let delayA = null;
 
-function ensureGain() {
-  const c = getAc(); if (!c) return null;
-  if (!musicGain) {
-    musicGain = c.createGain();
-    musicGain.gain.value = 0.8;
-    musicGain.connect(getMaster());
-  }
+function ensureGraph() {
+  const c = getAc();
+  if (!c) return null;
+  if (musicGain) return musicGain;
+
+  musicGain = c.createGain();
+  musicGain.gain.value = 0.85;
+  musicGain.connect(getMaster());
+
+  dryGain = c.createGain();
+  dryGain.gain.value = 1;
+  dryGain.connect(musicGain);
+
+  /* 간단한 리버브: 피드백 딜레이 + 로우패스 (합성음의 건조함을 없애 준다) */
+  wetGain = c.createGain();
+  wetGain.gain.value = 0.34;
+  delayA = c.createDelay(1.0);
+  delayA.delayTime.value = 0.19;
+  const fb = c.createGain();
+  fb.gain.value = 0.38;
+  const damp = c.createBiquadFilter();
+  damp.type = 'lowpass';
+  damp.frequency.value = 2600;
+  delayA.connect(damp);
+  damp.connect(fb);
+  fb.connect(delayA);
+  delayA.connect(wetGain);
+  wetGain.connect(musicGain);
   return musicGain;
 }
 
-function playNote(cfg, semi, t, dur) {
-  const c = getAc(); if (!c || semi == null) return;
-  const g = ensureGain(); if (!g) return;
-  const o = c.createOscillator(), env = c.createGain();
-  o.type = cfg.type;
-  o.frequency.setValueAtTime(F(semi, cfg.base), t);
-  env.gain.setValueAtTime(0.0001, t);
-  env.gain.exponentialRampToValueAtTime(cfg.vol, t + 0.02);
-  env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(env); env.connect(g);
-  o.start(t); o.stop(t + dur + 0.05);
+/* 악기 하나 = 오실레이터 + 게인 엔벨로프 (dry + reverb 양쪽으로) */
+function voice(freq, t, dur, type, vol, opts = {}) {
+  const c = getAc();
+  if (!c || !ensureGraph()) return;
+  const o = c.createOscillator();
+  const g = c.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  if (opts.detune) o.detune.setValueAtTime(opts.detune, t);
+  const atk = opts.atk ?? 0.012;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + atk);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  let node = g;
+  if (opts.cutoff) {
+    const f = c.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = opts.cutoff;
+    g.connect(f);
+    node = f;
+  }
+  o.connect(g);
+  node.connect(dryGain);
+  if (opts.wet !== false) node.connect(delayA);
+  o.start(t);
+  o.stop(t + dur + 0.06);
 }
 
-function playPerc(t) {
-  const c = getAc(); if (!c) return;
-  const g = ensureGain(); if (!g) return;
-  const len = Math.floor(c.sampleRate * 0.05);
-  const buf = c.createBuffer(1, len, c.sampleRate);
+function drum(kind, t) {
+  const c = getAc();
+  if (!c || !ensureGraph()) return;
+  if (kind === 'k') {                      /* 킥: 피치가 떨어지는 사인 */
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(150, t);
+    o.frequency.exponentialRampToValueAtTime(48, t + 0.13);
+    g.gain.setValueAtTime(0.15, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+    o.connect(g); g.connect(dryGain);
+    o.start(t); o.stop(t + 0.2);
+    return;
+  }
+  /* 스네어/하이햇: 노이즈 + 필터 */
+  const len = kind === 's' ? 0.16 : 0.05;
+  const buf = c.createBuffer(1, Math.max(1, Math.floor(c.sampleRate * len)), c.sampleRate);
   const d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
   const src = c.createBufferSource();
   src.buffer = buf;
   const f = c.createBiquadFilter();
-  f.type = 'highpass'; f.frequency.value = 6000;
-  const env = c.createGain();
-  env.gain.setValueAtTime(0.03, t);
-  env.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
-  src.connect(f); f.connect(env); env.connect(g);
+  if (kind === 's') { f.type = 'bandpass'; f.frequency.value = 1900; f.Q.value = 0.8; }
+  else { f.type = 'highpass'; f.frequency.value = 8000; }
+  const g = c.createGain();
+  g.gain.setValueAtTime(kind === 's' ? 0.075 : 0.028, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  src.connect(f); f.connect(g);
+  g.connect(dryGain);
+  if (kind === 's') g.connect(delayA);
   src.start(t);
 }
+
+/* ---------- 시퀀서 ---------- */
+let current = null;
+let step = 0;
+let nextTime = 0;
+let timer = null;
+let waveBoost = 0;
 
 function schedule() {
   const c = getAc();
   if (!c || !current || isMuted()) return;
   const T = TRACKS[current];
-  const stepDur = 60 / (T.bpm + waveTempoBoost) / 4;   // 16분음표
-  while (nextTime < c.currentTime + 0.45) {
+  const bpm = T.bpm + waveBoost;
+  const stepDur = 60 / bpm / 4;                 // 16분음표
+  const barSteps = 16;
+
+  while (nextTime < c.currentTime + 0.5) {
     if (nextTime < c.currentTime) nextTime = c.currentTime + 0.05;
-    const i = step % 16;
-    if (T.bass) playNote(T.bass, T.bass.steps[i], nextTime, T.bass.len);
-    if (T.melody) playNote(T.melody, T.melody.steps[i], nextTime, T.melody.len);
-    if (T.perc && T.perc.steps[i]) playPerc(nextTime);
+    const i = step % barSteps;
+    const bar = Math.floor(step / barSteps) % T.chords.length;
+    const [root, shape] = T.chords[bar];
+    /* 스윙: 홀수 16분음표를 살짝 늦춘다 */
+    const t = nextTime + (i % 2 === 1 ? stepDur * (T.swing || 0) : 0);
+
+    /* 패드: 마디 첫 스텝에 코드 전체를 길게 */
+    if (i === 0 && T.pad) {
+      const dur = stepDur * barSteps * 0.98;
+      for (const s of shape) {
+        voice(NOTE(root + s, T.pad.base), t, dur, 'sawtooth', T.pad.vol, { atk: 0.12, cutoff: T.pad.cutoff, detune: -6 });
+        voice(NOTE(root + s, T.pad.base), t, dur, 'sawtooth', T.pad.vol * 0.8, { atk: 0.14, cutoff: T.pad.cutoff, detune: +7 });
+      }
+    }
+    /* 아르페지오: 코드 구성음을 순서대로 */
+    if (T.arp) {
+      const idx = T.arp.steps[i];
+      if (idx != null) {
+        const s = shape[idx % shape.length] + (idx >= shape.length ? 12 : 0);
+        voice(NOTE(root + s, T.arp.base), t, T.arp.len, T.arp.type, T.arp.vol);
+      }
+    }
+    /* 베이스 */
+    if (T.bass) {
+      const off = T.bass.steps[i];
+      if (off != null) {
+        voice(NOTE(root + off, T.bass.base), t, T.bass.len, T.bass.type, T.bass.vol, { wet: false, cutoff: 700 });
+      }
+    }
+    /* 드럼 */
+    if (T.drums) {
+      const ch = T.drums[i];
+      if (ch && ch !== '.') drum(ch, t);
+    }
+
     nextTime += stepDur;
     step++;
   }
 }
 
 export const music = {
-  /* 트랙 전환 (같은 트랙이면 무시) */
   setTrack(name) {
     if (current === name) return;
+    if (!TRACKS[name]) return;
     current = name;
     step = 0;
     const c = getAc();
-    nextTime = c ? c.currentTime + 0.1 : 0;
-    if (!timer) timer = setInterval(schedule, 140);
+    nextTime = c ? c.currentTime + 0.08 : 0;
+    if (!timer) timer = setInterval(schedule, 130);
   },
   stop() {
     current = null;
     if (timer) { clearInterval(timer); timer = null; }
   },
-  /* 웨이브 수에 따라 전투 템포 상승 (최대 +40bpm) */
-  setWave(w) { waveTempoBoost = Math.min(40, w * 2); },
-  /* 뮤트 해제 후 재개용 */
+  /* 웨이브가 오를수록 전투 템포 상승 (최대 +26bpm) */
+  setWave(w) { waveBoost = Math.min(26, w * 1.6); },
   sync() {
     const c = getAc();
-    if (c && current) nextTime = c.currentTime + 0.1;
+    if (c && current) nextTime = c.currentTime + 0.08;
   },
 };
