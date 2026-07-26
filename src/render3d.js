@@ -1112,7 +1112,10 @@ export class Renderer3D {
           this.burst(x3, 0.9, z3, col, n, spd);
           if (ev.boss) this.burst(x3, 1.4, z3, 0xffffff, 24, 4.5);
           this.showNumber(x3, 2.2, z3, `+${ev.gold}💰`, '#ffd93d', ev.boss ? 1.3 : (ev.midBoss ? 1.1 : 0.9));
-          if (ev.mul > 1) this.showNumber(x3, 2.9, z3, `콤보 x${ev.mul}!`, '#ff8a3d', 1.1);
+          /* 배율이 "올라가는 순간"에만 알린다 — 처치마다 띄우면 글자가 겹쳐 쌓인다 */
+          if (ev.combo === D.COMBO.x2At || ev.combo === D.COMBO.x3At) {
+            this.showNumber(x3, 3.0, z3, `골드 ${ev.mul}배!`, '#ff8a3d', 1.25);
+          }
           this.addShake(ev.boss ? 0.6 : (ev.midBoss ? 0.3 : 0.07));
           break;
         }

@@ -186,18 +186,31 @@ export class UI {
     });
   }
 
+  /* 콤보 칩 — 매 프레임 호출되므로 "값이 바뀔 때만" 다시 그린다.
+   * (전에는 프레임마다 pop 애니메이션을 재시작해 글자가 계속 떨려 보였다) */
   comboChip(count, mul) {
     const el = this.el.comboChip;
     if (count >= 2) {
-      el.textContent = mul > 1 ? `🔥 ${count}연속 처치! 골드 x${mul}` : `🔥 ${count}연속 처치!`;
-      el.classList.remove('hidden');
-      el.classList.remove('pop');
-      void el.offsetWidth;      // 애니메이션 재시작
-      el.classList.add('pop');
-      this._comboShown = true;
-    } else if (this._comboShown) {
+      if (this._comboCount !== count || this._comboMul !== mul) {
+        this._comboCount = count;
+        this._comboMul = mul;
+        el.textContent = mul > 1 ? `🔥 콤보 ${count} · 골드 ${mul}배!` : `🔥 콤보 ${count}`;
+        el.classList.remove('hidden');
+        el.classList.toggle('boost', mul > 1);
+        /* 배율이 올라가는 순간에만 튀어오르게 */
+        if (this._comboMul !== this._popMul) {
+          this._popMul = this._comboMul;
+          el.classList.remove('pop');
+          void el.offsetWidth;
+          el.classList.add('pop');
+        }
+      }
+    } else if (this._comboCount != null) {
+      this._comboCount = null;
+      this._comboMul = null;
+      this._popMul = null;
       el.classList.add('hidden');
-      this._comboShown = false;
+      el.classList.remove('pop', 'boost');
     }
   }
 
