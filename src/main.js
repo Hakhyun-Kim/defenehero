@@ -184,7 +184,9 @@ function submitMath(value) {
     if (modal.mode === 'combine' && modal.pending && modal.round < modal.rounds) {
       modal.round++;
       SFX.stageClear();
-      ui.mathFeedback(true, `✅ ${modal.round - 1}단계 통과! 마지막 ${modal.rounds}단계로!`, `➡ 다음 문제 (Enter)`);
+      /* 다음 행동이 하나뿐이니 버튼을 두지 않는다 — 결과만 잠깐 보여 주고 알아서 넘어간다 */
+      ui.mathFeedback(true, `✅ ${modal.round - 1}단계 통과! 마지막 ${modal.rounds}단계로…`, null);
+      autoNext(850);
       refreshAll();
       return;
     }
@@ -236,7 +238,8 @@ function submitMath(value) {
         modal.pending = null;
         /* 예측형 흐름: 더 조합할 게 있으면 Enter로 연쇄, 없으면 자동으로 닫힌다 */
         if (more) {
-          ui.mathFeedback(true, msg, '⚗ 계속 조합 (Enter)');
+          ui.mathFeedback(true, `${msg} — 다음 조합으로!`, null);
+          autoNext(1200);          // 만들어진 용사를 눈으로 볼 시간만 준다
         } else {
           ui.mathFeedback(true, `${msg} — 잠시 후 닫혀요`, null);
           const token = ++autoCloseToken;
@@ -265,8 +268,22 @@ function submitMath(value) {
 
 /* 응답 후 Enter/Space: 상황에 맞는 다음 행동 (연쇄 조합 → 자동 종료) */
 let autoCloseToken = 0;
+/* 정답을 맞혔을 때 "다음" 버튼을 누르게 하지 않는다 — 결과만 잠깐 보여 주고 스스로 넘어간다.
+ * 사용자가 먼저 Enter를 누르거나 창을 닫으면 토큰이 바뀌어 예약이 무효가 된다. */
+let autoNextToken = 0;
+let autoNextPending = false;
+function autoNext(delay) {
+  const token = ++autoNextToken;
+  autoNextPending = true;
+  setTimeout(() => {
+    if (token !== autoNextToken || !ui.isMathOpen() || !ui.isAnswered()) return;
+    advanceMath();
+  }, delay);
+}
+const cancelAutoNext = () => { autoNextToken++; autoNextPending = false; };
 function closeMathAll() {
   autoCloseToken++;
+  cancelAutoNext();
   ui.hideMath();
   modal.mode = null;
   modal.pending = null;
@@ -287,6 +304,7 @@ function comboToAction(c) {
 }
 function advanceMath() {
   autoCloseToken++;
+  cancelAutoNext();          // 예약된 자동 진행이 한 번 더 터져 문제를 건너뛰는 일을 막는다
   if (modal.mode === 'combine') {
     if (modal.pending) { newProblem(); return; }        // 오답 재도전
     const next = chooseBestCombo();
@@ -734,7 +752,8 @@ document.addEventListener('keydown', (ev) => {
     if (key === 'Escape') { ev.preventDefault(); closeMathAll(); return; }
     if (ui.isAnswered() && (key === 'Enter' || key === ' ')) {
       ev.preventDefault();
-      const canAdvance = !ui.el.mNext.classList.contains('hidden');
+      /* 자동 진행을 기다리는 중이면 Enter는 "기다리지 말고 지금" 이라는 뜻이다 */
+      const canAdvance = autoNextPending || !ui.el.mNext.classList.contains('hidden');
       if (canAdvance) advanceMath();
       else closeMathAll();
       return;
