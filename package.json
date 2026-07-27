@@ -8,7 +8,7 @@
     "build": "esbuild src/main.js --bundle --outfile=dist/game.js --format=iife --minify-whitespace",
     "watch": "esbuild src/main.js --bundle --outfile=dist/game.js --format=iife --watch",
     "balance": "node scripts/balance-bot.mjs",
-    "serve": "python -m http.server 8642",
+    "serve": "node scripts/serve.mjs",
     "balance:check": "node scripts/balance-check.mjs 60"
   },
   "dependencies": {

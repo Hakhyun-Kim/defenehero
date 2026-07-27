@@ -3,9 +3,12 @@
   "configurations": [
     {
       "name": "defenehero",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8642", "--bind", "127.0.0.1"],
-      "port": 8642
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/serve.mjs"
+      ],
+      "port": 8642,
+      "autoPort": true
     }
   ]
 }
