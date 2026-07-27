@@ -112,6 +112,13 @@ export function noise(start = 0, dur = 0.08, vol = 0.1, freq = 1200, q = 0.8, op
 }
 
 /* ---------- 음소거 ---------- */
+/* 자동화·테스트용 강제 음소거. localStorage에 쓰지 않는다 —
+ * 검증하느라 켠 무음 상태가 사용자의 실제 설정을 덮어쓰면 안 된다. */
+export function forceMute() {
+  sfxMuted = true;
+  musicMuted = true;
+}
+
 export function toggleSfx() {
   sfxMuted = !sfxMuted;
   localStorage.setItem('mathdef_mute_sfx', sfxMuted ? '1' : '0');

@@ -6,7 +6,7 @@ import * as E from './engine.js';
 import * as MathGen from './math.js';
 import { Renderer3D } from './render3d.js';
 import { UI } from './ui.js';
-import { SFX, toggleSfx, toggleMusic, toggleAll, isSfxMuted, isMusicMuted, getAc, getMaster } from './sfx.js';
+import { SFX, toggleSfx, toggleMusic, toggleAll, isSfxMuted, isMusicMuted, forceMute, getAc, getMaster } from './sfx.js';
 import { music } from './music.js';
 
 /* ---------- 저장 ---------- */
@@ -28,6 +28,11 @@ const ui = new UI();
 /* URL로 강제 지정 가능: ?gfx=high|lite|min (min은 테스트/초저사양용) */
 const urlParams = new URLSearchParams(location.search);
 const urlGfx = urlParams.get('gfx');
+/* 자동화로 열었거나 ?mute를 붙였으면 소리 없이 시작한다.
+ * 검증을 돌릴 때마다 옆에서 효과음이 터지면 사람이 못 견딘다.
+ * (설정을 저장하지 않으므로 사용자가 평소 쓰던 소리 설정은 그대로 남는다) */
+if (urlParams.has('mute') || urlParams.has('rafshim')) forceMute();
+
 const renderer = new Renderer3D(ui.el.scene3d, {
   quality: urlGfx || (store.gfx === 'lite' ? 'lite' : 'high'),
   preserve: urlParams.has('rafshim') || urlGfx === 'min',
@@ -721,6 +726,26 @@ document.addEventListener('keydown', (ev) => {
       else closeMathAll();
       return;
     }
+    /* 아직 답을 안 냈는데 Enter가 여기까지 왔다 = 포커스가 입력창 밖에 있다는 뜻.
+     * (확인 버튼·힌트 버튼을 클릭했거나 모달 배경을 눌렀을 때 그렇게 된다)
+     * 예전엔 여기서 그냥 return 해서 "답을 썼는데 Enter가 안 먹는" 상태가 됐다.
+     * 입력창이 이벤트를 먼저 처리했다면 stopPropagation 때문에 여기 오지 않으므로 중복 제출도 없다.
+     * isComposing: 한글 IME 조합을 확정하는 Enter는 제출이 아니다. */
+    if (!ui.isAnswered() && key === 'Enter' && !ev.isComposing) {
+      ev.preventDefault();
+      submitMath(ui.el.mInput.value);
+      ui.el.mInput.focus();
+      return;
+    }
+    /* 문제창은 효과음이 제일 많이 나는 화면이다 — 여기서 소리를 못 끄면 끌 방법이 없다.
+     * 입력창에 답을 쓰는 중에는 'm'이 글자일 수 있으니 입력이 비었을 때만 받는다. */
+    if (lower === 'm' && (document.activeElement !== ui.el.mInput || ui.el.mInput.value === '')) {
+      ev.preventDefault();
+      const off = toggleAll();
+      ui.setSoundLabels(isSfxMuted(), isMusicMuted());
+      ui.toast(off ? '🔇 소리를 모두 껐어요 (M)' : '🔊 소리를 다시 켰어요 (M)');
+      return;
+    }
     if (lower === 'h' && !ui.isAnswered() && !ui.el.mHintBtn.disabled) {
       if (document.activeElement !== ui.el.mInput || ui.el.mInput.value === '') {
         ev.preventDefault();
@@ -945,7 +970,8 @@ if (document.fonts && document.fonts.load) {
 window.__game = {
   get state() { return state; },
   get modal() { return modal; },
-  E, D, renderer, ui, MathGen, SFX, sfxCore: { getAc, getMaster },
+  E, D, renderer, ui, MathGen, SFX,
+  sfxCore: { getAc, getMaster, isSfxMuted, isMusicMuted },
   refresh: refreshAll,
   selectHero(id) { selHero = id; renderer.setSelectedHero(id); ui.renderHeroPanel(state, id); },
   gold(n) { state.gold += n; refreshAll(); },

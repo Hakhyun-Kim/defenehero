@@ -148,6 +148,13 @@ export class UI {
     el.mNext.addEventListener('click', h.onMathNext);
     el.mClose.addEventListener('click', h.onMathClose);
     el.mHintBtn.addEventListener('click', h.onHint);
+    /* 모달 아무 데나 누르면 입력창으로 포커스를 되돌린다.
+     * 버튼이나 배경을 한 번 클릭하면 포커스가 거기 남아서, 답을 쓰고 Enter를 눌러도
+     * 입력창 핸들러가 안 돌던 문제가 있었다. */
+    el.mathModal.addEventListener('mousedown', (ev) => {
+      if (this._answered || ev.target.closest('button')) return;
+      setTimeout(() => el.mInput.focus(), 0);
+    });
     el.mInput.addEventListener('keydown', (ev) => {
       if (ev.key !== 'Enter') return;
       ev.stopPropagation();   // 같은 Enter가 전역 핸들러로 흘러가 이중 동작하는 것 방지
