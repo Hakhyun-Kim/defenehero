@@ -601,6 +601,26 @@ export class UI {
     card.className = `modal-card lv${Math.max(1, Math.min(5, lv || 1))}`;
     this.el.mathModal.classList.remove('hidden');
   }
+  /* 문제·힌트 안의 {a/b} 를 세로 분수로 그린다.
+   * "15 ÷ 3/6" 처럼 한 줄로 쓰면 15÷3÷6 으로도 읽혀서 아이가 헷갈린다.
+   * (문자열을 그대로 넣지 않고 DOM으로 조립한다 — innerHTML을 쓸 이유가 없다) */
+  _writeMath(el, text) {
+    el.textContent = '';
+    const re = /\{(-?\d+)\/(\d+)\}/g;
+    let last = 0, m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) el.append(text.slice(last, m.index));
+      const f = document.createElement('span');
+      f.className = 'frac';
+      const n = document.createElement('b'); n.textContent = m[1];
+      const d = document.createElement('i'); d.textContent = m[2];
+      f.append(n, d);
+      el.append(f);
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) el.append(text.slice(last));
+  }
+
   /* o: { grade, lv, text, round, rounds, time, streak, reward } */
   setProblem(o) {
     const el = this.el;
@@ -613,7 +633,7 @@ export class UI {
     el.mSteps.classList.toggle('hidden', o.rounds < 2);
     el.mStreak.textContent = `🔥 ${o.streak}연승`;
     el.mStreak.classList.toggle('hidden', !o.streak || o.streak < 2);
-    el.mProblem.textContent = o.text;
+    this._writeMath(el.mProblem, o.text);
     el.mInput.value = '';
     el.mInput.disabled = false;
     el.mSubmit.disabled = false;
@@ -648,7 +668,7 @@ export class UI {
     }
   }
   showHint(text) {
-    this.el.mHint.textContent = `💡 ${text}`;
+    this._writeMath(this.el.mHint, `💡 ${text}`);
     this.el.mHint.classList.remove('hidden');
     this.el.mHintBtn.disabled = true;
     this.el.mHintBtn.textContent = '💡 힌트 사용함';

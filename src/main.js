@@ -945,7 +945,7 @@ if (document.fonts && document.fonts.load) {
 window.__game = {
   get state() { return state; },
   get modal() { return modal; },
-  E, D, renderer, ui, SFX, sfxCore: { getAc, getMaster },
+  E, D, renderer, ui, MathGen, SFX, sfxCore: { getAc, getMaster },
   refresh: refreshAll,
   selectHero(id) { selHero = id; renderer.setSelectedHero(id); ui.renderHeroPanel(state, id); },
   gold(n) { state.gold += n; refreshAll(); },

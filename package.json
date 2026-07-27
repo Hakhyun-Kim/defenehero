@@ -9,7 +9,8 @@
     "watch": "esbuild src/main.js --bundle --outfile=dist/game.js --format=iife --watch",
     "balance": "node scripts/balance-bot.mjs",
     "serve": "node scripts/serve.mjs",
-    "balance:check": "node scripts/balance-check.mjs 60"
+    "balance:check": "node scripts/balance-check.mjs 60",
+    "math:check": "node scripts/math-check.mjs 3000"
   },
   "dependencies": {
     "three": "^0.166.0"

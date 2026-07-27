@@ -383,11 +383,17 @@ const G5 = [
 const G6 = [
   {
     id: 'fracDiv', min: 1, make: () => {
-      const a = ri(1, 4), k = ri(2, 4);
-      const num = a * k;
-      const b = ri(num + 1, num + 6);
+      let a, k, num, b;
+      /* 분모가 같아야 하는 단원이라 분자만 정한다.
+       * gcd(num,b)=1 이면 a도 num의 약수라 두 분수 모두 기약분수가 된다 —
+       * 4/6 ÷ 2/6 처럼 약분되는 꼴은 교과서에 안 나온다. */
+      do {
+        a = ri(1, 4); k = ri(2, 4);
+        num = a * k;
+        b = ri(num + 1, num + 6);
+      } while (gcd(num, b) !== 1);
       return {
-        text: `${num}/${b} ÷ ${a}/${b} = ?`, answer: k,
+        text: `{${num}/${b}} ÷ {${a}/${b}} = ?`, answer: k,
         hint: `분모가 같은 분수의 나눗셈은 분자끼리! ${num} ÷ ${a} 를 계산해요.`,
       };
     },
@@ -410,7 +416,7 @@ const G6 = [
       do { b = pick(bases); p = pick(ps); } while ((b * p) % 100 !== 0);
       return {
         text: `${b} 의 ${p}% 는 얼마일까요?`, answer: (b * p) / 100,
-        hint: `${p}% 는 ${p}/100 이에요. ${b} × ${p} ÷ 100 을 계산해요.`,
+        hint: `${p}% 는 {${p}/100} 이에요. ${b} × ${p} ÷ 100 을 계산해요.`,
       };
     },
   },
@@ -429,11 +435,13 @@ const G6 = [
   },
   {
     id: 'natFrac', min: 2, make: () => {
-      const b = ri(2, 6), a = ri(2, 5);
+      let a, b;
+      do { b = ri(2, 6); a = ri(2, 5); } while (gcd(a, b) !== 1);   // 3/6 같은 약분 가능 분수 배제
       const n = a * ri(2, 5);
       return {
-        text: `${n} ÷ ${a}/${b} = ?`, answer: (n * b) / a,
-        hint: `분수로 나누는 건 뒤집어 곱하기! ${n} × ${b}/${a} 를 계산해요.`,
+        text: `${n} ÷ {${a}/${b}} = ?`, answer: (n * b) / a,
+        hint: `분수로 나누는 건 뒤집어 곱하기! ${n} × {${b}/${a}} 를 계산해요.`
+          + (a > b ? '' : ` (1보다 작은 수로 나누면 몫이 커져요!)`),
       };
     },
   },

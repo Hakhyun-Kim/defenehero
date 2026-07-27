@@ -993,6 +993,24 @@ button { font-family: inherit; }
   word-break: keep-all;
   white-space: pre-line;
 }
+/* 세로 분수 — 분자 위, 분모 아래, 가운데 가로줄.
+   한 줄짜리 "3/6"은 15÷3÷6 으로 읽히기 쉬워서 아이가 헷갈린다. */
+.frac {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 0.14em;
+  line-height: 1.05;
+  font-size: 0.82em;
+}
+.frac b, .frac i {
+  font-style: normal;
+  font-weight: inherit;
+  padding: 0 0.18em;
+}
+.frac i { border-top: 2px solid currentColor; }
+
 .mrow { display: flex; gap: 8px; margin-bottom: 10px; justify-content: center; }
 .mrow input {
   flex: 1;
