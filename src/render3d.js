@@ -1167,8 +1167,14 @@ export class Renderer3D {
     }
 
     if (this.placementMode) {
+      /* 교환 모드(배치된 용사를 고른 상태)에서는 남의 자리도 후보다.
+       * 빈 발판은 초록(이동), 다른 용사 자리는 파랑(교환)으로 구분해 준다. */
       for (let i = 0; i < D.PADS.length; i++) {
-        this.padHighlights[i].visible = !state.field.some(h => h.padIndex === i);
+        const occ = state.field.find(h => h.padIndex === i);
+        const self = occ && occ.id === this.selectedHeroId;
+        const hl = this.padHighlights[i];
+        hl.visible = self ? false : (!occ || this.swapMode);
+        hl.material.color.setHex(occ ? 0x4aa8ff : 0x3ddc6e);
       }
     } else {
       for (const hl of this.padHighlights) hl.visible = false;
@@ -1669,9 +1675,10 @@ export class Renderer3D {
     this.hoverRing.position.set(wx(pad.x), 0.15, wz(pad.y));
   }
 
-  setPlacementMode(on, rangePx = 0) {
+  setPlacementMode(on, rangePx = 0, swap = false) {
     this.placementMode = on;
     this.placeRange = rangePx;
+    this.swapMode = !!swap;      // 배치된 용사 자리도 후보(= 자리 교환 가능)
   }
   setSelectedHero(id) { this.selectedHeroId = id; }
 

@@ -43,6 +43,7 @@ let overHandled = false;
 let heartbeatT = 0;
 let panelT = 0;
 const modal = { mode: null, pending: null, prob: null };
+let streak = 0;               // 연속 "한 번에 정답" 횟수 (지혜 연승)
 
 function newGame(difficulty) {
   state = E.createGame({ difficulty, metaLevels: store.meta });
@@ -50,6 +51,7 @@ function newGame(difficulty) {
   state.bench.push(E.makeHero(state, 'archer', 0));
   selBench = null;
   selHero = null;
+  streak = 0;
   overHandled = false;
   renderer.setPlacementMode(false);
   renderer.setSelectedHero(null);
@@ -71,12 +73,37 @@ function refreshAll() {
   ui.renderWavePreview(state, E.waveSummary(state));
 }
 
-/* ---------- 수학 모달 ---------- */
+/* ---------- 수학 모달 ----------
+ * 문제 난이도는 "지금 하려는 조합"이 정한다:
+ *   희귀 등급업(⭐) … 신화 조합(⭐⭐⭐⭐⭐).
+ * 여기에 제한 시간 · 연승 · 다단계 관문을 얹어 긴장감을 만든다. */
+
+/* 지금 pending이 가리키는 조합의 실제 정보(비용/결과 등급)를 엔진에서 가져온다 */
+function comboInfo(pending) {
+  if (!pending) return null;
+  const combos = E.listCombos(state);
+  if (pending.kind === 'rankup') {
+    return combos.find(c => c.kind === 'rankup'
+      && c.cls === pending.cls && c.tier === Number(pending.tier)) || null;
+  }
+  return combos.find(c => c.kind === 'recipe' && c.result === pending.result) || null;
+}
+function comboLevel(info) {
+  if (!info) return 1;
+  return D.mathLevel(info.resultTier, info.kind === 'recipe', !!D.CLASSES[info.result].mythic);
+}
+
 function openMath(mode, pending = null) {
   if (state.phase === 'over') return;
   modal.mode = mode;
   modal.pending = pending;
-  modal.usedHint = false;
+  const info = comboInfo(pending);
+  modal.info = info;
+  modal.lv = comboLevel(info);
+  modal.rounds = D.mathRounds(modal.lv);
+  modal.round = 1;
+  modal.allClean = true;                 // 모든 단계를 한 번에 맞혔는가
+  modal.minLeft = 1;                     // 단계별 남은 시간 비율의 최솟값
   let title = '✏️ 지혜의 시험!';
   if (mode === 'combine' && pending) {
     if (pending.kind === 'rankup') {
@@ -84,30 +111,76 @@ function openMath(mode, pending = null) {
       title = `⚗️ 조합 시험! (${C.name} ${D.TIERS[pending.tier].name}×2)`;
     } else {
       const R = D.CLASSES[pending.result];
-      title = `⚗️ 조합 시험! (${R.emoji} ${R.name} 만들기)`;
+      title = `${R.mythic ? '🌌 신화의 시험!' : '⚗️ 조합 시험!'} (${R.emoji} ${R.name} 만들기)`;
     }
   }
-  ui.showMath(title);
+  ui.showMath(title, modal.lv);
+  SFX.challenge(modal.lv);
+  if (modal.rounds > 1) ui.toast(`🌌 신화의 관문! ${modal.rounds}문제를 연속으로 맞혀야 해요`, 'bad');
   newProblem();
 }
+
 function newProblem() {
-  modal.prob = MathGen.gen(grade);
+  modal.prob = MathGen.gen(grade, modal.lv);
   modal.tries = 0;
-  const cost = modal.pending ? Number(modal.pending.cost || 0) : 0;
+  modal.usedHint = false;                // 힌트는 문제마다 새로 산다
+  modal.timeMax = D.mathTime(modal.lv, grade);
+  modal.time = modal.timeMax;
+  const cost = modal.info ? modal.info.cost : 0;
   const refund = Math.round(cost * D.refundRatio(grade) * state.mathMul);
-  ui.setProblem(grade, modal.prob.text,
-    refund ? `한 번에 맞히면 조합 성공 + 💰${refund} 환급!` : '맞히면 조합 성공!');
+  const bonus = [];
+  if (streak >= 1) bonus.push(`🔥${streak + 1}연승 ×${D.streakMul(streak + 1).toFixed(2)}`);
+  ui.setProblem({
+    grade, lv: modal.lv, text: modal.prob.text,
+    round: modal.round, rounds: modal.rounds,
+    time: modal.timeMax, streak,
+    reward: refund
+      ? `⏱ 빨리 한 번에 맞힐수록 환급이 커져요! (기본 💰${refund}${bonus.length ? ' · ' + bonus.join(' ') : ''})`
+      : '맞히면 조합 성공!',
+  });
 }
+
+/* 시간 초과 — 조합이 날아가진 않지만 환급은 사라지고 연승도 끊긴다 */
+function timeUp() {
+  if (!modal.prob || ui.isAnswered()) return;
+  streak = 0;
+  modal.allClean = false;
+  state.timeOuts++;
+  E.applyMathResult(state, false);
+  SFX.timeOut();
+  ui.flashHit();
+  const again = modal.rounds > 1 ? ' 1단계부터 다시!' : '';
+  if (modal.rounds > 1) modal.round = 1;
+  ui.mathFeedback(false, `⏰ 시간 초과! 정답은 ${modal.prob.answer} 이에요.${again}`, '🔁 다시 도전 (Enter)');
+  refreshAll();
+}
+
 function submitMath(value) {
-  if (!modal.prob || !String(value).trim()) return;
+  if (!modal.prob || ui.isAnswered() || !String(value).trim()) return;
   modal.tries = (modal.tries || 0) + 1;
   const ok = MathGen.check(value, modal.prob.answer);
   E.applyMathResult(state, ok);
   if (ok) {
+    const clean = modal.tries === 1 && !modal.usedHint;
+    modal.allClean = modal.allClean && clean;
+    modal.minLeft = Math.min(modal.minLeft, modal.timeMax ? modal.time / modal.timeMax : 0);
+    if (clean) {
+      streak = Math.min(D.STREAK_MAX, streak + 1);
+      state.bestStreak = Math.max(state.bestStreak, streak);
+      if (streak >= 2) SFX.streak(streak);
+    } else streak = 0;
+    /* 다단계 관문(신화): 아직 남은 단계가 있으면 다음 문제로 */
+    if (modal.mode === 'combine' && modal.pending && modal.round < modal.rounds) {
+      modal.round++;
+      SFX.stageClear();
+      ui.mathFeedback(true, `✅ ${modal.round - 1}단계 통과! 마지막 ${modal.rounds}단계로!`, `➡ 다음 문제 (Enter)`);
+      refreshAll();
+      return;
+    }
     SFX.correct();
     if (modal.mode === 'combine' && modal.pending) {
       const p = modal.pending;
-      const firstTry = modal.tries === 1 && !modal.usedHint;
+      const firstTry = modal.allClean;
       const r = p.kind === 'rankup'
         ? E.combineRankUp(state, p.cls, Number(p.tier))
         : E.combineRecipe(state, p.result);
@@ -131,8 +204,13 @@ function submitMath(value) {
           renderer.celebrate(0xd8b4ff, true);
         }
         if (firstTry) {
-          const back = E.refundFirstTry(state, r.cost, grade);
-          msg += ` ✅ 한 번에 정답! 💰+${back} 환급`;
+          /* 정확 + 속도 + 연승 = 환급. 시계를 보며 푸는 이유가 여기서 생긴다 */
+          const speed = 1 + D.SPEED_BONUS_MAX * modal.minLeft;
+          const sm = D.streakMul(streak);
+          const back = E.refundFirstTry(state, r.cost, grade, speed * sm);
+          const tags = [`⚡속도 +${Math.round((speed - 1) * 100)}%`];
+          if (sm > 1) tags.push(`🔥${streak}연승 ×${sm.toFixed(2)}`);
+          msg += ` ✅ 한 번에 정답! 💰+${back} 환급 (${tags.join(' · ')})`;
         }
         if (r.hero.tier >= 4) ui.toast(`🌌 신화 등급 [${C.name}] 탄생!! 최강의 용사예요!`, 'good');
         /* 영웅(2) 이상 탄생은 확실한 연출로 */
@@ -163,8 +241,13 @@ function submitMath(value) {
       ui.mathFeedback(true, '🎉 정답!', null);
     }
   } else {
+    streak = 0;
+    modal.allClean = false;
     SFX.wrong();
-    ui.mathFeedback(false, `😢 아쉬워요! 정답은 ${modal.prob.answer} 이에요.`, '🔁 다시 도전 (Enter)');
+    /* 다단계 관문은 "연속"이 조건이니 처음 단계로 되돌린다 */
+    const again = modal.rounds > 1 ? ' 1단계부터 다시!' : '';
+    if (modal.rounds > 1) modal.round = 1;
+    ui.mathFeedback(false, `😢 아쉬워요! 정답은 ${modal.prob.answer} 이에요.${again}`, '🔁 다시 도전 (Enter)');
   }
   refreshAll();
 }
@@ -222,11 +305,24 @@ function doSummon() {
 }
 
 function doPlace(padIndex) {
-  const r = E.placeHero(state, selBench, padIndex);
-  if (!r.ok) {
-    if (r.reason === 'occupied') ui.toast('그 발판에는 이미 용사가 있어요!', 'bad');
+  /* 이미 용사가 있는 자리를 골랐다면 "거기 놓고 싶다"는 뜻이다 — 거절하지 말고 자리를 바꾼다.
+   * 벤치 ↔ 필드 교환이라 벤치 수가 그대로여서 벤치가 가득 차 있어도 항상 된다. */
+  const occ = E.padOccupant(state, padIndex);
+  if (occ) {
+    const s = E.swapBenchWithPad(state, selBench, padIndex);
+    if (!s.ok) return;
+    SFX.place();
+    padFx(s.placed, 0x9fdcff);
+    ui.toast(`🔀 ${D.CLASSES[s.placed.cls].name} 배치 · ${D.CLASSES[s.benched.cls].name}은 벤치로!`);
+    selHero = s.placed.id;
+    selBench = null;
+    renderer.setPlacementMode(false);
+    renderer.setSelectedHero(selHero);
+    refreshAll();
     return;
   }
+  const r = E.placeHero(state, selBench, padIndex);
+  if (!r.ok) return;
   SFX.place();
   renderer.burst((r.hero.x - D.FIELD_W / 2) / 36, 0.5, (r.hero.y - D.FIELD_H / 2) / 36, 0x7fff9e, 10, 2.2);
   selHero = r.hero.id;
@@ -236,28 +332,69 @@ function doPlace(padIndex) {
   refreshAll();
 }
 
-/* 배치된 용사 선택 — 선택 시 빈 발판이 빛나 바로 이동할 수 있다 */
+/* 배치된 용사 선택 — 선택하면 빈 발판(초록)과 다른 용사 자리(파랑)가 함께 빛난다 */
 function selectField(hero) {
   selBench = null;
   selHero = hero ? hero.id : null;
   renderer.setSelectedHero(selHero);
-  renderer.setPlacementMode(!!hero, hero ? D.CLASSES[hero.cls].range : 0);
+  renderer.setPlacementMode(!!hero, hero ? D.CLASSES[hero.cls].range : 0, true);
   ui.renderBench(state, null);
   ui.renderHeroPanel(state, selHero);
-  if (hero) SFX.tap();
+  if (hero) { ui.showHeroTab(); SFX.tap(); }
+  else ui.restoreTab();
 }
 
+const padFx = (h, color) =>
+  renderer.burst((h.x - D.FIELD_W / 2) / 36, 0.5, (h.y - D.FIELD_H / 2) / 36, color, 8, 2);
+
+/* 이동 — 목적지에 용사가 있으면 "자리 교환"이 된다 (회수 없이 진형만 바꾼다) */
 function doMove(padIndex) {
-  const r = E.moveHero(state, selHero, padIndex);
-  if (!r.ok) {
-    if (r.reason === 'occupied') ui.toast('그 발판에는 이미 용사가 있어요!', 'bad');
+  const occ = E.padOccupant(state, padIndex);
+  if (occ && occ.id !== selHero) {
+    const r = E.swapHeroes(state, selHero, occ.id);
+    if (!r.ok) return;
+    SFX.place();
+    padFx(r.a, 0x9fdcff);
+    padFx(r.b, 0x9fdcff);
+    ui.toast(`🔀 ${D.CLASSES[r.a.cls].name} ↔ ${D.CLASSES[r.b.cls].name} 자리를 바꿨어요!`);
+    kbPad = null;
+    renderer.setHover(null);
+    refreshAll();
     return;
   }
+  const r = E.moveHero(state, selHero, padIndex);
+  if (!r.ok) return;
   SFX.place();
-  renderer.burst((r.hero.x - D.FIELD_W / 2) / 36, 0.5, (r.hero.y - D.FIELD_H / 2) / 36, 0x9fdcff, 8, 2);
+  padFx(r.hero, 0x9fdcff);
   kbPad = null;
   renderer.setHover(null);
   refreshAll();
+}
+
+/* ---------- 끌어서 옮기기 / 자리 바꾸기 ---------- */
+let dragId = null;
+function onDragStart(cx, cy) {
+  if (state.phase === 'over') return false;
+  const pad = renderer.screenToPad(cx, cy);
+  if (pad == null) return false;
+  const hero = E.padOccupant(state, pad);
+  if (!hero) return false;
+  dragId = hero.id;
+  selectField(hero);
+  return true;
+}
+function onDragMove(cx, cy) {
+  renderer.setHover(renderer.screenToPad(cx, cy));
+}
+function onDragEnd(cx, cy) {
+  const id = dragId;
+  dragId = null;
+  renderer.setHover(null);
+  if (id == null || selHero !== id || cx == null) return;   // cx == null: 드래그 취소
+  const pad = renderer.screenToPad(cx, cy);
+  const hero = state.field.find(h => h.id === id);
+  if (pad == null || !hero || pad === hero.padIndex) return;   // 제자리에 놓으면 그냥 선택만
+  doMove(pad);
 }
 
 function doRecall(heroId) {
@@ -368,24 +505,34 @@ ui.bind({
     SFX.tap();
     if (selBench === id) {
       selBench = null;
+      selHero = null;
       renderer.setPlacementMode(false);
+      ui.restoreTab();
     } else {
+      ui.showHeroTab();
       selBench = id;
       selHero = id;
       const hero = state.bench.find(h => h.id === id);
-      renderer.setPlacementMode(true, hero ? D.CLASSES[hero.cls].range : 0);
+      /* 세 번째 인자 = 교환 모드: 찬 자리도 후보(파랑)로 표시된다 */
+      renderer.setPlacementMode(true, hero ? D.CLASSES[hero.cls].range : 0, true);
       renderer.setSelectedHero(null);
     }
     ui.renderBench(state, selBench);
     ui.renderHeroPanel(state, selHero);
   },
+  /* 배치된 용사를 고른 뒤 —
+   *   빈 발판 클릭    → 회수 없이 이동
+   *   다른 용사 클릭  → 두 용사의 자리 교환 (끌어다 놓기와 같은 결과)
+   *   같은 용사 클릭  → 선택 해제
+   * 다른 용사의 정보만 보고 싶을 땐 마우스를 올리면 툴팁이 뜬다. */
   onSceneClick(cx, cy) {
     const pad = renderer.screenToPad(cx, cy);
     if (pad == null) { deselectAll(); return; }
     if (selBench != null) { doPlace(pad); return; }
     const hero = E.padOccupant(state, pad);
-    /* 배치된 용사를 고른 뒤 빈 발판을 누르면 → 회수 없이 이동 */
-    if (!hero && selHero != null && state.field.some(h => h.id === selHero)) {
+    const onField = selHero != null && state.field.some(h => h.id === selHero);
+    if (onField) {
+      if (hero && hero.id === selHero) { deselectAll(); return; }
       doMove(pad);
       return;
     }
@@ -469,6 +616,7 @@ ui.bind({
     newGame(store.diff);
   },
   onShare() { ui.makeShareCard(state, store.best(state.difficulty)); },
+  onDragStart, onDragMove, onDragEnd,
   onMathSubmit: submitMath,
   onMathNext: advanceMath,
   onMathClose: closeMathAll,
@@ -477,13 +625,22 @@ ui.bind({
 /* ---------- 키보드 조작 (전 기능) ---------- */
 let kbPad = null;                     // 키보드 배치 커서
 
-const freePads = () => D.PADS.map((_, i) => i).filter(i => !E.padOccupant(state, i));
+/* ←→로 훑을 발판 목록 — 자기 자리만 빼고 전부다.
+ * 빈 발판에서 Enter는 배치/이동, 찬 발판에서 Enter는 자리 교환이 된다.
+ * 빈 곳만 훑게 하면 "저 자리랑 바꾸고 싶다"는 조작을 키보드로는 못 하게 된다. */
+function padCandidates() {
+  const self = selBench == null && selHero != null
+    ? state.field.find(h => h.id === selHero)
+    : null;
+  const all = D.PADS.map((_, i) => i);
+  return self ? all.filter(i => i !== self.padIndex) : all;
+}
 
 function cyclePad(dir) {
-  const free = freePads();
-  if (!free.length) return;
-  if (kbPad == null || !free.includes(kbPad)) kbPad = free[0];
-  else kbPad = free[(free.indexOf(kbPad) + dir + free.length) % free.length];
+  const cand = padCandidates();
+  if (!cand.length) return;
+  if (kbPad == null || !cand.includes(kbPad)) kbPad = cand[0];
+  else kbPad = cand[(cand.indexOf(kbPad) + dir + cand.length) % cand.length];
   renderer.setHover(kbPad);
 }
 
@@ -494,7 +651,7 @@ function cycleBench(dir) {
   const hero = state.bench[idx];
   selBench = hero.id;
   selHero = hero.id;
-  renderer.setPlacementMode(true, D.CLASSES[hero.cls].range);
+  renderer.setPlacementMode(true, D.CLASSES[hero.cls].range, true);
   renderer.setSelectedHero(null);
   if (kbPad == null) cyclePad(1);
   else renderer.setHover(kbPad);
@@ -512,6 +669,7 @@ function deselectAll() {
   renderer.setHover(null);
   ui.renderBench(state, selBench);
   ui.renderHeroPanel(state, null);
+  ui.restoreTab();
 }
 
 /* 필드 용사 순환 선택 (F키) — 회수 없이 이동/강화 대상 고르기 */
@@ -694,6 +852,15 @@ function frame(now) {
     }
   }
 
+  /* 제한 시간 — 전투는 멈춰 있어도 시계는 흐른다. 문제창의 유일한 압박 장치. */
+  if (ui.isMathOpen() && modal.prob && !ui.isAnswered()) {
+    const prev = modal.time;
+    modal.time = Math.max(0, modal.time - realDt);
+    ui.setTimer(modal.time, modal.timeMax);
+    if (modal.time <= 10 && Math.ceil(modal.time) !== Math.ceil(prev)) SFX.tick(modal.time <= 3);
+    if (modal.time <= 0) timeUp();
+  }
+
   if (!isPaused()) {
     /* 고정 타임스텝: fps가 낮아도 게임 속도는 유지 */
     simAcc = Math.min(simAcc + realDt * speed, STEP * MAX_STEPS);
@@ -778,7 +945,7 @@ if (document.fonts && document.fonts.load) {
 window.__game = {
   get state() { return state; },
   get modal() { return modal; },
-  E, D, renderer, SFX, sfxCore: { getAc, getMaster },
+  E, D, renderer, ui, SFX, sfxCore: { getAc, getMaster },
   refresh: refreshAll,
   selectHero(id) { selHero = id; renderer.setSelectedHero(id); ui.renderHeroPanel(state, id); },
   gold(n) { state.gold += n; refreshAll(); },

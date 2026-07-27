@@ -36,7 +36,7 @@ export function createGame(opts = {}) {
     pendingWave: null,
 
     kills: 0, bossKills: 0, midBossKills: 0, summons: 0, combos: 0,
-    solved: 0, correct: 0, goldEarned: 0, hints: 0, firstTryWins: 0,
+    solved: 0, correct: 0, goldEarned: 0, hints: 0, firstTryWins: 0, bestStreak: 0, timeOuts: 0,
     specialsMade: 0, mythicsMade: 0,
     shardsEarned: 0,
     combo: { count: 0, timer: 0 },
@@ -243,6 +243,19 @@ export function combineRecipe(state, result) {
   return { ok: true, hero, cost, pad };
 }
 
+/* 배치된 두 용사의 자리를 맞바꾼다 — 회수·재배치 없이 진형만 고친다.
+ * (근접 용사가 뒤에, 궁수가 앞에 서 있을 때 한 번에 바로잡는 조작) */
+export function swapHeroes(state, idA, idB) {
+  const a = state.field.find(v => v.id === idA);
+  const b = state.field.find(v => v.id === idB);
+  if (!a || !b || a === b) return { ok: false };
+  const pa = a.padIndex, pb = b.padIndex;
+  /* 공격 쿨다운은 그대로 들고 간다 — 자리를 계속 바꿔 쿨다운을 초기화하는 꼼수 방지 */
+  a.padIndex = pb; a.x = D.PADS[pb].x; a.y = D.PADS[pb].y;
+  b.padIndex = pa; b.x = D.PADS[pa].x; b.y = D.PADS[pa].y;
+  return { ok: true, a, b };
+}
+
 /* 배치된 용사를 다른 빈 발판으로 이동 (회수 없이) */
 export function moveHero(state, heroId, padIndex) {
   const h = state.field.find(v => v.id === heroId);
@@ -254,12 +267,33 @@ export function moveHero(state, heroId, padIndex) {
   h.padIndex = padIndex;
   h.x = D.PADS[padIndex].x;
   h.y = D.PADS[padIndex].y;
-  h.cd = 0;
+  /* 쿨다운 유지 — 이동을 반복해 공격을 앞당기는 꼼수를 막는다 */
   return { ok: true, hero: h };
 }
 
 /* ---------- 배치 / 회수 / 판매 / 강화 ---------- */
 export const padOccupant = (state, padIndex) => state.field.find(h => h.padIndex === padIndex);
+
+/* 벤치 용사를 이미 찬 발판에 놓으면 그 자리 용사와 위치를 맞바꾼다.
+ * (벤치 ↔ 필드 교환이라 벤치 수가 그대로여서 벤치가 가득 차 있어도 언제나 된다) */
+export function swapBenchWithPad(state, benchHeroId, padIndex) {
+  const idx = state.bench.findIndex(h => h.id === benchHeroId);
+  const occ = padOccupant(state, padIndex);
+  if (idx < 0 || !occ) return { ok: false };
+  const inc = state.bench[idx];
+  state.bench.splice(idx, 1);
+  state.field = state.field.filter(v => v !== occ);
+  occ.padIndex = null;
+  state.bench.push(occ);
+  inc.padIndex = padIndex;
+  inc.x = D.PADS[padIndex].x;
+  inc.y = D.PADS[padIndex].y;
+  /* 그 자리에 남아 있던 쿨다운을 이어받는다 — 전투 중에 용사를 갈아 끼워
+   * 공격을 앞당기는 꼼수를 막는다 (필드끼리 교환과 같은 규칙) */
+  inc.cd = occ.cd || 0;
+  state.field.push(inc);
+  return { ok: true, placed: inc, benched: occ };
+}
 
 export function placeHero(state, heroId, padIndex) {
   const idx = state.bench.findIndex(h => h.id === heroId);
@@ -325,9 +359,10 @@ export function applyMathResult(state, correct) {
   return { correct };
 }
 
-/* 첫 시도에 맞히면 조합 비용 일부를 환급 — 정확도 × 학년이 곧 골드 */
-export function refundFirstTry(state, cost, grade) {
-  const back = Math.round(cost * D.refundRatio(grade) * state.mathMul);
+/* 첫 시도에 맞히면 조합 비용 일부를 환급 — 정확도 × 학년이 곧 골드
+ * mul: 속도 보너스 × 연승 배수 (빠르고 연달아 맞힐수록 커진다) */
+export function refundFirstTry(state, cost, grade, mul = 1) {
+  const back = Math.round(cost * D.refundRatio(grade) * state.mathMul * mul);
   state.gold += back;
   state.goldEarned += back;
   state.firstTryWins++;

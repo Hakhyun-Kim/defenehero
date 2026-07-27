@@ -15,23 +15,42 @@ body {
   /* 폰트 미로딩(오프라인) 시에도 위 시스템 폰트로 자연스럽게 대체된다 */
   background: linear-gradient(180deg, #bfe3ff 0%, #dff3ff 45%, #e8f7dd 100%);
   color: var(--ink);
-  padding: 14px;
+  padding: 10px;
 }
 
+/* ===== 화면 한 판에 담기 =====
+ * 전에는 오른쪽 패널이 세로로 계속 자라 페이지가 화면 두 배 길이가 됐다.
+ * 이제 화면 높이에 맞춰 두 열을 잡고, 넘치는 목록만 그 안에서 스크롤한다.
+ * (좁은 화면에서는 아래 미디어 쿼리가 다시 한 줄 세로 배치로 되돌린다) */
 .wrap {
   display: flex;
-  gap: 14px;
-  max-width: 1220px;
+  gap: 12px;
+  max-width: 1320px;
+  height: calc(100dvh - 20px);
   margin: 0 auto;
-  align-items: flex-start;
+  align-items: stretch;
 }
-.left { flex: 1; min-width: 0; }
+.left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
 .right {
-  width: 336px;
+  width: 340px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  min-height: 0;
+}
+/* 위쪽 고정 카드는 줄어들지 않고, 탭 내용만 남는 높이를 먹고 스크롤한다 */
+.right .fixed { flex: 0 0 auto; }
+.tabbody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* ===== 상단 ===== */
@@ -100,19 +119,29 @@ body {
   z-index: 1;
 }
 
-/* ===== 전장 (3D) ===== */
+/* ===== 전장 (3D) =====
+ * 남는 세로 공간을 전부 전장이 먹는다 — 화면이 크면 전장이 커지고,
+ * 작으면 최소 높이(320px)까지만 줄어든 뒤 페이지가 스크롤된다. */
 .stage {
   position: relative;
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(30, 60, 90, 0.25);
+  flex: 1;
+  min-height: 320px;
+  /* 세로가 남는 화면에서 전장이 정사각형에 가까워지면 카메라가 좌우를 잘라 먹는다.
+   * 왼쪽 열 폭(= wrap 폭 − 오른쪽 패널 340 − gap 12)의 1/1.6 을 높이 상한으로 둔다. */
+  max-height: calc((min(100vw - 20px, 1320px) - 352px) / 1.6);
 }
 #scene3d {
   width: 100%;
-  aspect-ratio: 16 / 10;
+  height: 100%;
   background: #bfe3ff;
 }
-#scene3d canvas { display: block; }
+/* 캔버스 위 손가락 제스처는 페이지 스크롤이 아니라 "용사 끌기"로 쓴다 */
+#scene3d canvas { display: block; touch-action: none; }
+/* 끌어서 옮기는 중 — 손 모양으로 "잡고 있다"를 알린다 */
+#scene3d.dragging, #scene3d.dragging canvas { cursor: grabbing; }
 
 #hitFlash {
   position: absolute;
@@ -390,13 +419,50 @@ body {
 @keyframes toast-in  { from { opacity: 0; transform: translateY(-8px); } }
 @keyframes toast-out { to   { opacity: 0; transform: translateY(-8px); } }
 
-/* ===== 전장 아래 줄 ===== */
-.under-row { margin-top: 8px; }
+/* ===== 전장 아래 줄 =====
+ * 조작법 설명 두 문단이 늘 자리를 차지하던 걸 "❓ 조작법" 토글 안으로 넣었다. */
+.under-row {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.helpbtn {
+  margin-left: auto;
+  border: 2px solid #cdd6e2;
+  background: #f2f6fa;
+  border-radius: 999px;
+  padding: 4px 14px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 12px;
+  color: #5a6a84;
+}
+.helpbtn.on { border-color: #2478e0; background: #e3f0ff; color: #1a5cb0; }
+.helpbox {
+  margin-top: 6px;
+  background: #eef4fb;
+  border: 1px solid #d5e2f2;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #35507a;
+}
+.helpbox.hidden { display: none; }
+.helpbox p + p { margin-top: 3px; }
+.helpbox b {
+  background: #fff;
+  border: 1px solid #b8c9e0;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 4px;
+}
 .difficulty {
   display: flex;
   gap: 6px;
   align-items: center;
-  margin-bottom: 4px;
 }
 .difficulty .dlabel { font-size: 13px; font-weight: 700; color: #4a5a74; }
 .difficulty button {
@@ -412,23 +478,6 @@ body {
 }
 .difficulty button.on { border-color: #2478e0; background: #e3f0ff; color: #1a5cb0; }
 .difficulty button:disabled { opacity: 0.55; cursor: not-allowed; }
-.hint { font-size: 12px; color: #4a5a74; line-height: 1.5; }
-.hint.keys {
-  background: #eef4fb;
-  border: 1px solid #d5e2f2;
-  border-radius: 8px;
-  padding: 5px 10px;
-  margin-bottom: 4px;
-  color: #35507a;
-}
-.hint.keys b {
-  background: #fff;
-  border: 1px solid #b8c9e0;
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  padding: 0 4px;
-  font-family: inherit;
-}
 .kbd {
   display: inline-block;
   background: #f2f6fa;
@@ -452,14 +501,66 @@ body {
 .card h2 { font-size: 15px; margin-bottom: 8px; }
 .card h2 .sub { font-size: 11px; font-weight: 500; color: #7a879c; margin-left: 4px; }
 
-.stats {
+.card.fixed { padding: 9px 10px; }
+.statrow {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
   font-size: 15px;
 }
 .stat b { font-size: 17px; }
+/* 학년 선택은 카드 하나를 통째로 쓸 만큼 중요하진 않다 — 통계 줄 밑에 붙인다 */
+.gradebar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px dashed #e3e9f2;
+}
+.gradebar .glabel {
+  font-size: 12px;
+  font-weight: 800;
+  color: #4a5a74;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* ===== 오른쪽 패널 탭 ===== */
+.tabs { display: flex; gap: 6px; flex: 0 0 auto; }
+.tabs button {
+  flex: 1;
+  position: relative;
+  border: 2px solid #cdd6e2;
+  border-bottom: none;
+  background: #e9eff7;
+  border-radius: 10px 10px 0 0;
+  padding: 7px 0 8px;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 13px;
+  color: #5a6a84;
+}
+.tabs button.on {
+  background: #fff;
+  border-color: #2478e0;
+  color: #1a5cb0;
+  margin-bottom: -2px;
+  padding-bottom: 10px;
+}
+.tabdot {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff5d5d;
+}
+.tabdot.hidden { display: none; }
+.pane.hidden { display: none; }
+/* 탭 바로 아래에 붙으므로 위쪽 모서리는 각지게 */
+.tabbody .pane { border-radius: 0 0 14px 14px; }
 .minibtns { margin-left: auto; display: flex; gap: 6px; }
 .minibtns button {
   border: 1px solid #cdd6e2;
@@ -499,7 +600,7 @@ button { font-family: inherit; }
 .big:disabled { background: #c5cedb; box-shadow: none; cursor: not-allowed; }
 
 /* ===== 학년 ===== */
-.grades { display: flex; gap: 6px; margin-bottom: 8px; }
+.grades { display: flex; gap: 5px; flex: 1; }
 .grades button {
   flex: 1;
   padding: 7px 0;
@@ -1061,4 +1162,129 @@ button { font-family: inherit; }
   padding: 0 3px;
   margin-left: 1px;
   vertical-align: super;
+}
+
+/* ===== 수학 난이도 / 제한 시간 =====
+ * 조합이 셀수록 문제가 세진다 — 그 사실을 "누르기 전"과 "푸는 중" 모두에서 보이게 한다. */
+
+/* 조합 목록의 난이도 미리보기 배지 */
+.combine-row .mlv {
+  font-size: 8.5px;
+  font-weight: 900;
+  color: #fff;
+  border-radius: 5px;
+  padding: 2px 5px;
+  letter-spacing: -1px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.combine-row .mlv + button { margin-left: 6px; }
+
+/* 문제창 상단 메타 줄 */
+.mmeta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.mdiff, .msteps, .mstreak {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+  border-radius: 999px;
+  padding: 3px 11px;
+  letter-spacing: -0.5px;
+}
+.mgrade { margin-bottom: 0; }
+.msteps { background: #6d43e8; }
+.mstreak {
+  background: linear-gradient(90deg, #ff8a3d, #ff4d6d);
+  animation: streakpulse 1.1s ease-in-out infinite;
+}
+@keyframes streakpulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+/* 남은 시간 바 */
+.mtimer {
+  position: relative;
+  height: 22px;
+  border-radius: 999px;
+  background: #e7edf5;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+#mTimerFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #5ac47a, #2fa8d8);
+  transition: background 0.3s;
+}
+#mTimerText {
+  position: relative;
+  display: block;
+  line-height: 22px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #23405f;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.mtimer.warn #mTimerFill { background: linear-gradient(90deg, #ff7043, #e53935); }
+.mtimer.warn {
+  animation: timepanic 0.6s ease-in-out infinite;
+}
+.mtimer.warn #mTimerText { color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45); }
+@keyframes timepanic {
+  0%, 100% { box-shadow: 0 0 0 rgba(229, 57, 53, 0); }
+  50% { box-shadow: 0 0 12px rgba(229, 57, 53, 0.75); }
+}
+
+/* 새 문제가 뜰 때 한 번 튕겨 준다 */
+.mproblem.pop { animation: probpop 0.32s cubic-bezier(0.2, 1.5, 0.4, 1); }
+@keyframes probpop { from { transform: scale(0.9); opacity: 0.2; } }
+
+/* 난이도별 문제창 분위기 — 고난도일수록 카드가 뜨거워진다 */
+.modal-card.lv4 { box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35), 0 0 0 3px #f59e0b; }
+.modal-card.lv5 {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), 0 0 0 3px #ff4d9d;
+  animation: modalin 0.25s cubic-bezier(0.2, 1.4, 0.4, 1), mythicaura 1.8s ease-in-out infinite 0.25s;
+}
+@keyframes mythicaura {
+  0%, 100% { box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), 0 0 0 3px #ff4d9d; }
+  50% { box-shadow: 0 20px 70px rgba(255, 77, 157, 0.5), 0 0 0 5px #ff4d9d; }
+}
+.modal-card.lv5 .mproblem { background: #fff2f8; }
+
+/* ===== 좁거나 낮은 화면 =====
+ * 두 열이 들어갈 폭이 안 되거나 세로가 너무 짧으면, 한 줄로 쌓고 페이지 스크롤을 되살린다.
+ * (전장은 다시 16:10 비율로 고정 — 낮은 화면에서 납작해지지 않게) */
+@media (max-width: 1080px) {
+  body { padding: 8px; }
+  .wrap { flex-direction: column; height: auto; }
+  .left { display: block; }
+  .right { width: 100%; min-height: 0; }
+  .stage { flex: none; min-height: 0; max-height: none; }
+  #scene3d { height: auto; aspect-ratio: 16 / 10; }
+  .tabbody { overflow: visible; }
+}
+/* 세로가 짧은 노트북: 두 열은 유지하고 전장만 더 납작하게 (넓은 건 안 잘린다) */
+@media (min-width: 1081px) and (max-height: 660px) {
+  .topbar { margin-bottom: 5px; }
+  .topbar h1 { font-size: 20px; }
+  .castlebar-wrap { margin-bottom: 5px; }
+  .stage { min-height: 240px; }
+  .under-row { margin-top: 5px; }
+}
+/* 아주 좁은 화면: 벤치를 3열로, 글자를 조금 줄인다 */
+@media (max-width: 560px) {
+  .topbar h1 { font-size: 20px; }
+  .bench { grid-template-columns: repeat(3, 1fr); }
+  .gradebar { flex-wrap: wrap; }
 }

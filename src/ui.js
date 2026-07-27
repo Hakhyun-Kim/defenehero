@@ -62,7 +62,7 @@ export function describeHero(hero, state, preview) {
     : `⬆ ${D.TIERS[cap].name}까지 성장 가능`;
   const foot = preview
     ? '🔮 조합하면 이렇게 나와요 (미리보기)'
-    : `${onField ? '배치됨 · 빈 발판 클릭으로 이동 · 우클릭 회수' : '벤치 · 발판을 눌러 배치'} · ${capNote}`;
+    : `${onField ? '배치됨 · 발판 클릭으로 이동(다른 용사면 교환) · 우클릭 회수' : '벤치 · 발판을 눌러 배치(찬 자리면 교환)'} · ${capNote}`;
 
   return `
     <div class="tt-head">
@@ -93,14 +93,40 @@ export class UI {
       'grades', 'summonBtn', 'benchHint', 'bench', 'combineRows', 'sfxBtn', 'bgmBtn',
       'castleRows', 'heroPanel', 'hpTitle', 'hpInfo', 'recallBtn', 'sellBtn', 'moveHint',
       'diffRow', 'mathModal', 'mTitle', 'mGrade', 'mProblem', 'mInput', 'mSubmit', 'mFeedback', 'mNext', 'mClose',
-      'mHintBtn', 'mHint',
+      'mHintBtn', 'mHint', 'mDiff', 'mSteps', 'mStreak', 'mTimer', 'mTimerFill', 'mTimerText',
       'wavePreview', 'bossBar', 'bossBarFill', 'bossBarName', 'bossWarnBanner',
       'overModal', 'overStats', 'overShards', 'restartBtn', 'shareBtn', 'overMetaBtn',
       'metaModal', 'metaShards', 'metaRows', 'metaClose', 'tooltip',
       'revealCard', 'rarityFlash',
+      'tabs', 'heroDot', 'combineDot', 'helpBtn', 'helpBox',
     ].forEach(id => this.el[id] = $(id));
     this._lastKnow = -1;
     this._lastProbSig = '';
+    this._tab = 'combine';
+    this._tabBefore = null;
+  }
+
+  /* ---------- 오른쪽 패널 탭 ----------
+   * 세 패널을 세로로 쌓으면 화면 두 배 길이가 된다 — 한 번에 하나만 보여 준다. */
+  showTab(name) {
+    this._tab = name;
+    this.el.tabs.querySelectorAll('button').forEach(b =>
+      b.classList.toggle('on', b.dataset.tab === name));
+    document.querySelectorAll('.tabbody .pane').forEach(p =>
+      p.classList.toggle('hidden', p.dataset.pane !== name));
+    if (name === 'hero') this.el.heroDot.classList.add('hidden');
+    if (name === 'combine') this.el.combineDot.classList.add('hidden');
+  }
+  /* 용사를 고르면 잠깐 용사 탭으로 넘어갔다가, 선택을 풀면 원래 보던 탭으로 돌아온다 */
+  showHeroTab() {
+    if (this._tab === 'hero') return;
+    this._tabBefore = this._tab;
+    this.showTab('hero');
+  }
+  restoreTab() {
+    if (this._tab !== 'hero') return;
+    this.showTab(this._tabBefore || 'combine');
+    this._tabBefore = null;
   }
 
   bind(h) {
@@ -136,16 +162,68 @@ export class UI {
     el.diffRow.querySelectorAll('button').forEach(b => {
       b.addEventListener('click', () => h.onDiff(b.dataset.d));
     });
+    el.tabs.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => { this._tabBefore = null; this.showTab(b.dataset.tab); });
+    });
+    /* 조작법은 접어 둔다 — 필요할 때만 펼치고, 평소엔 전장이 그만큼 커진다 */
+    el.helpBtn.addEventListener('click', () => {
+      const open = el.helpBox.classList.toggle('hidden');
+      el.helpBtn.classList.toggle('on', !open);
+    });
 
     /* 3D 씬 입력 */
     const scene = el.scene3d;
-    scene.addEventListener('click', (ev) => h.onSceneClick(ev.clientX, ev.clientY));
+    scene.addEventListener('click', (ev) => {
+      /* 드래그를 끝낸 직후에도 click이 한 번 더 온다 — 그건 무시한다 */
+      if (this._afterDrag) return;
+      h.onSceneClick(ev.clientX, ev.clientY);
+    });
     scene.addEventListener('contextmenu', (ev) => {
       ev.preventDefault();                 // 우클릭 = 즉시 회수
       h.onSceneRightClick(ev.clientX, ev.clientY);
     });
-    scene.addEventListener('mousemove', (ev) => h.onSceneMove(ev.clientX, ev.clientY));
-    scene.addEventListener('mouseleave', () => h.onSceneMove(null, null));
+    scene.addEventListener('mousemove', (ev) => {
+      if (this._drag) return;              // 드래그 중에는 onDragMove가 담당
+      h.onSceneMove(ev.clientX, ev.clientY);
+    });
+    scene.addEventListener('mouseleave', () => { if (!this._drag) h.onSceneMove(null, null); });
+
+    /* --- 끌어서 옮기기 / 자리 바꾸기 ---
+     * 배치된 용사를 집어서 다른 발판에 놓으면 이동하고, 이미 용사가 있으면 서로 자리를 바꾼다.
+     * pointer 이벤트라 마우스·터치·펜이 모두 같은 코드로 동작한다. */
+    scene.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== 0) return;
+      this._down = { x: ev.clientX, y: ev.clientY, ok: false, moved: false };
+    });
+    window.addEventListener('pointermove', (ev) => {
+      const d = this._down;
+      if (!d) return;
+      if (!d.moved && Math.hypot(ev.clientX - d.x, ev.clientY - d.y) > 6) {
+        d.moved = true;
+        d.ok = h.onDragStart(d.x, d.y);    // 집은 지점 기준으로 판정
+        if (d.ok) { this._drag = true; scene.classList.add('dragging'); this.hideTooltip(); }
+      }
+      if (d.ok) h.onDragMove(ev.clientX, ev.clientY);
+    });
+    window.addEventListener('pointerup', (ev) => {
+      const d = this._down;
+      this._down = null;
+      if (!d || !d.ok) return;
+      this._drag = false;
+      scene.classList.remove('dragging');
+      h.onDragEnd(ev.clientX, ev.clientY);
+      /* 이어서 날아오는 click 한 번만 삼킨다 */
+      this._afterDrag = true;
+      setTimeout(() => { this._afterDrag = false; }, 0);
+    });
+    /* 창 밖으로 나가거나 터치가 취소돼도 "잡은 채로" 남지 않게 */
+    window.addEventListener('pointercancel', () => {
+      if (!this._down) return;
+      this._down = null;
+      this._drag = false;
+      scene.classList.remove('dragging');
+      h.onDragEnd(null, null);
+    });
   }
 
   /* ---------- HUD ---------- */
@@ -252,14 +330,26 @@ export class UI {
   /* ---------- 조합 (3세대 도감: 등급업 / 특수 / 신화) ---------- */
   renderCombine(state) {
     const combos = E.listCombos(state);
+    /* 다른 탭을 보고 있어도 "지금 조합할 수 있다"를 놓치지 않게 점을 찍는다 */
+    this.el.combineDot.classList.toggle('hidden',
+      this._tab === 'combine' || !combos.some(c => c.affordable));
     const byResult = new Map(combos.filter(c => c.kind === 'recipe').map(c => [c.result, c]));
     let html = '';
 
     /* 규칙을 화면에 못 박아 둔다 — 헷갈리면 조합을 안 하게 된다 */
     html += `<div class="combine-rule">
       <b>규칙</b> ① 같은 용사 2명 = 등급 UP ② 다른 용사 2명 = 새 직업(등급 UP)<br>
-      기본·특수 용사는 <b>전설</b>이 최고 · <b>신화</b> 등급은 <b>신화 용사</b>만 (⚡😇🌌)
+      기본·특수 용사는 <b>전설</b>이 최고 · <b>신화</b> 등급은 <b>신화 용사</b>만 (⚡😇🌌)<br>
+      <b>⭐ 표시</b> = 그 조합에서 나올 <b>수학 문제 난이도</b>. 센 용사일수록 문제도 세요!
     </div>`;
+
+    /* 조합 난이도 = 문제 난이도. 누르기 전에 미리 보여 준다 */
+    const lvBadge = (c) => {
+      const lv = D.mathLevel(c.resultTier, c.kind === 'recipe', !!D.CLASSES[c.result].mythic);
+      const L = D.MATH_LEVELS[lv];
+      const gate = D.mathRounds(lv) > 1 ? ` ${D.mathRounds(lv)}문제` : '';
+      return `<span class="mlv" style="background:${L.color}" title="수학 난이도: ${L.name}${gate}">${L.stars}${gate}</span>`;
+    };
 
     /* ① 등급업 — 같은 용사 2명 */
     const rankups = combos.filter(c => c.kind === 'rankup');
@@ -280,6 +370,7 @@ export class UI {
       html += `<div class="combine-row${c.affordable ? ' ready' : ''}">
         <span class="peek" data-cls="${c.cls}" data-rtier="${c.resultTier}">${C.emoji}</span> ${C.name}
         <span class="cnt" style="color:${D.TIERS[c.tier].color}">${D.TIERS[c.tier].name}×2</span>
+        ${lvBadge(c)}
         <button data-kind="rankup" data-cls="${c.cls}" data-tier="${c.tier}"
           ${c.affordable ? '' : 'disabled'}>⚗ ${D.TIERS[c.resultTier].name} 💰${c.cost}</button>
       </div>`;
@@ -298,7 +389,7 @@ export class UI {
         const rtier = c ? c.resultTier : (gen === 3 ? 3 : 1);
         let right;
         if (c) {
-          right = `<button data-kind="recipe" data-result="${r.result}"
+          right = `${lvBadge(c)}<button data-kind="recipe" data-result="${r.result}"
             ${canPay ? '' : 'disabled'}>⚗ ${D.TIERS[c.resultTier].name} 💰${c.cost}</button>`;
         } else {
           right = `<span class="cnt need">${has(r.a) || has(r.b) ? '재료 하나 더' : '재료 모으기'}</span>`;
@@ -364,10 +455,20 @@ export class UI {
   renderHeroPanel(state, heroId) {
     const el = this.el;
     const hero = state.field.find(v => v.id === heroId) || state.bench.find(v => v.id === heroId);
-    if (!hero) { el.heroPanel.classList.add('hidden'); return; }
+    /* 탭 안에 있으므로 패널 자체는 숨기지 않는다 — 고른 용사가 없으면 안내만 띄운다 */
+    if (!hero) {
+      el.heroDot.classList.add('hidden');
+      el.hpTitle.textContent = '🧍 선택한 용사';
+      el.hpInfo.innerHTML = '<div class="empty-msg">전장의 용사나 벤치 카드를 클릭하면<br>자세한 정보가 여기 나와요.</div>';
+      el.moveHint.classList.add('hidden');
+      el.recallBtn.classList.add('hidden');
+      el.sellBtn.classList.add('hidden');
+      return;
+    }
+    el.sellBtn.classList.remove('hidden');
+    if (this._tab !== 'hero') el.heroDot.classList.remove('hidden');
     const C = D.CLASSES[hero.cls], T = D.TIERS[hero.tier];
     const onField = hero.padIndex >= 0;
-    el.heroPanel.classList.remove('hidden');
     el.hpTitle.textContent = onField ? '🧍 선택한 용사 (배치됨)' : '🧍 선택한 용사 (벤치)';
     el.hpInfo.innerHTML = describeHero(hero, state);
     el.recallBtn.textContent = '↩ 회수 (R / 우클릭)';
@@ -493,26 +594,58 @@ export class UI {
   isMetaOpen() { return !this.el.metaModal.classList.contains('hidden'); }
 
   /* ---------- 수학 모달 ---------- */
-  showMath(title) {
+  showMath(title, lv) {
     this.el.mTitle.textContent = title;
+    /* 난이도가 카드 전체의 분위기를 바꾼다 — 열리는 순간 "센 문제"임을 알아챈다 */
+    const card = this.el.mathModal.querySelector('.modal-card');
+    card.className = `modal-card lv${Math.max(1, Math.min(5, lv || 1))}`;
     this.el.mathModal.classList.remove('hidden');
   }
-  setProblem(grade, text, rewardLabel) {
+  /* o: { grade, lv, text, round, rounds, time, streak, reward } */
+  setProblem(o) {
     const el = this.el;
+    const L = D.MATH_LEVELS[Math.max(1, Math.min(5, o.lv))];
     this._answered = false;
-    el.mGrade.textContent = `${grade}학년 문제`;
-    el.mProblem.textContent = text;
+    el.mGrade.textContent = `${o.grade}학년`;
+    el.mDiff.textContent = `${L.stars} ${L.name}`;
+    el.mDiff.style.background = L.color;
+    el.mSteps.textContent = `${o.round} / ${o.rounds}단계`;
+    el.mSteps.classList.toggle('hidden', o.rounds < 2);
+    el.mStreak.textContent = `🔥 ${o.streak}연승`;
+    el.mStreak.classList.toggle('hidden', !o.streak || o.streak < 2);
+    el.mProblem.textContent = o.text;
     el.mInput.value = '';
     el.mInput.disabled = false;
     el.mSubmit.disabled = false;
-    el.mFeedback.textContent = rewardLabel;
+    el.mFeedback.textContent = o.reward;
     el.mFeedback.className = 'mfeedback';
     el.mNext.classList.add('hidden');
     el.mHint.classList.add('hidden');
     el.mHint.textContent = '';
     el.mHintBtn.disabled = false;
     el.mHintBtn.textContent = `💡 힌트 (💰${D.HINT_GOLD} · H)`;
+    this.setTimer(o.time, o.time);
+    /* 문제가 바뀔 때마다 카드를 한 번 튕겨 준다 — 새 문제가 왔다는 신호 */
+    el.mProblem.classList.remove('pop');
+    void el.mProblem.offsetWidth;
+    el.mProblem.classList.add('pop');
     setTimeout(() => el.mInput.focus(), 30);
+  }
+  /* 남은 시간 바 — 매 프레임 호출되므로 바뀔 때만 DOM을 만진다 */
+  setTimer(left, max) {
+    const el = this.el;
+    const ratio = max > 0 ? Math.max(0, left / max) : 0;
+    el.mTimerFill.style.width = `${ratio * 100}%`;
+    const sec = Math.max(0, Math.ceil(left));
+    if (this._timerSec !== sec) {
+      this._timerSec = sec;
+      el.mTimerText.textContent = `⏳ ${sec}초`;
+    }
+    const warn = ratio <= D.TIME_WARN && ratio > 0;
+    if (this._timerWarn !== warn) {
+      this._timerWarn = warn;
+      el.mTimer.classList.toggle('warn', warn);
+    }
   }
   showHint(text) {
     this.el.mHint.textContent = `💡 ${text}`;
@@ -524,6 +657,8 @@ export class UI {
   mathFeedback(ok, text, nextLabel) {
     const el = this.el;
     this._answered = true;
+    el.mTimer.classList.remove('warn');     // 답을 낸 순간 시계는 멈춘다
+    this._timerWarn = false;
     el.mInput.disabled = true;
     el.mSubmit.disabled = true;
     el.mFeedback.textContent = text;
@@ -550,7 +685,8 @@ export class UI {
       `🌊 도달한 웨이브: <b>${state.wave}웨이브</b> (${D.DIFFICULTIES[state.difficulty].name})<br>
        👾 물리친 몬스터: <b>${state.kills}마리</b>${state.midBossKills ? ` · 👿 중간보스 ${state.midBossKills}` : ''}${state.bossKills ? ` · 🐉 대보스 ${state.bossKills}` : ''}<br>
        🎲 소환 <b>${state.summons}</b> · ⚗️ 조합 <b>${state.combos}</b> · ✨ 특수 <b>${state.specialsMade}</b> · 🌌 신화 <b>${state.mythicsMade}</b><br>
-       🧮 수학 문제: <b>${state.solved}문제 중 ${state.correct}개 정답 (${rate}%)</b>${state.hints ? ` · 💡 힌트 ${state.hints}회` : ''}`;
+       🧮 수학 문제: <b>${state.solved}문제 중 ${state.correct}개 정답 (${rate}%)</b>${state.hints ? ` · 💡 힌트 ${state.hints}회` : ''}<br>
+       🔥 최고 연승: <b>${state.bestStreak || 0}연속</b> (한 번에 맞히기)${state.timeOuts ? ` · ⏰ 시간 초과 ${state.timeOuts}회` : ''}`;
     this.el.overShards.textContent = `✨ 별조각 +${state.shardsEarned} 획득!`;
     this.el.overModal.classList.remove('hidden');
   }

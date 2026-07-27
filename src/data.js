@@ -54,6 +54,35 @@ export const WAVE_BONUS = (w) => 30 + w * 9;
 export const refundRatio = (grade) => 0.15 + (Math.max(3, Math.min(6, grade)) - 3) * 0.10;
 export const HINT_GOLD = 30;          // 힌트는 골드로 산다
 
+/* ---------- 수학 난이도 (조합 난이도와 1:1로 묶인다) ----------
+ * 핵심 규칙: **만들기 어려운 용사일수록 문제도 어렵고 시간도 빠듯하다.**
+ * 등급업 희귀(⭐) … 신화 조합(⭐⭐⭐⭐⭐)까지 5단계.
+ * 덕분에 "전설·신화를 만드는 순간"이 게임 안에서 가장 긴장되는 장면이 된다. */
+export const MATH_LEVELS = [
+  null,
+  { name: '쉬움',   stars: '⭐',          color: '#3aa76d', time: 45 },
+  { name: '보통',   stars: '⭐⭐',        color: '#2478e0', time: 50 },
+  { name: '어려움', stars: '⭐⭐⭐',      color: '#a855f7', time: 62 },
+  { name: '고난도', stars: '⭐⭐⭐⭐',    color: '#f59e0b', time: 78 },
+  { name: '극한',   stars: '⭐⭐⭐⭐⭐',  color: '#ff4d9d', time: 95 },
+];
+/* 결과 등급(1~4) + 레시피/신화 프리미엄 → 1~5 */
+export const mathLevel = (resultTier, isRecipe, isMythic) => {
+  const base = [1, 1, 2, 3, 5][Math.max(0, Math.min(4, resultTier))];
+  return Math.max(1, Math.min(5, base + (isRecipe ? 1 : 0) + (isMythic ? 1 : 0)));
+};
+/* 학년이 높으면 계산량 자체가 많으니 시간을 조금 더 준다 */
+export const mathTime = (lv, grade) =>
+  MATH_LEVELS[Math.max(1, Math.min(5, lv))].time + (Math.max(3, Math.min(6, grade)) - 3) * 8;
+/* 최고 난이도(신화 조합)는 "2문제 연속 정답" 관문 — 한 번 틀리면 1단계부터 */
+export const mathRounds = (lv) => (lv >= 5 ? 2 : 1);
+export const TIME_WARN = 0.3;          // 남은 시간 30% 이하 = 긴박 연출
+/* 빨리 풀수록 환급이 커진다 (남은 시간 비율 × 최대 60%) */
+export const SPEED_BONUS_MAX = 0.6;
+/* 지혜 연승: 한 번에 맞힌 문제가 연달아 쌓이면 환급 배수가 오른다 (최대 2배) */
+export const streakMul = (n) => 1 + Math.min(4, Math.max(0, n - 1)) * 0.25;
+export const STREAK_MAX = 5;
+
 /* 소환 확률(%) — 고정. 전설은 소환으로 거의 안 나오고 조합으로 얻는 게 정석 */
 export const SUMMON_PROBS = [64, 26.5, 8, 1.5];
 

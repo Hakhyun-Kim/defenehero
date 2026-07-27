@@ -63,60 +63,80 @@
         <button data-d="normal" class="on">⚔️ 보통</button>
         <button data-d="hard">🔥 어려움</button>
       </div>
-      <p class="hint keys">⌨️ <b>Space</b> 웨이브 · <b>S</b> 소환 · <b>C</b> 조합 · <b>Tab</b> 벤치 <b>F</b> 배치된 용사 · <b>←→</b> 발판 · <b>Enter</b> 배치/이동 · <b>R</b>/우클릭 회수 <b>X</b> 판매 · <b>3~6</b> 학년 · <b>7~9</b> 성 · <b>M</b> 음소거 · <b>Esc</b> 취소</p>
-      <p class="hint">💡 몬스터는 세 갈래 길로 성에 와요(가운데는 보스 지름길!). 용사는 길 옆 <b>돌 발판</b>에만 배치할 수 있어요.</p>
+      <button id="helpBtn" class="helpbtn">❓ 조작법</button>
+    </div>
+    <div id="helpBox" class="helpbox hidden">
+      <p>🖱 <b>배치</b> 벤치 카드 클릭 → 길 옆 <b>돌 발판</b> 클릭(🟦 찬 자리를 누르면 그 용사와 <b>교환</b>) ·
+        <b>이동/교환</b> 배치된 용사를 클릭하고 갈 곳(빈 발판 🟩 / 다른 용사 🟦)을 클릭 ·
+        <b>회수</b> 우클릭</p>
+      <p>⌨️ <b>Space</b> 웨이브 · <b>S</b> 소환 · <b>C</b> 조합 · <b>Tab</b> 벤치 · <b>F</b> 배치된 용사 ·
+        <b>←→</b> 발판 · <b>Enter</b> 배치/이동/교환 · <b>R</b> 회수 · <b>X</b> 판매 ·
+        <b>3~6</b> 학년 · <b>7~9</b> 성 · <b>M</b> 음소거 · <b>Esc</b> 취소</p>
+      <p>💡 몬스터는 세 갈래 길로 와요(가운데는 보스 지름길!). 갈림길 옆 발판이 명당이에요.</p>
     </div>
   </div>
 
   <!-- ===== 오른쪽: 용사/수학/성 관리 ===== -->
   <aside class="right">
 
-    <section class="card stats">
-      <div class="stat">💰 <b id="gold">150</b></div>
-      <div class="stat">🌊 <b id="waveNo">1</b>웨이브</div>
-      <div class="minibtns">
-        <button id="speedBtn" title="게임 속도 (Q)">⏩ x1</button>
-        <button id="sfxBtn" title="효과음 끄기/켜기">🔊 효과음</button>
-        <button id="bgmBtn" title="배경음악 끄기/켜기 (M: 전체)">🎵 배경음</button>
+    <section class="card fixed">
+      <div class="statrow">
+        <div class="stat">💰 <b id="gold">150</b></div>
+        <div class="stat">🌊 <b id="waveNo">1</b>웨이브</div>
+        <div class="minibtns">
+          <button id="speedBtn" title="게임 속도 (Q)">⏩ x1</button>
+          <button id="sfxBtn" title="효과음 끄기/켜기">🔊</button>
+          <button id="bgmBtn" title="배경음악 끄기/켜기 (M: 전체)">🎵</button>
+        </div>
+      </div>
+      <div class="gradebar">
+        <span class="glabel" title="조합할 때 나올 문제의 학년">🧮 문제</span>
+        <div class="grades" id="grades">
+          <button data-g="3" class="on">3학년</button>
+          <button data-g="4">4학년</button>
+          <button data-g="5">5학년</button>
+          <button data-g="6">6학년</button>
+        </div>
       </div>
     </section>
 
-    <section class="card">
-      <h2>🧮 수학 학년 <span class="sub">조합할 때 이 학년 문제가 나와요</span></h2>
-      <div class="grades" id="grades">
-        <button data-g="3" class="on">3학년</button>
-        <button data-g="4">4학년</button>
-        <button data-g="5">5학년</button>
-        <button data-g="6">6학년</button>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>🦸 용사 소환 <span class="sub">벤치 최대 12명</span></h2>
+    <section class="card fixed">
       <button id="summonBtn" class="big amber">🎲 용사 소환 (💰 50 · S)</button>
-      <div id="benchHint" class="benchhint hidden">🟩 발판 클릭 또는 ←→ 고르고 Enter로 배치!</div>
+      <div id="benchHint" class="benchhint hidden">🟩 빈 발판 = 배치 · 🟦 찬 발판 = 자리 교환 · ←→ 고르고 Enter</div>
       <div id="bench" class="bench"></div>
     </section>
 
-    <section class="card">
-      <h2>⚗️ 용사 조합 <span class="sub">같은 등급 2명 + 수학 문제!</span></h2>
-      <div id="combineRows"></div>
-    </section>
+    <!-- 탭: 한 번에 하나만 보여 세로 길이를 줄인다 -->
+    <div class="tabs" id="tabs">
+      <button data-tab="combine" class="on">⚗️ 조합<span id="combineDot" class="tabdot hidden"></span></button>
+      <button data-tab="castle">🏰 성</button>
+      <button data-tab="hero">🧍 용사<span id="heroDot" class="tabdot hidden"></span></button>
+    </div>
 
-    <section class="card">
-      <h2>🏰 성 관리 <span class="sub">골드로 성을 강화해요</span></h2>
-      <div id="castleRows"></div>
-    </section>
+    <div class="tabbody">
+      <section class="card pane" data-pane="combine">
+        <h2>⚗️ 용사 조합 <span class="sub">같은 등급 2명 + 수학 문제!</span></h2>
+        <div id="combineRows"></div>
+      </section>
 
-    <section class="card hidden" id="heroPanel">
-      <h2 id="hpTitle">🧍 선택한 용사</h2>
-      <div id="hpInfo"></div>
-      <div id="moveHint" class="movehint hidden">🎯 <b>빈 발판</b>을 클릭(또는 ←→ + Enter)하면 <b>회수 없이 이동</b>해요!</div>
-      <div class="rowbtns">
-        <button id="recallBtn">↩ 벤치로 회수</button>
-        <button id="sellBtn">💰 판매</button>
-      </div>
-    </section>
+      <section class="card pane hidden" data-pane="castle">
+        <h2>🏰 성 관리 <span class="sub">골드로 성을 강화해요</span></h2>
+        <div id="castleRows"></div>
+      </section>
+
+      <section class="card pane hidden" data-pane="hero" id="heroPanel">
+        <h2 id="hpTitle">🧍 선택한 용사</h2>
+        <div id="hpInfo"></div>
+        <div id="moveHint" class="movehint hidden">
+          🎯 갈 곳을 클릭하면 이동! <b>다른 용사를 클릭하면 🔀 자리 교환</b>이에요.<br>
+          끌어다 놓아도 되고, <b>←→</b>로 발판을 고르고 <b>Enter</b>도 돼요.
+        </div>
+        <div class="rowbtns">
+          <button id="recallBtn">↩ 벤치로 회수</button>
+          <button id="sellBtn">💰 판매</button>
+        </div>
+      </section>
+    </div>
 
   </aside>
 </div>
@@ -125,7 +145,16 @@
 <div id="mathModal" class="modal hidden">
   <div class="modal-card">
     <h2 id="mTitle">✏️ 지혜의 시험!</h2>
-    <div id="mGrade" class="mgrade">3학년 문제</div>
+    <div class="mmeta">
+      <span id="mGrade" class="mgrade">3학년 문제</span>
+      <span id="mDiff" class="mdiff">⭐ 쉬움</span>
+      <span id="mSteps" class="msteps hidden">1 / 2</span>
+      <span id="mStreak" class="mstreak hidden">🔥 2연승</span>
+    </div>
+    <div id="mTimer" class="mtimer">
+      <div id="mTimerFill"></div>
+      <span id="mTimerText">45</span>
+    </div>
     <div id="mProblem" class="mproblem"></div>
     <div class="mrow">
       <input id="mInput" type="text" inputmode="decimal" autocomplete="off" placeholder="정답을 입력하세요">
@@ -134,7 +163,7 @@
     <div id="mHint" class="mhint hidden"></div>
     <div id="mFeedback" class="mfeedback"></div>
     <div class="mrow">
-      <button id="mHintBtn" class="hintbtn">💡 힌트 (🧠 -2 · H)</button>
+      <button id="mHintBtn" class="hintbtn">💡 힌트 (💰30 · H)</button>
       <button id="mNext" class="hidden">➡ 다음 문제 (Enter)</button>
       <button id="mClose">닫기 (Esc)</button>
     </div>

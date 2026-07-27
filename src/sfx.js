@@ -170,6 +170,37 @@ export const SFX = {
     tone(262, 0.18, 0.26, 'sine', 0.08, 220);
   },
 
+  /* --- 제한 시간 연출: 긴장은 주되 무섭지는 않게 --- */
+  /* 문제 등장: 난이도가 높을수록 낮고 묵직하게 깔린다 */
+  challenge(lv) {
+    const f = [0, 660, 620, 560, 480, 400][Math.max(1, Math.min(5, lv))];
+    tone(f, 0, 0.12, 'triangle', 0.07, f * 1.5);
+    if (lv >= 3) tone(f * 1.5, 0.12, 0.16, 'triangle', 0.06);
+    if (lv >= 5) { /* 극한: 심장 쿵 + 종소리 */
+      tone(110, 0, 0.4, 'sine', 0.11, 70);
+      [784, 1047, 1319].forEach((v, i) => tone(v, 0.24 + i * 0.1, 0.3, 'triangle', 0.06));
+      noise(0.2, 0.5, 0.04, 3200, 0.4);
+    }
+  },
+  /* 째깍: 마지막 10초부터 1초마다, 3초 남으면 더 날카롭게 */
+  tick(urgent) {
+    tone(urgent ? 1500 : 1050, 0, 0.04, 'square', urgent ? 0.055 : 0.03, 0, { cutoff: 5000 });
+  },
+  timeOut() {
+    tone(240, 0, 0.45, 'sawtooth', 0.1, 90);
+    noise(0, 0.35, 0.07, 420, 0.5);
+  },
+  /* 단계 통과(신화 관문 1단계) */
+  stageClear() {
+    [659, 880].forEach((f, i) => tone(f, i * 0.08, 0.14, 'square', 0.07));
+  },
+  /* 연승이 쌓일수록 높아지는 축포 */
+  streak(n) {
+    const base = 660 * Math.pow(1.12, Math.min(5, n));
+    tone(base, 0, 0.1, 'triangle', 0.06, base * 1.6);
+    tone(base * 1.5, 0.09, 0.14, 'triangle', 0.05);
+  },
+
   /* --- 전투음: x(필드 좌표)를 받아 좌우로 벌리고, 매번 피치를 살짝 흔든다 --- */
   shoot(x)     { if (limit('shoot', 55)) return; const p = panOf(x); tone(880, 0, 0.045, 'triangle', 0.032, 440, { pan: p, vary: 55, cutoff: 4200 }); },
   orb(x)       { if (limit('orb', 80)) return; const p = panOf(x); tone(520, 0, 0.09, 'sine', 0.042, 260, { pan: p, vary: 45 }); },
