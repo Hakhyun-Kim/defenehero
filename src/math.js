@@ -542,11 +542,34 @@ function choose(list, lv) {
   return use[use.length - 1];
 }
 
+/* 최근에 낸 문제를 기억한다.
+ * 학년·난이도가 낮으면 후보 유형이 몇 개 안 되고 숫자 범위도 좁아서, 그냥 뽑으면
+ * 같은 문제가 연달아 나온다 — 아이는 "아까 그거잖아"가 되고 푸는 재미가 사라진다. */
+const RECENT_MAX = 8;
+const recent = [];          // 최근 문제 문장
+const recentType = [];      // 최근 문제 유형 — 문장이 달라도 유형이 같으면 "또 그거"로 느껴진다
+const remember = (text, id) => {
+  recent.push(text);
+  if (recent.length > RECENT_MAX) recent.shift();
+  recentType.push(id);
+  if (recentType.length > 2) recentType.shift();
+};
+
 export function gen(grade, lv = 1) {
   const g = GENS[grade] ? grade : 3;
   const L = Math.max(1, Math.min(5, Math.round(lv)));
-  const t = choose(GENS[g], L);
-  const p = t.make(L);
+  const pool = GENS[g].filter(x => (x.min || 1) <= L);
+  let t, p;
+  /* ① 직전 두 문제와 같은 유형은 피한다 ② 최근 문장과 똑같은 것도 피한다.
+   * 후보가 정말 적을 수도 있으니 횟수를 제한하고, 못 피하면 그냥 내보낸다
+   * (무한 루프보다는 반복이 낫다). */
+  for (let i = 0; i < 24; i++) {
+    t = choose(GENS[g], L);
+    p = t.make(L);
+    const typeOk = pool.length <= recentType.length || !recentType.includes(t.id);
+    if (typeOk && !recent.includes(p.text)) break;
+  }
+  remember(p.text, t.id);
   return {
     text: p.text,
     answer: p.answer,

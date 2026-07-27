@@ -100,6 +100,12 @@ function comboLevel(info) {
 
 function openMath(mode, pending = null) {
   if (state.phase === 'over') return;
+  const pre = comboInfo(pending);
+  /* 골드가 모자란 조합은 문제를 내지 않는다 — 풀고 나서 실패하면 노력이 통째로 날아간다 */
+  if (mode === 'combine' && pre && state.gold < pre.cost) {
+    ui.toast(`조합에 💰${pre.cost}이 필요해요 (지금 💰${state.gold}) — 몬스터를 잡아 모아 보세요 ⚔️`, 'bad');
+    return;
+  }
   modal.mode = mode;
   modal.pending = pending;
   const info = comboInfo(pending);
@@ -295,7 +301,7 @@ function advanceMath() {
 function doSummon() {
   const r = E.summon(state);
   if (!r.ok) {
-    if (r.reason === 'gold') ui.toast('골드가 부족해요! 수학 문제로 골드를 벌 수 있어요 ✏️', 'bad');
+    if (r.reason === 'gold') ui.toast('골드가 부족해요! 몬스터를 잡으면 골드가 들어와요 ⚔️', 'bad');
     else if (r.reason === 'bench') ui.toast('벤치가 가득 찼어요! 배치하거나 조합해 보세요.', 'bad');
     return;
   }
@@ -568,6 +574,13 @@ ui.bind({
   },
   onHint() {
     if (!modal.prob) return;
+    /* 힌트를 사서 조합 골드가 모자라지면, 정답을 맞히고도 아무것도 못 얻는다.
+     * 문제를 다 풀고 나서야 "골드가 부족해요"를 보는 건 제일 나쁜 결말이라 미리 막는다. */
+    const need = modal.info ? modal.info.cost : 0;
+    if (need && state.gold - D.HINT_GOLD < need) {
+      ui.toast(`힌트(💰${D.HINT_GOLD})를 사면 조합 골드가 모자라요 — 조합에 💰${need} 필요 (지금 💰${state.gold})`, 'bad');
+      return;
+    }
     const r = E.useHint(state);
     if (!r.ok) { ui.toast(`힌트에는 💰${r.cost}이 필요해요!`, 'bad'); return; }
     modal.usedHint = true;
@@ -814,7 +827,7 @@ document.addEventListener('keydown', (ev) => {
       else {
         const unpaid = E.listCombos(state).find(c => !c.affordable);
         ui.toast(unpaid
-          ? `조합 골드가 부족해요! (💰${unpaid.cost} 필요) 수학 문제로 벌어 보세요 ✏️`
+          ? `조합 골드가 부족해요! (💰${unpaid.cost} 필요) 몬스터를 잡아 모아 보세요 ⚔️`
           : '지금 가능한 조합이 없어요. 용사를 더 모아 보세요!', 'bad');
       }
       return;
