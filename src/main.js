@@ -198,14 +198,13 @@ function submitMath(value) {
         ? E.combineRankUp(state, p.cls, Number(p.tier))
         : E.combineRecipe(state, p.result);
       if (!r.ok && r.reason === 'gold') {
-        ui.mathFeedback(true, `정답! 그런데 조합 골드가 부족해요 (💰${r.cost} 필요)`, null);
+        afterCorrect(`정답! 그런데 조합 골드가 부족해요 (💰${r.cost} 필요)`);
         refreshAll();
         return;
       }
       if (r.ok) {
         SFX.combine();
         const C = D.CLASSES[r.hero.cls];
-        const more = !!chooseBestCombo();
         let msg = `🎉 정답! ${D.TIERS[r.hero.tier].name} ${C.name} ${C.emoji} 탄생! (💰-${r.cost})`;
         if (r.lucky) {
           msg = `🍀 럭키!! 두 등급 점프! ${D.TIERS[r.hero.tier].name} ${C.name} ${C.emoji} 탄생! (💰-${r.cost})`;
@@ -236,23 +235,15 @@ function submitMath(value) {
           renderer.burst((D.PADS[r.pad].x - D.FIELD_W / 2) / 36, 0.5, (D.PADS[r.pad].y - D.FIELD_H / 2) / 36, 0x7fff9e, 12, 2.4);
         }
         modal.pending = null;
-        /* 예측형 흐름: 더 조합할 게 있으면 Enter로 연쇄, 없으면 자동으로 닫힌다 */
-        if (more) {
-          ui.mathFeedback(true, `${msg} — 다음 조합으로!`, null);
-          autoNext(1200);          // 만들어진 용사를 눈으로 볼 시간만 준다
-        } else {
-          ui.mathFeedback(true, `${msg} — 잠시 후 닫혀요`, null);
-          const token = ++autoCloseToken;
-          setTimeout(() => {
-            if (token === autoCloseToken && ui.isMathOpen()) closeMathAll();
-          }, 1400);
-        }
+        /* 여기서 pending을 비운 뒤에 afterCorrect를 부른다 —
+         * 남은 조합 후보를 다시 세야 "다음 문제 / 닫기"를 옳게 고른다 */
+        afterCorrect(msg);
         if (r.hero.tier === 3) ui.toast(`👑 전설! [${D.LEGEND_ABILITIES[r.hero.cls].name}] ${D.LEGEND_ABILITIES[r.hero.cls].desc}`, 'good');
       } else {
-        ui.mathFeedback(true, '정답! 그런데 조합 재료가 부족해요…', null);
+        afterCorrect('정답! 그런데 조합 재료가 부족해요…');
       }
     } else {
-      ui.mathFeedback(true, '🎉 정답!', null);
+      afterCorrect('🎉 정답!');
     }
   } else {
     streak = 0;
@@ -281,6 +272,27 @@ function autoNext(delay) {
   }, delay);
 }
 const cancelAutoNext = () => { autoNextToken++; autoNextPending = false; };
+
+/* 정답을 맞힌 뒤에는 **묻지 않는다.**
+ * 할 게 남았으면 바로 다음 문제, 없으면(재료가 없든 골드가 없든) 알아서 닫힌다.
+ * 사람이 눌러야만 빠져나오는 상태를 하나도 남기지 않는 것이 이 함수의 목적이다.
+ * 반환값은 화면에 덧붙일 안내 문구. */
+const NEXT_MS = 800;      // 다음 문제로 — 결과를 알아볼 만큼만
+const CLOSE_MS = 1100;    // 닫기 — 마지막 결과는 조금 더 보여 준다
+function afterCorrect(baseMsg) {
+  const next = chooseBestCombo();
+  if (next) {
+    ui.mathFeedback(true, `${baseMsg} — 다음 문제!`, null);
+    autoNext(NEXT_MS);
+  } else {
+    ui.mathFeedback(true, baseMsg, null);
+    const token = ++autoCloseToken;
+    autoNextPending = true;              // 기다리는 중 Enter = "지금 바로 닫기"
+    setTimeout(() => {
+      if (token === autoCloseToken && ui.isMathOpen()) closeMathAll();
+    }, CLOSE_MS);
+  }
+}
 function closeMathAll() {
   autoCloseToken++;
   cancelAutoNext();
