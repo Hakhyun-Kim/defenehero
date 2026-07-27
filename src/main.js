@@ -51,6 +51,7 @@ const modal = { mode: null, pending: null, prob: null };
 let streak = 0;               // 연속 "한 번에 정답" 횟수 (지혜 연승)
 
 function newGame(difficulty) {
+  gameOverToken++;                 // 게임오버 연출 예약이 새 판을 덮지 않게
   state = E.createGame({ difficulty, metaLevels: store.meta });
   state.bench.push(E.makeHero(state, 'knight', 0));
   state.bench.push(E.makeHero(state, 'archer', 0));
@@ -163,6 +164,7 @@ function timeUp() {
   const again = modal.rounds > 1 ? ' 1단계부터 다시!' : '';
   if (modal.rounds > 1) modal.round = 1;
   ui.mathFeedback(false, `⏰ 시간 초과! 정답은 ${modal.prob.answer} 이에요.${again}`, '🔁 다시 도전 (Enter)');
+  autoNext(RETRY_MS);          // 시간 초과는 자리를 비웠을 가능성이 크다 — 더더욱 멈춰 있으면 안 된다
   refreshAll();
 }
 
@@ -253,6 +255,7 @@ function submitMath(value) {
     const again = modal.rounds > 1 ? ' 1단계부터 다시!' : '';
     if (modal.rounds > 1) modal.round = 1;
     ui.mathFeedback(false, `😢 아쉬워요! 정답은 ${modal.prob.answer} 이에요.${again}`, '🔁 다시 도전 (Enter)');
+    autoNext(RETRY_MS);        // 가만히 둬도 다시 문제가 나온다 — 정답을 읽을 시간은 준다
   }
   refreshAll();
 }
@@ -279,13 +282,19 @@ const cancelAutoNext = () => { autoNextToken++; autoNextPending = false; };
  * 반환값은 화면에 덧붙일 안내 문구. */
 const NEXT_MS = 800;      // 다음 문제로 — 결과를 알아볼 만큼만
 const CLOSE_MS = 1100;    // 닫기 — 마지막 결과는 조금 더 보여 준다
+const RETRY_MS = 2600;    // 오답 재출제 — 정답을 읽을 시간은 주되 화면이 멈춰 있진 않게
 function afterCorrect(baseMsg) {
   const next = chooseBestCombo();
   if (next) {
     ui.mathFeedback(true, `${baseMsg} — 다음 문제!`, null);
     autoNext(NEXT_MS);
   } else {
-    ui.mathFeedback(true, baseMsg, null);
+    /* 왜 끝나는지 말해 준다. "더 만들 게 없다"와 "골드만 모자라다"는 다음에 할 일이 다르다 */
+    const blocked = E.listCombos(state).find(c => !c.affordable);
+    const tail = blocked
+      ? ` — 골드가 모자라 여기까지! (다음 조합 💰${blocked.cost})`
+      : ' — 더 만들 조합이 없어요';
+    ui.mathFeedback(true, baseMsg + tail, null);
     const token = ++autoCloseToken;
     autoNextPending = true;              // 기다리는 중 Enter = "지금 바로 닫기"
     setTimeout(() => {
@@ -500,6 +509,7 @@ function handleEvents(events) {
   }
 }
 
+let gameOverToken = 0;
 function onGameOver() {
   if (overHandled) return;
   overHandled = true;
@@ -508,7 +518,11 @@ function onGameOver() {
   store.shards = store.shards + state.shardsEarned;
   const best = store.best(state.difficulty);
   if (state.wave > best) store.setBest(state.difficulty, state.wave);
+  /* 900ms 연출 대기 중에 사용자가 Enter로 새 게임을 시작할 수 있다.
+   * 가드가 없으면 새 판 위에 게임오버 화면이 뒤늦게 덮인다. */
+  const overToken = ++gameOverToken;
   setTimeout(() => {
+    if (overToken !== gameOverToken || state.phase !== 'over') return;
     SFX.shard();
     ui.showOver(state);
     ui.updateHud(state, store.shards, store.best(state.difficulty));
@@ -603,7 +617,7 @@ ui.bind({
     }
   },
   onHint() {
-    if (!modal.prob) return;
+    if (!modal.prob || ui.isAnswered()) return;   // 이미 답이 나온 뒤엔 힌트가 의미가 없다 — 골드만 날아간다
     /* 힌트를 사서 조합 골드가 모자라지면, 정답을 맞히고도 아무것도 못 얻는다.
      * 문제를 다 풀고 나서야 "골드가 부족해요"를 보는 건 제일 나쁜 결말이라 미리 막는다. */
     const need = modal.info ? modal.info.cost : 0;

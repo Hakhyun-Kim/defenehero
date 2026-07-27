@@ -128,7 +128,7 @@ export function unitsOf(state, cls, tier) {
 
 /* 결과를 놓을 발판 고르기: 배치돼 있던 재료 우선, 둘 다면 더 강한(등급↑, 커버리지↑) 쪽 */
 function resultPad(mats, resultCls) {
-  const placed = mats.filter(m => m.padIndex >= 0);
+  const placed = mats.filter(m => Number.isInteger(m.padIndex) && m.padIndex >= 0);
   if (!placed.length) return -1;
   if (placed.length === 1) return placed[0].padIndex;
   const range = D.CLASSES[resultCls].range;
@@ -283,7 +283,7 @@ export function swapBenchWithPad(state, benchHeroId, padIndex) {
   const inc = state.bench[idx];
   state.bench.splice(idx, 1);
   state.field = state.field.filter(v => v !== occ);
-  occ.padIndex = null;
+  occ.padIndex = -1;          // 벤치 규약값. null을 넣으면 null>=0 이 true라 "배치됨"으로 샌다
   state.bench.push(occ);
   inc.padIndex = padIndex;
   inc.x = D.PADS[padIndex].x;

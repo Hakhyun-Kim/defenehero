@@ -401,7 +401,9 @@ body {
   align-items: center;
   pointer-events: none;
   width: 90%;
-  z-index: 7;
+  /* 모달(z-index 50)보다 위. 문제창이 떠 있을 때 뜨는 안내가 제일 중요한데
+     그동안 스크림 뒤에 깔려 아무에게도 안 보였다. */
+  z-index: 60;
 }
 .toast {
   background: rgba(20, 32, 50, 0.85);
