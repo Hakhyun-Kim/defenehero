@@ -30,9 +30,20 @@ export const demo = {
   /* main.js가 자기 함수들을 넘겨 준다 — 데모는 게임 내부를 직접 만지지 않는다 */
   attach(api) { this.api = api; },
 
+  /* 링크로 공유될 때 한글이 인코딩돼 깨질 수 있으니 영문 별칭도 받는다 */
+  resolveProfile(name) {
+    if (!name) return null;
+    if (Bot.PROFILES[name]) return name;
+    const alias = { novice: '초보', beginner: '초보', easy: '초보',
+                    normal: '보통', mid: '보통',
+                    expert: '고수', pro: '고수', hard: '고수' };
+    return alias[String(name).toLowerCase()] || null;
+  },
+
   start(profileName) {
     if (!this.api) return false;
-    if (profileName && Bot.PROFILES[profileName]) this.profileName = profileName;
+    const p = this.resolveProfile(profileName);
+    if (p) this.profileName = p;
     this.active = true;
     this.t = 0.6;
     this.midT = 0;
