@@ -269,6 +269,51 @@ function makeFullHelm(headGroup) {
   headGroup.add(helm, top);
 }
 
+/* 용사 초상 — 이미지 파일 0개로 "그 용사"의 그림을 얻는다.
+ * 이미 있는 3D 조립 함수를 오프스크린에서 한 프레임만 렌더해 PNG dataURL로 굳힌다.
+ * 등급별 망토·왕관까지 그대로 나오니 일러스트를 따로 그릴 이유가 없다.
+ * 실패하면 null — 호출부는 이모지로 대체한다. */
+const _portraits = new Map();
+let _pr = null;
+export function heroPortrait(cls, tier, px = 320) {
+  const key = `${cls}:${tier}`;
+  if (_portraits.has(key)) return _portraits.get(key);
+  let url = null;
+  try {
+    if (!_pr) {
+      _pr = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      _pr.setSize(px, px);
+      _pr.outputColorSpace = THREE.SRGBColorSpace;
+      _pr.toneMapping = THREE.ACESFilmicToneMapping;
+      _pr.toneMappingExposure = 1.15;
+    }
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x4a5a6a, 1.5));
+    const key1 = new THREE.DirectionalLight(0xfff2d8, 2.1);
+    key1.position.set(2.2, 3.4, 3.0);
+    scene.add(key1);
+    const rim = new THREE.DirectionalLight(0x9fd4ff, 1.1);
+    rim.position.set(-2.6, 1.6, -2.2);
+    scene.add(rim);
+
+    const { group } = makeHumanHero(cls, tier);
+    group.rotation.y = Math.PI * 0.12;      // 살짝 비스듬히 — 정면보다 그림처럼 보인다
+    scene.add(group);
+
+    const cam = new THREE.PerspectiveCamera(28, 1, 0.1, 20);
+    cam.position.set(0, 1.28, 3.5);
+    cam.lookAt(0, 0.95, 0);
+
+    _pr.render(scene, cam);
+    url = _pr.domElement.toDataURL('image/png');
+    scene.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); } });
+  } catch (e) {
+    url = null;                              // WebGL 컨텍스트를 더 못 만드는 기기 등
+  }
+  _portraits.set(key, url);
+  return url;
+}
+
 function makeHumanHero(cls, tier) {
   const look = CLASS_LOOK[cls];
   const g = new THREE.Group();
@@ -837,6 +882,56 @@ export class Renderer3D {
       g.add(band);
     }
 
+    /* ---- 성 강화가 눈에 보이게 ----
+     * 띠 몇 줄로는 "내 성이 자랐다"가 안 느껴진다. 부품을 미리 만들어 두고
+     * 레벨에 따라 visible만 켠다(런타임 지오메트리 생성 금지 규칙 유지). */
+
+    /* 강화 2: 흉벽 톱니가 늘어난다 */
+    this.extraMerlons = [];
+    for (const dx of [-6.9, 6.9, -6.2, 6.2]) {
+      const c = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.34, 0.72), stone(0xb2b8cc));
+      c.position.set(dx, 2.0, -4.35);
+      c.visible = false;
+      this.extraMerlons.push(c);
+      g.add(c);
+    }
+    /* 강화 3: 성벽 앞 방어 말뚝 */
+    this.spikes = [];
+    for (let k = 0; k < 11; k++) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.62, 5), lam(0x6b4c2a));
+      sp.position.set(-6.5 + k * 1.3, 0.31, -3.55);
+      sp.rotation.z = (k % 2 ? 0.16 : -0.16);
+      sp.visible = false;
+      this.spikes.push(sp);
+      g.add(sp);
+    }
+    /* 강화 4: 성문이 강철문으로 */
+    this.steelGate = new THREE.Mesh(new THREE.BoxGeometry(1.62, 1.22, 0.34), stone(0x6a7590));
+    this.steelGate.position.set(0, 0.82, -4.02);
+    this.steelGate.visible = false;
+    g.add(this.steelGate);
+    this.gate = gate;
+    /* 강화 5: 성벽이 밝은 대리석으로 (재질 색만 바꾼다) */
+    this.wallBaseColor = this.wall.material.color.clone();
+
+    /* 마법 포탑 — 크리스털만 뜨던 것을 실제 탑으로 */
+    this.towerPillars = [];
+    for (let k = 0; k < 3; k++) {
+      const pil = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 1.5, 7), stone(0x8f97b0));
+      pil.position.set((k - 1) * 1.4, 3.55, -5.6);
+      pil.visible = false;
+      this.towerPillars.push(pil);
+      g.add(pil);
+    }
+    this.towerRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1.9, 0.06, 8, 28),
+      new THREE.MeshBasicMaterial({ color: 0x7ff3ff, transparent: true, opacity: 0.75 })
+    );
+    this.towerRing.rotation.x = -Math.PI / 2;
+    this.towerRing.position.set(0, 4.9, -5.6);
+    this.towerRing.visible = false;
+    g.add(this.towerRing);
+
     g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     this.castle = g;
     this.scene.add(g);
@@ -1045,6 +1140,22 @@ export class Renderer3D {
     shadow.position.y = 0.03;
     g.add(shadow);
 
+    /* 엘리트 — 금빛 테두리 하나로 "이건 특별하다"를 즉시 알린다.
+     * 등급을 여러 단계로 나누는 대신 보통/특별 두 가지만 두기로 한 결정의 시각적 절반이다. */
+    let eliteRing = null;
+    if (e.elite) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(scale * 0.4, scale * 0.5, 20),
+        new THREE.MeshBasicMaterial({ color: 0xffd452, transparent: true, opacity: 0.9, depthWrite: false })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.05;
+      g.add(ring);
+      eliteRing = ring;
+      /* 살짝 붉게 물들여 같은 이모지라도 달라 보이게 */
+      spr.material.color.setHex(0xffd9a8);
+    }
+
     let auraRing = null;
     if (e.boss || e.midBoss) {
       const col = e.boss ? 0xff4444 : 0xff9a3d;
@@ -1085,7 +1196,7 @@ export class Renderer3D {
     g.add(bar);
 
     this.scene.add(g);
-    return { group: g, spr, bar, barFg: fg, barW, baseScale: scale, boss: e.boss, midBoss: e.midBoss, auraRing };
+    return { group: g, spr, bar, barFg: fg, barW, baseScale: scale, boss: e.boss, midBoss: e.midBoss, auraRing, eliteRing };
   }
 
   /* ---------- 상태 동기화 ---------- */
@@ -1159,6 +1270,23 @@ export class Renderer3D {
 
     for (let k = 0; k < this.crystals.length; k++) this.crystals[k].visible = k < state.castle.tower;
     for (let k = 0; k < this.fortifyBands.length; k++) this.fortifyBands[k].visible = k < state.castle.fortify;
+
+    /* 강화 단계마다 실루엣이 실제로 바뀐다 — 띠만 늘어나면 자란 게 안 보인다 */
+    const fo = state.castle.fortify, tw = state.castle.tower;
+    this.wall.scale.y = 1 + Math.min(fo, 1) * 0.14;
+    this.wall.position.y = 1.05 + Math.min(fo, 1) * 0.1;
+    for (const m of this.extraMerlons) m.visible = fo >= 2;
+    for (const sp of this.spikes) sp.visible = fo >= 3;
+    if (this.steelGate) { this.steelGate.visible = fo >= 4; this.gate.visible = fo < 4; }
+    if (this.wallBaseColor) {
+      this.wall.material.color.copy(fo >= 5 ? new THREE.Color(0xe8ecf6) : this.wallBaseColor);
+    }
+    for (let k = 0; k < this.towerPillars.length; k++) this.towerPillars[k].visible = k < tw;
+    if (this.towerRing) this.towerRing.visible = tw >= 3;
+    /* 깃발 색이 총 강화도를 말해 준다 — 멀리서도 보이는 가장 싼 신호 */
+    const lv = fo + tw;
+    const flagColor = lv >= 8 ? 0xff6bd6 : lv >= 6 ? 0x9b7bff : lv >= 4 ? 0x62d0ff : lv >= 2 ? 0x7ff08a : 0xffc93d;
+    for (const f of this.flags) f.material.color.setHex(flagColor);
     const hpRatio = state.castleMax > 0 ? state.castleHp / state.castleMax : 1;
     this.castleHpRatio = hpRatio;
     const char = new THREE.Color(0x554f5e);
@@ -1475,6 +1603,16 @@ export class Renderer3D {
   }
 
   addShake(v) { this.shake = Math.min(0.8, this.shake + v); }
+
+  /* 성을 강화한 순간 — 성벽을 따라 빛이 번지고 흔들린다 */
+  castleUpgradeFx(kind) {
+    const color = kind === 'tower' ? 0x7ff3ff : 0xffd76e;
+    this._shockRing(0, -4.35, 7.5, color, 0.7, 0.22);
+    for (let i = 0; i < 5; i++) {
+      this.burst(-5 + i * 2.5, 1.4, -4.35, color, 8, 2.4);
+    }
+    this.addShake(0.22);
+  }
 
   /* ---------- 프레임 ---------- */
   frame(dt, state) {

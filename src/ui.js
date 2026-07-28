@@ -93,6 +93,8 @@ export class UI {
       'grades', 'summonBtn', 'benchHint', 'bench', 'combineRows', 'sfxBtn', 'bgmBtn',
       'castleRows', 'heroPanel', 'hpTitle', 'hpInfo', 'recallBtn', 'sellBtn', 'moveHint',
       'diffRow', 'mathModal', 'mTitle', 'mGrade', 'mProblem', 'mInput', 'mSubmit', 'mFeedback', 'mNext', 'mClose',
+      'storyModal', 'storyIcon', 'storyTitle', 'storyLines', 'storyNext', 'storyOff',
+      'revealModal', 'revealCard', 'revealTier', 'revealArt', 'revealName', 'revealDesc',
       'mHintBtn', 'mHint', 'mDiff', 'mSteps', 'mStreak', 'mTimer', 'mTimerFill', 'mTimerText',
       'wavePreview', 'bossBar', 'bossBarFill', 'bossBarName', 'bossWarnBanner',
       'overModal', 'overStats', 'overShards', 'restartBtn', 'shareBtn', 'overMetaBtn',
@@ -148,6 +150,9 @@ export class UI {
     el.mNext.addEventListener('click', h.onMathNext);
     el.mClose.addEventListener('click', h.onMathClose);
     el.mHintBtn.addEventListener('click', h.onHint);
+    el.storyNext.addEventListener('click', h.onStoryClose);
+    el.storyOff.addEventListener('click', h.onStoryOff);
+    el.revealModal.addEventListener('click', h.onRevealClose);
     /* 모달 아무 데나 누르면 입력창으로 포커스를 되돌린다.
      * 버튼이나 배경을 한 번 클릭하면 포커스가 거기 남아서, 답을 쓰고 Enter를 눌러도
      * 입력창 핸들러가 안 돌던 문제가 있었다. */
@@ -334,6 +339,18 @@ export class UI {
     this.el.benchHint.classList.toggle('hidden', selId == null);
   }
 
+  /* 부족한 재료가 "조합으로만 나오는 직업"일 때, 그 레시피 줄로 데려다 준다.
+   * 말로 "마검사부터 만드세요"라고 쓰는 것보다 눈으로 짚어 주는 편이 확실하다. */
+  gotoRecipe(cls) {
+    const row = [...this.el.combineRows.querySelectorAll('.combine-row.recipe')]
+      .find(el => { const p = el.querySelector('.peek'); return p && p.dataset.cls === cls; });
+    if (!row) return;
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    row.classList.remove('flash');
+    void row.offsetWidth;
+    row.classList.add('flash');
+  }
+
   /* ---------- 조합 (3세대 도감: 등급업 / 특수 / 신화) ---------- */
   renderCombine(state) {
     const combos = E.listCombos(state);
@@ -342,6 +359,28 @@ export class UI {
       this._tab === 'combine' || !combos.some(c => c.affordable));
     const byResult = new Map(combos.filter(c => c.kind === 'recipe').map(c => [c.result, c]));
     let html = '';
+
+    /* 지금 당장 되는 것을 맨 위에 모은다 — 아이는 스크롤하지 않는다.
+     * "확실히 알고, 되면 착착"의 핵심이라 규칙 안내보다도 위에 둔다. */
+    const ready = combos.filter(c => c.affordable);
+    if (ready.length) {
+      html += `<div class="combine-now"><div class="now-title">⚡ 지금 바로 조합!</div>`;
+      for (const c of ready) {
+        const R = D.CLASSES[c.result];
+        const what = c.kind === 'rankup'
+          ? `${D.CLASSES[c.cls].emoji} ${D.CLASSES[c.cls].name} ${D.TIERS[c.tier].name}×2`
+          : `${D.CLASSES[c.a].emoji}+${D.CLASSES[c.b].emoji}`;
+        html += `<button class="now-btn" data-kind="${c.kind}"
+          ${c.kind === 'rankup' ? `data-cls="${c.cls}" data-tier="${c.tier}"` : `data-result="${c.result}"`}
+          style="border-color:${D.TIERS[c.resultTier].color}">
+          <span class="now-what">${what}</span>
+          <span class="now-arrow">→</span>
+          <span class="now-res" style="color:${D.TIERS[c.resultTier].color}">${R.emoji} ${D.TIERS[c.resultTier].name} ${R.name}</span>
+          <span class="now-cost">💰${c.cost}</span>
+        </button>`;
+      }
+      html += `</div>`;
+    }
 
     /* 규칙을 화면에 못 박아 둔다 — 헷갈리면 조합을 안 하게 된다 */
     html += `<div class="combine-rule">
@@ -383,30 +422,49 @@ export class UI {
       </div>`;
     }
 
-    /* ②③ 레시피 도감 — 특수(2세대) / 신화(3세대) */
-    const all = [...state.bench, ...state.field];
-    const has = (cls) => all.some(h => h.cls === cls);
+    /* ②③ 레시피 도감 — 특수(2세대) / 신화(3세대)
+     * "재료 하나 더"라고만 쓰면 무엇이 모자란지 알 수가 없다.
+     * 부족한 재료를 크게 그리고, 그 자리에서 바로 할 행동(소환/선행 조합)을 준다. */
+    const RECIPE_STATE_LABEL = {
+      ready: '', gold: '골드 부족', material: '재료 필요', cap: '등급 천장',
+    };
     const renderRecipes = (gen) => {
       let out = '';
       for (const r of D.RECIPES.filter(x => x.gen === gen)) {
         const A = D.CLASSES[r.a], B = D.CLASSES[r.b], R = D.CLASSES[r.result];
         const c = byResult.get(r.result);
         const made = state.discovered && state.discovered.has(r.result);
-        const canPay = !!(c && c.affordable);
-        const rtier = c ? c.resultTier : (gen === 3 ? 3 : 1);
+        const st = E.recipeStatus(state, r, c ? c.cost : null);
+        const rtier = c ? c.resultTier : (st.resultTier != null ? st.resultTier : (gen === 3 ? 3 : 1));
+        const ta = st.ta, tb = st.tb;
+
         let right;
-        if (c) {
-          right = `${lvBadge(c)}<button data-kind="recipe" data-result="${r.result}"
-            ${canPay ? '' : 'disabled'}>⚗ ${D.TIERS[c.resultTier].name} 💰${c.cost}</button>`;
+        if (st.state === 'ready' || st.state === 'gold') {
+          /* 골드가 모자라도 누를 수 있게 둔다 — 누르면 얼마가 필요한지 알려 주는 편이 낫다 */
+          right = `${c ? lvBadge(c) : ''}<button data-kind="recipe" data-result="${r.result}"
+            class="${st.state === 'gold' ? 'lack' : ''}">⚗ ${D.TIERS[rtier].name} 💰${st.cost}</button>`;
+        } else if (st.state === 'cap') {
+          right = `<span class="cnt need">더 안 올라요 — 🌌 신화 조합으로</span>`;
         } else {
-          right = `<span class="cnt need">${has(r.a) || has(r.b) ? '재료 하나 더' : '재료 모으기'}</span>`;
+          /* 부족한 재료를 어떻게 구하는가로 버튼이 갈린다:
+           *   기본 4직업 → 소환하면 나온다 · 조합으로만 나오는 직업 → 그 레시피로 보낸다 */
+          const need = st.missing[0];
+          const N = D.CLASSES[need];
+          const byCombine = D.RECIPES.some(x => x.result === need);
+          right = byCombine
+            ? `<button data-goto="${need}" class="need">${N.emoji} ${N.name}부터 만들기</button>`
+            : `<button data-need="${need}" class="need">🎲 ${N.emoji} ${N.name} 뽑으러 가기</button>`;
         }
+
         /* 보유한 재료의 최고 등급을 배지로 — "왜 전설이 안 나오지?"를 없앤다 */
-        const tierBadge = (cls, t) => t == null || t < 0 ? ''
+        const tierBadge = (t) => t == null || t < 0 ? ''
           : `<span class="ingt" style="background:${D.TIERS[t].color}">${D.TIERS[t].name[0]}</span>`;
-        const ta = c ? c.ta : null, tb = c ? c.tb : null;
-        out += `<div class="combine-row recipe${canPay ? ' ready' : ''}${gen === 3 ? ' mythic' : ''}">
-          <span class="ing${has(r.a) ? ' have' : ''}">${A.emoji}${tierBadge(r.a, ta)}</span>+<span class="ing${has(r.b) ? ' have' : ''}">${B.emoji}${tierBadge(r.b, tb)}</span>
+        const ing = (cls, C, t) => {
+          const have = t >= 0;
+          return `<span class="ing${have ? ' have' : ' lack'}" title="${C.name}${have ? ` (보유 최고 ${D.TIERS[t].name})` : ' — 아직 없어요'}">${C.emoji}${have ? tierBadge(t) : '<span class="ingx">?</span>'}</span>`;
+        };
+        out += `<div class="combine-row recipe s-${st.state}${gen === 3 ? ' mythic' : ''}">
+          ${ing(r.a, A, ta)}+${ing(r.b, B, tb)}
           <span class="rarrow">→</span>
           <span class="peek" data-cls="${r.result}" data-rtier="${rtier}">${R.emoji} <b>${R.name}</b>${made ? ' <span class="found">✓</span>' : ''}</span>
           ${right}
@@ -421,8 +479,16 @@ export class UI {
     html += renderRecipes(3);
 
     this.el.combineRows.innerHTML = html;
-    this.el.combineRows.querySelectorAll('button').forEach(b => {
+    /* 버튼은 세 종류다 — 조합(data-kind) / 소환하러(data-need) / 선행 조합으로(data-goto).
+     * 셀렉터를 좁히지 않으면 새 버튼이 onCombine으로 잘못 흘러가 아무 일도 안 일어난다. */
+    this.el.combineRows.querySelectorAll('button[data-kind]').forEach(b => {
       b.addEventListener('click', () => this.h.onCombine({ ...b.dataset }));
+    });
+    this.el.combineRows.querySelectorAll('button[data-need]').forEach(b => {
+      b.addEventListener('click', () => this.h.onNeedHero(b.dataset.need));
+    });
+    this.el.combineRows.querySelectorAll('button[data-goto]').forEach(b => {
+      b.addEventListener('click', () => this.gotoRecipe(b.dataset.goto));
     });
     /* 결과 캐릭터에 커서를 올리면 "무엇이 나올지" 미리 보여준다 */
     this.el.combineRows.querySelectorAll('.peek').forEach(sp => {
@@ -598,6 +664,51 @@ export class UI {
   }
   showMeta() { this.el.metaModal.classList.remove('hidden'); }
   hideMeta() { this.el.metaModal.classList.add('hidden'); }
+  /* ---------- 막간 이야기 ---------- */
+  showStory(beat) {
+    const el = this.el;
+    el.storyIcon.textContent = beat.icon || '📜';
+    el.storyTitle.textContent = beat.title || '';
+    el.storyLines.textContent = '';
+    /* 줄을 하나씩 요소로 — 빈 줄이 문단 간격이 된다 (타이핑 연출은 넣지 않는다: 아이는 안 기다린다) */
+    for (const line of beat.lines) {
+      const d = document.createElement('div');
+      d.className = line ? 'story-line' : 'story-gap';
+      d.textContent = line;
+      el.storyLines.appendChild(d);
+    }
+    el.storyModal.classList.remove('hidden');
+    setTimeout(() => el.storyNext.focus(), 30);
+  }
+  hideStory() { this.el.storyModal.classList.add('hidden'); }
+  isStoryOpen() { return !this.el.storyModal.classList.contains('hidden'); }
+
+  /* ---------- 전설·신화 탄생 연출 ---------- */
+  showReveal({ tierName, tierColor, name, emoji, desc, art, short }) {
+    const el = this.el;
+    el.revealTier.textContent = tierName;
+    el.revealTier.style.color = tierColor;
+    el.revealCard.style.setProperty('--tier', tierColor);
+    el.revealName.textContent = name;
+    el.revealDesc.textContent = short ? '' : (desc || '');
+    el.revealArt.innerHTML = '';
+    if (art) {
+      const img = document.createElement('img');
+      img.src = art;
+      img.alt = name;
+      el.revealArt.appendChild(img);
+    } else {
+      el.revealArt.textContent = emoji;      // 초상 생성 실패 시 이모지로
+    }
+    el.revealCard.classList.toggle('short', !!short);
+    el.revealModal.classList.remove('hidden');
+    el.revealCard.classList.remove('pop');
+    void el.revealCard.offsetWidth;
+    el.revealCard.classList.add('pop');
+  }
+  hideReveal() { this.el.revealModal.classList.add('hidden'); }
+  isRevealOpen() { return !this.el.revealModal.classList.contains('hidden'); }
+
   isMetaOpen() { return !this.el.metaModal.classList.contains('hidden'); }
 
   /* ---------- 수학 모달 ---------- */

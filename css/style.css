@@ -876,7 +876,67 @@ button { font-family: inherit; }
 .combine-empty { font-size: 11px; color: #9aa7ba; padding: 4px 0; }
 .combine-row.recipe { font-size: 12px; gap: 4px; }
 .combine-row .rarrow { color: #9aa7ba; font-weight: 400; }
-.combine-row .ing { opacity: 0.35; filter: grayscale(0.8); }
+.combine-row /* 재료 표시 — 예전엔 "없는 재료"를 가장 안 보이게 흐려 놨다.
+   정작 알아야 하는 건 "무엇이 비었나"라서 강조를 뒤집었다. */
+.ing {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 4px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+}
+.ing.have { border-color: #cfe0f5; background: #f2f8ff; }
+.ing.lack {
+  border: 2px dashed #f0a04a;
+  background: #fff6ea;
+  animation: ingpulse 1.6s ease-in-out infinite;
+}
+.ing .ingx { font-weight: 900; color: #e0761f; margin-left: 2px; }
+@keyframes ingpulse {
+  0%, 100% { border-color: #f0a04a; }
+  50%      { border-color: #ffd9ae; }
+}
+
+/* 지금 바로 되는 조합 — 스크롤 없이 맨 위에서 착착 */
+.combine-now {
+  background: linear-gradient(180deg, #fffdf0, #fff8dc);
+  border: 2px solid #ffd76a;
+  border-radius: 12px;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+.now-title { font-size: 13px; font-weight: 900; color: #8a6a12; margin-bottom: 6px; }
+.now-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-bottom: 5px;
+  padding: 7px 8px;
+  border: 2px solid #ddd;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+.now-btn:last-child { margin-bottom: 0; }
+.now-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0,0,0,0.12); }
+.now-btn:active { transform: translateY(1px); box-shadow: none; }
+.now-what { white-space: nowrap; }
+.now-arrow { color: #9aa4b5; }
+.now-res { font-weight: 900; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.now-cost { font-weight: 800; color: #7a6a3a; }
+
+/* 재료가 모자란 줄에서 눌러 바로 행동 */
+.combine-row button.need { background: #fff2e0; border-color: #f0b071; color: #8a5a12; }
+.combine-row button.lack { opacity: 0.85; }
+.combine-row.flash { animation: rowflash 1.4s ease-out; }
+@keyframes rowflash {
+  0%   { background: #fff3c4; box-shadow: 0 0 0 3px #ffd76a inset; }
+  100% { background: transparent; box-shadow: none; }
+}
 .combine-row .ing.have { opacity: 1; filter: none; }
 .combine-row .need { font-size: 10px; margin-left: auto; }
 .combine-row .peek {
@@ -1308,3 +1368,115 @@ button { font-family: inherit; }
   .bench { grid-template-columns: repeat(3, 1fr); }
   .gradebar { flex-wrap: wrap; }
 }
+
+
+/* ===== 막간 이야기 ===== */
+.modal-card.story {
+  max-width: 460px;
+  text-align: center;
+  background: linear-gradient(180deg, #fffdf7, #fff6e6);
+  border: 3px solid #e8d5a8;
+}
+.story-icon { font-size: 46px; line-height: 1; margin-bottom: 4px; }
+.modal-card.story h2 { color: #6b5220; margin-bottom: 12px; }
+.story-lines {
+  text-align: left;
+  background: #fffaf0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  font-size: 16px;
+  line-height: 1.75;
+  color: #3a2e18;
+  word-break: keep-all;
+}
+.story-gap { height: 10px; }
+.story-off {
+  display: block;
+  margin: 8px auto 0;
+  background: none;
+  border: none;
+  color: #a89878;
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ===== 전설·신화 탄생 연출 =====
+   z-index 70 — 수학 모달(50)과 토스트(60) 위를 덮는다 */
+#revealModal { z-index: 70; }
+.reveal-card {
+  position: relative;
+  width: min(92vw, 380px);
+  padding: 26px 20px 22px;
+  border-radius: 22px;
+  text-align: center;
+  background: radial-gradient(circle at 50% 34%, #ffffff 0%, #f6f2ff 55%, #e9e2fb 100%);
+  border: 4px solid var(--tier, #f59e0b);
+  box-shadow: 0 0 44px var(--tier, #f59e0b), 0 16px 40px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.reveal-card.pop { animation: revealpop 0.6s cubic-bezier(0.16, 1.4, 0.4, 1); }
+@keyframes revealpop {
+  0%   { transform: scale(0.55) rotate(-6deg); opacity: 0; }
+  60%  { transform: scale(1.06) rotate(2deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); }
+}
+/* 뒤에서 도는 빛줄기 — 이미지 없이 원뿔 그라디언트로 */
+.reveal-rays {
+  position: absolute;
+  inset: -40%;
+  background: conic-gradient(from 0deg,
+    rgba(255,255,255,0) 0deg, rgba(255,255,255,0.55) 12deg, rgba(255,255,255,0) 26deg,
+    rgba(255,255,255,0) 90deg, rgba(255,255,255,0.45) 102deg, rgba(255,255,255,0) 116deg,
+    rgba(255,255,255,0) 180deg, rgba(255,255,255,0.5) 192deg, rgba(255,255,255,0) 206deg,
+    rgba(255,255,255,0) 270deg, rgba(255,255,255,0.45) 282deg, rgba(255,255,255,0) 296deg);
+  animation: rayspin 9s linear infinite;
+  pointer-events: none;
+}
+@keyframes rayspin { to { transform: rotate(360deg); } }
+.reveal-tier {
+  position: relative;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 3px;
+  margin-bottom: 4px;
+}
+.reveal-art {
+  position: relative;
+  height: 190px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 104px;
+  line-height: 1;
+}
+.reveal-art img {
+  height: 100%;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.3));
+  animation: revealfloat 3s ease-in-out infinite;
+}
+@keyframes revealfloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-7px); }
+}
+.reveal-name {
+  position: relative;
+  font-size: 27px;
+  font-weight: 900;
+  color: #26304a;
+  margin-top: 2px;
+}
+.reveal-desc {
+  position: relative;
+  font-size: 14px;
+  color: #4b5670;
+  margin-top: 6px;
+  line-height: 1.5;
+  word-break: keep-all;
+  min-height: 20px;
+}
+.reveal-hint { position: relative; margin-top: 12px; font-size: 12px; color: #8d94a8; }
+.reveal-card.short .reveal-art { height: 130px; font-size: 76px; }
+.reveal-card.short .reveal-hint { display: none; }

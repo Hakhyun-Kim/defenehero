@@ -4,10 +4,11 @@
 import * as D from './data.js';
 import * as E from './engine.js';
 import * as MathGen from './math.js';
-import { Renderer3D } from './render3d.js';
+import { Renderer3D, heroPortrait } from './render3d.js';
 import { UI } from './ui.js';
 import { SFX, toggleSfx, toggleMusic, toggleAll, isSfxMuted, isMusicMuted, forceMute, getAc, getMaster } from './sfx.js';
 import { music } from './music.js';
+import * as Story from './story.js';
 
 /* ---------- 저장 ---------- */
 const store = {
@@ -20,6 +21,10 @@ const store = {
   best(diff) { return Number(localStorage.getItem(`mathdef_best_${diff}`) || 0); },
   setBest(diff, w) { localStorage.setItem(`mathdef_best_${diff}`, String(w)); },
   get gfx() { return localStorage.getItem('mathdef_gfx'); },
+  get storyOff() { return localStorage.getItem('mathdef_story_off') === '1'; },
+  set storyOff(v) { localStorage.setItem('mathdef_story_off', v ? '1' : '0'); },
+  get deaths() { return Number(localStorage.getItem('mathdef_deaths') || 0); },
+  set deaths(v) { localStorage.setItem('mathdef_deaths', String(v)); },
   set gfx(v) { localStorage.setItem('mathdef_gfx', v); },
 };
 
@@ -64,6 +69,7 @@ function newGame(difficulty) {
   refreshAll();
   ui.hideOver();
   music.setWave(1);
+  playStory('prologue');
 }
 
 function refreshPanels() {
@@ -214,7 +220,7 @@ function submitMath(value) {
           SFX.summon(3);
         }
         if (p.kind === 'recipe') {
-          ui.toast(`✨ 특수 용사 [${C.name}] 탄생! ${C.desc}`, 'good');
+          ui.toast(`📖 도감 해금! ✨ [${C.name}] ${C.desc}`, 'good');
           renderer.celebrate(0xd8b4ff, true);
         }
         if (firstTry) {
@@ -237,9 +243,17 @@ function submitMath(value) {
           renderer.burst((D.PADS[r.pad].x - D.FIELD_W / 2) / 36, 0.5, (D.PADS[r.pad].y - D.FIELD_H / 2) / 36, 0x7fff9e, 12, 2.4);
         }
         modal.pending = null;
-        /* 여기서 pending을 비운 뒤에 afterCorrect를 부른다 —
-         * 남은 조합 후보를 다시 세야 "다음 문제 / 닫기"를 옳게 고른다 */
-        afterCorrect(msg);
+        /* 전설·신화는 그림과 함께 크게 보여 준다. 예약된 자동 진행을 끄지 않으면
+         * 연출 뒤에서 수학 모달이 혼자 다음 문제로 넘어가 버린다. */
+        if (r.hero.tier >= 3) {
+          cancelAutoNext();
+          const storyKey = r.hero.tier >= 4 ? 'firstMythic' : 'firstLegend';
+          playReveal(r.hero, () => playStory(storyKey, () => afterCorrect(msg)));
+        } else {
+          /* 여기서 pending을 비운 뒤에 afterCorrect를 부른다 —
+           * 남은 조합 후보를 다시 세야 "다음 문제 / 닫기"를 옳게 고른다 */
+          afterCorrect(msg);
+        }
         if (r.hero.tier === 3) ui.toast(`👑 전설! [${D.LEGEND_ABILITIES[r.hero.cls].name}] ${D.LEGEND_ABILITIES[r.hero.cls].desc}`, 'good');
       } else {
         afterCorrect('정답! 그런데 조합 재료가 부족해요…');
@@ -334,6 +348,62 @@ function advanceMath() {
   } else {
     newProblem();
   }
+}
+
+/* ---------- 막간 이야기 ----------
+ * 매 웨이브 띄우면 "스킵을 누르는 게임"이 된다. 초반에 몰고 뒤로 갈수록 성글게,
+ * 한 판에 최대 열댓 번. 이미 본 것은 state.seenStory로 걸러진다. */
+let storyResume = null;
+function playStory(key, onDone = null) {
+  if (store.storyOff || !Story.BEATS[key]) { if (onDone) onDone(); return false; }
+  if (!state.seenStory) state.seenStory = new Set();
+  if (state.seenStory.has(key)) { if (onDone) onDone(); return false; }
+  state.seenStory.add(key);
+  storyResume = onDone;
+  ui.showStory(Story.BEATS[key]);
+  SFX.tap();
+  return true;
+}
+function closeStory() {
+  ui.hideStory();
+  const fn = storyResume;
+  storyResume = null;
+  if (fn) fn();
+}
+
+/* ---------- 전설·신화 탄생 연출 ----------
+ * 수학 모달이 아직 열려 있는 상태에서 그 위에 덮인다.
+ * 예약된 자동 진행을 반드시 끄고, 닫힐 때 원래 흐름을 이어 준다. */
+let revealResume = null;
+function playReveal(hero, onDone) {
+  if (store.storyOff) { onDone(); return; }
+  if (!state.revealed) state.revealed = new Set();
+  const key = `${hero.cls}:${hero.tier}`;
+  const short = state.revealed.has(key);       // 두 번째부터는 짧게
+  state.revealed.add(key);
+  const C = D.CLASSES[hero.cls];
+  const T = D.TIERS[hero.tier];
+  const ab = hero.tier >= 4 ? (D.MYTHIC_ABILITIES && D.MYTHIC_ABILITIES[hero.cls])
+                            : (D.LEGEND_ABILITIES && D.LEGEND_ABILITIES[hero.cls]);
+  revealResume = onDone;
+  ui.showReveal({
+    tierName: T.name, tierColor: T.color, name: C.name, emoji: C.emoji,
+    desc: ab ? `[${ab.name}] ${ab.desc}` : C.desc,
+    art: heroPortrait(hero.cls, hero.tier), short,
+  });
+  SFX.summon(hero.tier);
+  renderer.celebrate(hero.tier >= 4 ? 0xd8b4ff : 0xffd93d, true);
+  clearTimeout(revealTimer);
+  revealTimer = setTimeout(closeReveal, short ? 1200 : 3200);
+}
+let revealTimer = null;
+function closeReveal() {
+  clearTimeout(revealTimer);
+  if (!ui.isRevealOpen()) return;
+  ui.hideReveal();
+  const fn = revealResume;
+  revealResume = null;
+  if (fn) fn();
 }
 
 /* ---------- 액션 ---------- */
@@ -483,6 +553,9 @@ function handleEvents(events) {
         break;
       case 'explode': SFX.explode(ev.x); break;
       case 'castleHit':
+        if (state.castleHp > 0 && state.castleHp / state.castleMax <= 0.3) {
+          setTimeout(() => { if (state.phase !== 'over') playStory('castleHurt'); }, 400);
+        }
         SFX.castleHit();
         ui.flashHit();
         break;
@@ -503,6 +576,11 @@ function handleEvents(events) {
         SFX.waveClear();
         ui.toast(`🎉 ${ev.wave}웨이브 클리어! 보너스 💰${ev.bonus}`, 'good');
         refreshAll();
+        /* 클리어 토스트/효과음과 겹치지 않게 살짝 늦춘다. 준비 단계라 시뮬레이션 손실은 없다 */
+        {
+          const key = Story.beatForWave(ev.wave);
+          if (key) setTimeout(() => playStory(key), 700);
+        }
         break;
       case 'gameOver': onGameOver(); break;
     }
@@ -534,6 +612,18 @@ ui.bind({
   onWaveStart() { tryStartWave(); },
   onSummon: doSummon,
   onCombine(action) { openMath('combine', action); },
+  /* 조합 재료가 모자랄 때 "그 용사 뽑으러 가기" — 소환은 무작위라 약속은 못 하지만,
+   * 적어도 무엇을 해야 하는지는 분명해진다. */
+  onNeedHero(cls) {
+    const C = D.CLASSES[cls];
+    if (state.gold < D.SUMMON_COST) {
+      ui.toast(`${C.emoji} ${C.name}를 뽑으려면 💰${D.SUMMON_COST}이 필요해요 — 몬스터를 잡아 모아요 ⚔️`, 'bad');
+      return;
+    }
+    ui.showTab('bench');
+    ui.toast(`${C.emoji} ${C.name}를 노려요! S키(또는 소환 버튼)로 뽑아 보세요`, '');
+    doSummon();
+  },
   onSpeed() {
     speed = speed === 1 ? 2 : 1;
     ui.setSpeedLabel(speed);
@@ -650,7 +740,15 @@ ui.bind({
       return;
     }
     SFX.upgrade();
-    ui.toast(`${D.CASTLE_UPGRADES[key].emoji} ${D.CASTLE_UPGRADES[key].name} 완료!`, 'good');
+    /* 강화한 순간을 눈으로 보여 준다 — 숫자만 오르면 뭐가 달라졌는지 모른다 */
+    if (key !== 'repair') renderer.castleUpgradeFx(key);
+    const lv = key === 'repair' ? 0 : state.castle[key];
+    const NOTE = {
+      fortify: ['성벽이 높아졌어요!', '흉벽이 늘었어요!', '방어 말뚝을 박았어요!', '성문이 강철문이 됐어요!', '성벽이 대리석으로 빛나요!'],
+      tower: ['마법 포탑이 솟았어요!', '포탑이 하나 더!', '마법진이 성을 감쌌어요!'],
+    };
+    const note = NOTE[key] && NOTE[key][lv - 1];
+    ui.toast(`${D.CASTLE_UPGRADES[key].emoji} ${D.CASTLE_UPGRADES[key].name} 완료!${note ? ' ' + note : ''}`, 'good');
     refreshAll();
   },
   onMetaOpen() {
@@ -682,6 +780,9 @@ ui.bind({
   onMathSubmit: submitMath,
   onMathNext: advanceMath,
   onMathClose: closeMathAll,
+  onStoryClose: closeStory,
+  onStoryOff() { store.storyOff = true; ui.toast('이야기를 끄었어요. 다시 보려면 새로고침 후 설정에서…', 'bad'); closeStory(); },
+  onRevealClose: closeReveal,
 });
 
 /* ---------- 키보드 조작 (전 기능) ---------- */
@@ -751,6 +852,9 @@ function setGradeKey(g) {
 }
 
 function tryStartWave() {
+  if (ui.isStoryOpen() || ui.isRevealOpen()) return;   // 연출 중에 웨이브가 몰래 시작되지 않게
+  const quip = store.storyOff ? null : Story.waveQuip(state.wave);
+  if (quip) setTimeout(() => ui.toast(`📣 ${quip}`), 260);
   const r = E.startWave(state);
   if (!r.ok) return;
   SFX.waveStart();
@@ -772,6 +876,19 @@ document.addEventListener('keydown', (ev) => {
   let key = ev.key;
   if (KO[key]) key = KO[key];
   const lower = key.length === 1 ? key.toLowerCase() : key;
+
+  /* --- 전설·신화 연출: 아무 키나 눌러 넘긴다 (수학 모달보다 위) --- */
+  if (ui.isRevealOpen()) {
+    ev.preventDefault();
+    closeReveal();
+    return;
+  }
+
+  /* --- 막간 이야기 --- */
+  if (ui.isStoryOpen()) {
+    if (key === 'Escape' || key === 'Enter' || key === ' ') { ev.preventDefault(); closeStory(); }
+    return;                       // 나머지 키는 삼킨다 — 뒤에서 웨이브가 몰래 시작되면 안 된다
+  }
 
   /* --- 수학 모달 --- */
   if (ui.isMathOpen()) {
@@ -901,7 +1018,8 @@ document.addEventListener('keydown', (ev) => {
 
 /* ---------- 게임 루프 ---------- */
 function isPaused() {
-  return ui.isMathOpen() || ui.isMetaOpen() || state.phase === 'over';
+  /* 이야기는 준비 단계에만 뜨므로 멈출 게 없지만, 전설 연출은 전투 중에도 뜬다 */
+  return ui.isMathOpen() || ui.isMetaOpen() || ui.isRevealOpen() || state.phase === 'over';
 }
 
 const STEP = 1 / 60;          // 고정 시뮬레이션 타임스텝

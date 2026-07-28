@@ -13,6 +13,10 @@ export const ENEMY_TYPES = {
   orc:     { name: '오크',       emoji: '👹', hp: 115,  spd: 44,  gold: 16,  castleDmg: 8,  size: 34 },
   troll:   { name: '트롤',       emoji: '🧌', hp: 270,  spd: 32,  gold: 32,  castleDmg: 12, size: 40 },
   shaman:  { name: '주술사',     emoji: '🧙', hp: 90,   spd: 38,  gold: 24,  castleDmg: 8,  size: 32, heal: 18, healPeriod: 1.6, healRange: 130 },
+  /* 뒤로 갈수록 같은 다섯 마리만 보여 지루해진다. 수치를 올리는 대신
+     "배치를 다시 생각하게 만드는" 두 종류를 더한다. */
+  bat:     { name: '박쥐떼',     emoji: '🦇', hp: 34,   spd: 150, gold: 12,  castleDmg: 3,  size: 26 },
+  golem:   { name: '바위골렘',   emoji: '🗿', hp: 330,  spd: 22,  gold: 40,  castleDmg: 15, size: 42 },
 
   /* 중간보스 — 매 웨이브 마지막에 등장, 3종이 순환 (일반 몬스터의 2~3배 체력) */
   ogrelord:    { name: '오우거 군주', emoji: '👿', hp: 780, spd: 30, gold: 90, castleDmg: 22, size: 50, midBoss: true },
@@ -69,6 +73,13 @@ export function waveMix(w) {
   if (w >= 3) mix.push({ type: 'wolf', weight: Math.min(2 + w * 0.4, 6) });
   if (w >= 4) mix.push({ type: 'troll', weight: Math.min(1 + w * 0.35, 6) });
   if (w >= 6) mix.push({ type: 'shaman', weight: Math.min(1 + w * 0.25, 4) });
+  if (w >= 8) mix.push({ type: 'bat', weight: Math.min(1.5 + w * 0.2, 4) });
+  if (w >= 11) mix.push({ type: 'golem', weight: Math.min(0.8 + (w - 10) * 0.2, 3) });
   return mix;
 }
+/* 엘리트 개체 — 몬스터 "등급"을 4단계로 나누면 아이가 못 읽는다(용사 등급 어휘와도 겹친다).
+ * 대신 보통/특별 두 가지로만 나눈다. 금빛 테두리 하나면 즉시 알아본다. */
+export const eliteChance = (w) => Math.min(0.11, Math.max(0, (w - 5) * 0.015));
+export const ELITE = { hpMul: 2.2, goldMul: 2.5, sizeMul: 1.15, name: '성난' };
+
 export const isBossWave = (w) => w % 5 === 0;

@@ -146,7 +146,7 @@ function consume(state, mats) {
 }
 
 /* 그 직업의 최고 보유 등급 (없으면 -1) */
-function bestTierOf(state, cls) {
+export function bestTierOf(state, cls) {
   let best = -1;
   for (const h of [...state.bench, ...state.field]) {
     if (h.cls === cls && h.tier > best) best = h.tier;
@@ -166,6 +166,33 @@ export function bestRecipePair(state, r) {
   /* 등급이 오르지 않는 조합은 손해뿐이니 아예 제안하지 않는다 */
   if (resultTier <= base) return null;
   return { ta, tb, base, resultTier };
+}
+
+/* 레시피 한 줄의 "지금 상태" — 조합이 안 될 때 **왜 안 되는지**를 화면에 그리기 위한 것.
+ * listCombos는 조합 가능한 것만 담아야 하므로(봇과 자동 조합이 소비한다) 따로 둔다.
+ *   ready    : 지금 바로 된다
+ *   gold     : 재료는 있는데 골드가 모자라다
+ *   material : 재료가 모자라다 (missing에 부족한 직업)
+ *   cap      : 재료는 충분한데 등급 천장이라 더 안 오른다
+ */
+export function recipeStatus(state, r, cost) {
+  const ta = bestTierOf(state, r.a);
+  const tb = bestTierOf(state, r.b);
+  const missing = [];
+  if (ta < 0) missing.push(r.a);
+  if (tb < 0) missing.push(r.b);
+  if (missing.length) return { state: 'material', missing, ta, tb };
+
+  const base = Math.min(ta, tb);
+  const cap = D.maxTierOf(r.result);
+  const resultTier = Math.min(base + 1, cap);
+  if (resultTier <= base) return { state: 'cap', missing: [], ta, tb, base, cap };
+
+  const c = cost != null ? cost : D.combineCost(resultTier, true);
+  return {
+    state: state.gold >= c ? 'ready' : 'gold',
+    missing: [], ta, tb, base, resultTier, cost: c,
+  };
 }
 
 export function listCombos(state) {
@@ -456,7 +483,10 @@ function spawnEnemy(state, type, events, presetRoute) {
   const E = D.ENEMY_TYPES[type];
   const w = state.wave;
   const rampMul = E.midBoss ? D.midBossRamp(w) : 1;
-  const hp = Math.round(E.hp * D.hpScale(w) * state.diff.hpMul * rampMul);
+  /* 엘리트 — 일반 몬스터 중 일부가 "성난" 개체로 나온다.
+   * 등급을 여러 단계로 쪼개는 대신 보통/특별 두 가지로만 나눠 한눈에 읽히게 했다. */
+  const elite = !E.boss && !E.midBoss && state.rng() < D.eliteChance(w);
+  const hp = Math.round(E.hp * D.hpScale(w) * state.diff.hpMul * rampMul * (elite ? D.ELITE.hpMul : 1));
   /* 대보스는 지름길로 돌진 */
   const route = E.boss ? D.BOSS_ROUTE : (presetRoute != null ? presetRoute : pickRoute(state));
   const start = D.routePoint(route, 0);
@@ -467,10 +497,11 @@ function spawnEnemy(state, type, events, presetRoute) {
     off: state.ri(-10, 10),
     x: start.x, y: start.y,
     spd: E.spd * (0.92 + state.rng() * 0.16),
-    gold: Math.round(E.gold * D.enemyGoldScale(w) * state.diff.goldMul),
+    gold: Math.round(E.gold * D.enemyGoldScale(w) * state.diff.goldMul * (elite ? D.ELITE.goldMul : 1)),
     castleDmg: E.castleDmg,
-    size: E.size, boss: !!E.boss, midBoss: !!E.midBoss,
-    name: E.name,
+    size: E.size * (elite ? D.ELITE.sizeMul : 1), boss: !!E.boss, midBoss: !!E.midBoss,
+    elite,
+    name: elite ? `${D.ELITE.name} ${E.name}` : E.name,
     enrageAt: E.enrageAt || 0, enrageSpd: E.enrageSpd || 1, enraged: false,
     heal: E.heal || 0, healPeriod: E.healPeriod || 0, healRange: E.healRange || 0,
     healCd: E.healPeriod || 0,
