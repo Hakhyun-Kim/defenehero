@@ -94,6 +94,7 @@ export class UI {
       'castleRows', 'heroPanel', 'hpTitle', 'hpInfo', 'recallBtn', 'sellBtn', 'moveHint',
       'diffRow', 'mathModal', 'mTitle', 'mGrade', 'mProblem', 'mInput', 'mSubmit', 'mFeedback', 'mNext', 'mClose',
       'storyModal', 'storyIcon', 'storyTitle', 'storyLines', 'storyNext', 'storyOff',
+      'demoBtn', 'demoBar', 'demoCaption', 'demoExit',
       'revealModal', 'revealCard', 'revealTier', 'revealArt', 'revealName', 'revealDesc',
       'mHintBtn', 'mHint', 'mDiff', 'mSteps', 'mStreak', 'mTimer', 'mTimerFill', 'mTimerText',
       'wavePreview', 'bossBar', 'bossBarFill', 'bossBarName', 'bossWarnBanner',
@@ -150,6 +151,8 @@ export class UI {
     el.mNext.addEventListener('click', h.onMathNext);
     el.mClose.addEventListener('click', h.onMathClose);
     el.mHintBtn.addEventListener('click', h.onHint);
+    el.demoBtn.addEventListener('click', h.onDemoToggle);
+    el.demoExit.addEventListener('click', h.onDemoToggle);
     el.storyNext.addEventListener('click', h.onStoryClose);
     el.storyOff.addEventListener('click', h.onStoryOff);
     el.revealModal.addEventListener('click', h.onRevealClose);
@@ -664,6 +667,25 @@ export class UI {
   }
   showMeta() { this.el.metaModal.classList.remove('hidden'); }
   hideMeta() { this.el.metaModal.classList.add('hidden'); }
+  /* ---------- 데모 ----------
+   * 데모 중임을 항상 화면에 밝힌다. 사용자가 자기 조작이 안 먹는다고
+   * 오해하지 않게 하고, 나가는 길도 늘 보이게 둔다. */
+  setDemoMode(on, profile) {
+    this.el.demoBar.classList.toggle('hidden', !on);
+    this.el.demoBtn.classList.toggle('on', !!on);
+    this.el.demoBtn.textContent = on ? '⏹ 데모 끝' : '🎬 데모';
+    document.body.classList.toggle('demo-on', !!on);
+    if (on && profile) this.setDemoCaption(`🎬 ${profile} 플레이어가 대신 플레이합니다`);
+  }
+  setDemoCaption(text) {
+    const el = this.el.demoCaption;
+    if (el.textContent === text) return;      // 같은 글자를 다시 넣어 애니메이션을 재시작하지 않는다
+    el.textContent = text;
+    el.classList.remove('pop');
+    void el.offsetWidth;
+    el.classList.add('pop');
+  }
+
   /* ---------- 막간 이야기 ---------- */
   showStory(beat) {
     const el = this.el;

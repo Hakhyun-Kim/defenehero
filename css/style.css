@@ -1480,3 +1480,46 @@ button { font-family: inherit; }
 .reveal-hint { position: relative; margin-top: 12px; font-size: 12px; color: #8d94a8; }
 .reveal-card.short .reveal-art { height: 130px; font-size: 76px; }
 .reveal-card.short .reveal-hint { display: none; }
+
+
+/* ===== 데모 모드 ===== */
+#demoBtn.on { background: #ffe0e0; border-color: #ff8a8a; color: #a33; }
+#demoBar {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(20, 32, 50, 0.88);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  z-index: 9;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  max-width: 92%;
+}
+#demoBar.hidden { display: none; }
+#demoCaption { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#demoCaption.pop { animation: demopop 0.35s cubic-bezier(0.2, 1.5, 0.4, 1); }
+@keyframes demopop {
+  0%   { transform: translateY(5px); opacity: 0.3; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+#demoExit {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: none;
+  background: #ff7b7b;
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+/* 데모 중에는 화면 테두리가 살짝 빛나 "지금 내가 조작하는 게 아니다"를 알린다 */
+body.demo-on #scene3d { box-shadow: inset 0 0 0 3px rgba(255, 123, 123, 0.55); }

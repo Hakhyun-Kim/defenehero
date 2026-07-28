@@ -9,6 +9,7 @@ import { UI } from './ui.js';
 import { SFX, toggleSfx, toggleMusic, toggleAll, isSfxMuted, isMusicMuted, forceMute, getAc, getMaster } from './sfx.js';
 import { music } from './music.js';
 import * as Story from './story.js';
+import { demo } from './demo.js';
 
 /* ---------- 저장 ---------- */
 const store = {
@@ -608,7 +609,7 @@ function onGameOver() {
 }
 
 /* ---------- UI 바인딩 ---------- */
-ui.bind({
+const handlers = {
   onWaveStart() { tryStartWave(); },
   onSummon: doSummon,
   onCombine(action) { openMath('combine', action); },
@@ -780,10 +781,12 @@ ui.bind({
   onMathSubmit: submitMath,
   onMathNext: advanceMath,
   onMathClose: closeMathAll,
+  onDemoToggle() { demo.toggle(); SFX.tap(); },
   onStoryClose: closeStory,
   onStoryOff() { store.storyOff = true; ui.toast('이야기를 끄었어요. 다시 보려면 새로고침 후 설정에서…', 'bad'); closeStory(); },
   onRevealClose: closeReveal,
-});
+};
+ui.bind(handlers);
 
 /* ---------- 키보드 조작 (전 기능) ---------- */
 let kbPad = null;                     // 키보드 배치 커서
@@ -994,6 +997,7 @@ document.addEventListener('keydown', (ev) => {
       }
       return;
     }
+    case 'd': demo.toggle(); SFX.tap(); return;
     case 'm': {
       const off = toggleAll();
       ui.setSoundLabels(isSfxMuted(), isMusicMuted());
@@ -1061,6 +1065,9 @@ function frame(now) {
     if (modal.time <= 10 && Math.ceil(modal.time) !== Math.ceil(prev)) SFX.tick(modal.time <= 3);
     if (modal.time <= 0) timeUp();
   }
+
+  /* 데모는 시뮬레이션이 멈춰 있어도 돌아야 문제창을 처리할 수 있다 */
+  if (demo.active) demo.step(realDt);
 
   if (!isPaused()) {
     /* 고정 타임스텝: fps가 낮아도 게임 속도는 유지 */
@@ -1142,11 +1149,51 @@ if (document.fonts && document.fonts.load) {
   ]).catch(() => {});
 }
 
+/* ---------- 데모 배선 ----------
+ * 데모에게 게임 내부를 열어 주지 않는다. 사람이 누르는 것과 같은 함수만 넘긴다 —
+ * 그래야 "데모에서만 되는" 또는 "데모에서만 안 되는" 버그가 안 생긴다. */
+demo.attach({
+  getState: () => state,
+  isStoryOpen: () => ui.isStoryOpen(),
+  isRevealOpen: () => ui.isRevealOpen(),
+  isMathOpen: () => ui.isMathOpen(),
+  isAnswered: () => ui.isAnswered(),
+  getProblem: () => modal.prob,
+  closeStory,
+  summon: doSummon,
+  place(heroId, pad) { selBench = heroId; doPlace(pad); },
+  openCombine(action) { openMath('combine', action); },
+  castle(key) { handlers.onCastle(key); },
+  startWave: tryStartWave,
+  newGame: () => newGame(store.diff),
+  typeAnswer(v) { ui.el.mInput.value = v; submitMath(v); },
+  comboLabel: (c) => (c.kind === 'rankup'
+    ? `${D.CLASSES[c.cls].name} ${D.TIERS[c.resultTier].name}`
+    : `${D.CLASSES[c.result].name}`),
+  heroLabel: (h) => `${D.TIERS[h.tier].name} ${D.CLASSES[h.cls].name}`,
+  onCaption: (text) => ui.setDemoCaption(text),
+  onStart(profile) {
+    grade = D.GRADES ? grade : grade;
+    ui.setDemoMode(true, profile);
+    deselectAll();
+    ui.restoreTab();
+  },
+  onStop() {
+    ui.setDemoMode(false);
+    deselectAll();
+  },
+});
+
+/* ?demo=고수 로 열면 바로 시작. 콘솔에서는 __game.demo.start('보통') */
+if (urlParams.has('demo')) {
+  setTimeout(() => demo.start(urlParams.get('demo') || '고수'), 900);
+}
+
 /* 디버그 훅 (자동 검증/테스트용) */
 window.__game = {
   get state() { return state; },
   get modal() { return modal; },
-  E, D, renderer, ui, MathGen, SFX,
+  E, D, renderer, ui, MathGen, SFX, demo,
   sfxCore: { getAc, getMaster, isSfxMuted, isMusicMuted },
   refresh: refreshAll,
   selectHero(id) { selHero = id; renderer.setSelectedHero(id); ui.renderHeroPanel(state, id); },
