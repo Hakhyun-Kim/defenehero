@@ -212,10 +212,19 @@ node scripts/diag-economy.mjs   # 전설/특수 용사 획득 난이도 진단
 ```
 index.html            화면 구조 (+ ?rafshim 심)
 css/style.css         스타일 (잔상 체력바, 콤보 팝, 피격 플래시 등)
-src/data.js           모든 밸런스 수치 (튜닝은 여기서만)
+src/data.js           ── 배럴: balance/ 를 재수출 (경로 유지)
+src/balance/
+  field.js            전장 지오메트리 · 길 유틸
+  heroes.js           등급 · 직업 · 조합 레시피 그래프
+  enemies.js          몬스터 · 보스 · 난이도 곡선
+  castle.js           성 · 포탑
+  economy.js          골드 · 조합 비용 · 메타 진행
+  mathgate.js         수학 관문 규칙 (난이도 · 시간 · 환급)
+src/math.js           ── 배럴: 문제 생성기 디스패처 (경로 유지)
+src/mathgen/
+  arithmetic.js       학년별(3~6) × 난이도(1~5) 산술 문제 생성기
 src/engine.js         순수 게임 로직 (렌더링 없음 — 봇과 공유)
 src/render3d.js       Three.js 3D 렌더러 (절차 생성 성/지형, 파티클, 블룸)
-src/math.js           학년별(3~6) × 난이도(1~5) 수학 문제 생성기
 src/sfx.js            효과음 합성 (Web Audio, 음원 파일 0개)
 src/music.js          절차 생성 BGM (준비/전투/보스 트랙, 웨이브 템포)
 src/ui.js             DOM 패널/모달
@@ -223,5 +232,12 @@ src/main.js           컨트롤러 (고정 타임스텝 루프, 이벤트→사�
 scripts/balance-bot.mjs        난이도 시뮬레이션 봇
 scripts/balance-baseline.json  밸런스 회귀 기준선
 ```
+
+밸런스 수치는 `src/balance/` 안에서만 고친다. `src/data.js`와 `src/math.js`는
+경로를 지키기 위한 재수출 지점이라 손대지 않는다 — 덕분에 engine·render3d·ui·main과
+scripts/ 전체가 이 구조 변경에 한 줄도 영향받지 않았다.
+
+> 이 구조는 성인·Steam 타깃 포크인 **[asymptote](https://github.com/Hakhyun-Kim/asymptote)** 와
+> 공유하는 베이스다. 두 저장소는 히스토리를 공유하며, 양방향으로 코드를 주고받을 수 있다.
 
 콘솔 디버그: `__game.state`, `__game.gold(1000)`, `__game.jump(10)`, `__game.hurt(50)`
