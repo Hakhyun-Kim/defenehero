@@ -154,26 +154,39 @@ export function bestTierOf(state, cls) {
   return best;
 }
 
-/* 레시피에 쓸 최선의 짝 — 서로 등급이 달라도 되고, 결과는 "낮은 쪽 +1"
- * (등급이 맞아떨어지지 않아 조합이 막히던 애매함을 없앤다) */
+/* 보유한 그 직업의 등급 목록 (벤치+필드, 중복 없이) */
+function tiersOf(state, cls) {
+  const t = new Set();
+  for (const h of state.bench) if (h.cls === cls) t.add(h.tier);
+  for (const h of state.field) if (h.cls === cls) t.add(h.tier);
+  return [...t];
+}
+
+/* 레시피에 쓸 최선의 짝 — **같은 등급 2명끼리만** 조합되고, 결과는 그 등급 +1.
+ * 등급업과 규칙이 하나라 외울 게 없다: "같은 등급 2명 = 등급 UP".
+ * 등급이 다른 용사는 재료로 아예 쓰이지 않으므로, 높은 용사가 낮은 결과에
+ * 갈려 사라지는 사고(전설+일반=희귀)도 원천적으로 없다.
+ * 같은 등급 짝이 여럿이면 가장 높은 결과를 만드는 짝을 고른다. */
 export function bestRecipePair(state, r) {
-  const ta = bestTierOf(state, r.a);
-  const tb = bestTierOf(state, r.b);
-  if (ta < 0 || tb < 0) return null;
-  const base = Math.min(ta, tb);
   const cap = D.maxTierOf(r.result);
-  const resultTier = Math.min(base + 1, cap);
-  /* 등급이 오르지 않는 조합은 손해뿐이니 아예 제안하지 않는다 */
-  if (resultTier <= base) return null;
-  return { ta, tb, base, resultTier };
+  const tb = new Set(tiersOf(state, r.b));
+  let best = null;
+  for (const t of tiersOf(state, r.a)) {
+    if (!tb.has(t)) continue;                        // 같은 등급끼리만
+    const resultTier = Math.min(t + 1, cap);
+    if (resultTier <= t) continue;                   // 등급 천장 — 올라가지 않는 조합
+    if (!best || resultTier > best.resultTier) best = { ta: t, tb: t, base: t, resultTier };
+  }
+  return best;
 }
 
 /* 레시피 한 줄의 "지금 상태" — 조합이 안 될 때 **왜 안 되는지**를 화면에 그리기 위한 것.
  * listCombos는 조합 가능한 것만 담아야 하므로(봇과 자동 조합이 소비한다) 따로 둔다.
- *   ready    : 지금 바로 된다
+ *   ready    : 지금 바로 된다 (ta/tb = 실제로 재료가 될 등급)
  *   gold     : 재료는 있는데 골드가 모자라다
  *   material : 재료가 모자라다 (missing에 부족한 직업)
  *   cap      : 재료는 충분한데 등급 천장이라 더 안 오른다
+ *   gap      : 두 직업 다 있는데 **같은 등급 짝이 없다** (low = 등급이 낮은 직업)
  */
 export function recipeStatus(state, r, cost) {
   const ta = bestTierOf(state, r.a);
@@ -183,15 +196,18 @@ export function recipeStatus(state, r, cost) {
   if (tb < 0) missing.push(r.b);
   if (missing.length) return { state: 'material', missing, ta, tb };
 
-  const base = Math.min(ta, tb);
-  const cap = D.maxTierOf(r.result);
-  const resultTier = Math.min(base + 1, cap);
-  if (resultTier <= base) return { state: 'cap', missing: [], ta, tb, base, cap };
+  const pair = bestRecipePair(state, r);
+  if (!pair) {
+    const base = Math.min(ta, tb);
+    const cap = D.maxTierOf(r.result);
+    if (base >= cap) return { state: 'cap', missing: [], ta, tb, base, cap };
+    return { state: 'gap', missing: [], ta, tb, low: ta <= tb ? r.a : r.b };
+  }
 
-  const c = cost != null ? cost : D.combineCost(resultTier, true);
+  const c = cost != null ? cost : D.combineCost(pair.resultTier, true);
   return {
     state: state.gold >= c ? 'ready' : 'gold',
-    missing: [], ta, tb, base, resultTier, cost: c,
+    missing: [], ta: pair.ta, tb: pair.tb, base: pair.base, resultTier: pair.resultTier, cost: c,
   };
 }
 
@@ -244,7 +260,7 @@ export function combineRankUp(state, cls, tier) {
   return { ok: true, hero, lucky, cost, pad };
 }
 
-/* 레시피 조합 — 재료 등급이 달라도 되고, 결과는 낮은 쪽 +1 (신화까지) */
+/* 레시피 조합 — 같은 등급 2명끼리, 결과는 그 등급 +1 (신화까지) */
 export function combineRecipe(state, result) {
   const R = D.CLASSES[result];
   if (!R || !R.recipe) return { ok: false };
@@ -885,3 +901,79 @@ export function tick(state, dt) {
 }
 
 export const remainingEnemies = (state) => state.spawnQueue.length + state.enemies.length;
+
+/* ---------- 저장 / 불러오기 ----------
+ * 저장은 "준비 단계 스냅샷"이다. 전투 중의 몬스터·투사체는 서로를 참조하는
+ * 객체 그래프라 직렬화가 잘 깨지고, 전투 도중 복원을 허용하면 반쯤 이긴
+ * 웨이브를 저장해 두고 골드만 불리는 꼼수가 생긴다. 그래서 웨이브 진행은
+ * 담지 않고, 불러오면 그 웨이브의 준비 단계에서 다시 시작한다. */
+export const SAVE_VERSION = 1;
+const SAVE_STATS = [
+  'kills', 'bossKills', 'midBossKills', 'summons', 'combos', 'solved', 'correct',
+  'goldEarned', 'hints', 'firstTryWins', 'bestStreak', 'timeOuts',
+  'specialsMade', 'mythicsMade',
+];
+
+export function serialize(state) {
+  const hero = (h) => ({ cls: h.cls, tier: h.tier, pad: h.padIndex });
+  const stats = {};
+  for (const k of SAVE_STATS) stats[k] = state[k];
+  return {
+    game: 'defenehero', v: SAVE_VERSION,
+    difficulty: state.difficulty,
+    meta: { ...state.meta },
+    wave: state.wave,
+    gold: state.gold,
+    castleHp: state.castleHp,
+    castleMax: state.castleMax,
+    castle: { ...state.castle },
+    bench: state.bench.map(hero),
+    field: state.field.map(hero),
+    stats,
+    discovered: [...state.discovered],
+    seenStory: state.seenStory ? [...state.seenStory] : [],
+    revealed: state.revealed ? [...state.revealed] : [],
+  };
+}
+
+/* 저장 파일 → 새 게임 상태. 파일은 사용자가 고칠 수 있는 입력이라 값 하나하나를
+ * 의심한다 — 이상한 수는 안전한 범위로 줄이고, 모르는 직업은 버리고, 겹친 발판의
+ * 용사는 벤치로 대피시킨다(사라지는 것보단 낫다). 복원할 수 없는 구조면 null. */
+export function deserialize(data, opts = {}) {
+  if (!data || typeof data !== 'object') return null;
+  if (!Array.isArray(data.bench) || !Array.isArray(data.field)) return null;
+  const clamp = (v, lo, hi, dflt) =>
+    (Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : dflt);
+  const difficulty = D.DIFFICULTIES[data.difficulty] ? data.difficulty : 'normal';
+  const meta = (data.meta && typeof data.meta === 'object') ? data.meta : {};
+  const state = createGame({ difficulty, metaLevels: meta, rng: opts.rng });
+
+  state.wave = clamp(data.wave, 1, 999, 1);
+  state.gold = clamp(data.gold, 0, 1e9, state.gold);
+  state.castle.fortify = clamp(data.castle && data.castle.fortify, 0, D.CASTLE_UPGRADES.fortify.max, 0);
+  state.castle.tower = clamp(data.castle && data.castle.tower, 0, D.CASTLE_UPGRADES.tower.max, 0);
+  state.castleMax = clamp(data.castleMax, 1, 1e6, state.castleMax);
+  state.castleHp = clamp(data.castleHp, 1, state.castleMax, state.castleMax);
+
+  const revive = (rec, pad) => {
+    if (!rec || !D.CLASSES[rec.cls]) return;
+    if (state.bench.length >= D.BENCH_MAX) return;
+    const h = makeHero(state, rec.cls, clamp(rec.tier, 0, D.maxTierOf(rec.cls), 0));
+    state.bench.push(h);
+    if (Number.isInteger(pad) && pad >= 0 && pad < D.PADS.length && !padOccupant(state, pad)) {
+      placeHero(state, h.id, pad);
+    }
+  };
+  for (const rec of data.field.slice(0, D.PADS.length)) revive(rec, rec && rec.pad);
+  for (const rec of data.bench.slice(0, D.BENCH_MAX)) revive(rec, null);
+
+  const strings = (arr) => (Array.isArray(arr) ? arr.filter(v => typeof v === 'string') : []);
+  for (const k of strings(data.discovered)) if (D.CLASSES[k]) state.discovered.add(k);
+  state.seenStory = new Set(strings(data.seenStory));
+  state.revealed = new Set(strings(data.revealed));
+  const stats = (data.stats && typeof data.stats === 'object') ? data.stats : {};
+  for (const k of SAVE_STATS) state[k] = clamp(stats[k], 0, 1e9, 0);
+
+  state.pendingWave = buildWave(state);
+  return state;
+}

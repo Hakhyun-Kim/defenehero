@@ -27,6 +27,12 @@ const store = {
   get deaths() { return Number(localStorage.getItem('mathdef_deaths') || 0); },
   set deaths(v) { localStorage.setItem('mathdef_deaths', String(v)); },
   set gfx(v) { localStorage.setItem('mathdef_gfx', v); },
+  /* 자동 저장 슬롯 (웨이브가 끝날 때마다 갱신, 함락되면 삭제) */
+  get autosave() { try { return JSON.parse(localStorage.getItem('mathdef_autosave') || 'null'); } catch { return null; } },
+  set autosave(v) {
+    if (v == null) localStorage.removeItem('mathdef_autosave');
+    else localStorage.setItem('mathdef_autosave', JSON.stringify(v));
+  },
 };
 
 /* ---------- 초기화 ---------- */
@@ -55,8 +61,10 @@ let heartbeatT = 0;
 let panelT = 0;
 const modal = { mode: null, pending: null, prob: null };
 let streak = 0;               // 연속 "한 번에 정답" 횟수 (지혜 연승)
+let sellMode = false;         // 여러 명 판매 모드 (벤치 카드가 체크박스가 된다)
+const sellSel = new Set();    // 판매하려고 고른 용사 id
 
-function newGame(difficulty) {
+function newGame(difficulty, opts = {}) {
   gameOverToken++;                 // 게임오버 연출 예약이 새 판을 덮지 않게
   state = E.createGame({ difficulty, metaLevels: store.meta });
   state.bench.push(E.makeHero(state, 'knight', 0));
@@ -65,16 +73,41 @@ function newGame(difficulty) {
   selHero = null;
   streak = 0;
   overHandled = false;
+  sellMode = false;
+  sellSel.clear();
   renderer.setPlacementMode(false);
   renderer.setSelectedHero(null);
   refreshAll();
   ui.hideOver();
   music.setWave(1);
-  playStory('prologue');
+  /* 이어하기 메뉴를 띄울 때는 프롤로그를 잠시 미룬다 — 메뉴 위에 이야기가 겹치면 안 된다 */
+  if (!opts.holdStory) playStory('prologue');
+}
+
+/* 판매 모드에 들어가면 배치/이동 선택은 모두 풀어 한 번에 한 가지만 하게 한다 */
+function setSellMode(on) {
+  if (sellMode === !!on) return;
+  sellMode = !!on;
+  sellSel.clear();
+  if (sellMode) {
+    selBench = null;
+    selHero = null;
+    kbPad = null;
+    renderer.setPlacementMode(false);
+    renderer.setSelectedHero(null);
+    renderer.setHover(null);
+    ui.restoreTab();
+  }
+  refreshPanels();
 }
 
 function refreshPanels() {
-  ui.renderBench(state, selBench);
+  /* 조합 등으로 사라진 용사가 판매 선택에 남지 않게 정리 */
+  if (sellSel.size) {
+    for (const id of [...sellSel]) if (!state.bench.some(h => h.id === id)) sellSel.delete(id);
+  }
+  ui.renderBench(state, selBench, sellMode ? sellSel : null);
+  ui.renderSellBar(state, sellMode, sellSel);
   ui.renderCombine(state);
   ui.renderCastlePanel(state);
   ui.renderHeroPanel(state, selHero);
@@ -435,10 +468,7 @@ function doPlace(padIndex) {
     SFX.place();
     padFx(s.placed, 0x9fdcff);
     ui.toast(`🔀 ${D.CLASSES[s.placed.cls].name} 배치 · ${D.CLASSES[s.benched.cls].name}은 벤치로!`);
-    selHero = s.placed.id;
-    selBench = null;
-    renderer.setPlacementMode(false);
-    renderer.setSelectedHero(selHero);
+    deselectAll();      // 배치가 끝나면 선택도 끝 — 다음 클릭이 또 뭔가를 옮기지 않게
     refreshAll();
     return;
   }
@@ -446,20 +476,18 @@ function doPlace(padIndex) {
   if (!r.ok) return;
   SFX.place();
   renderer.burst((r.hero.x - D.FIELD_W / 2) / 36, 0.5, (r.hero.y - D.FIELD_H / 2) / 36, 0x7fff9e, 10, 2.2);
-  selHero = r.hero.id;
-  selBench = null;
-  renderer.setPlacementMode(false);
-  renderer.setSelectedHero(selHero);
+  deselectAll();
   refreshAll();
 }
 
 /* 배치된 용사 선택 — 선택하면 빈 발판(초록)과 다른 용사 자리(파랑)가 함께 빛난다 */
 function selectField(hero) {
+  if (hero) setSellMode(false);        // 배치/이동을 시작하면 판매 모드는 끝
   selBench = null;
   selHero = hero ? hero.id : null;
   renderer.setSelectedHero(selHero);
   renderer.setPlacementMode(!!hero, hero ? D.CLASSES[hero.cls].range : 0, true);
-  ui.renderBench(state, null);
+  ui.renderBench(state, null, sellMode ? sellSel : null);
   ui.renderHeroPanel(state, selHero);
   if (hero) { ui.showHeroTab(); SFX.tap(); }
   else ui.restoreTab();
@@ -468,7 +496,9 @@ function selectField(hero) {
 const padFx = (h, color) =>
   renderer.burst((h.x - D.FIELD_W / 2) / 36, 0.5, (h.y - D.FIELD_H / 2) / 36, color, 8, 2);
 
-/* 이동 — 목적지에 용사가 있으면 "자리 교환"이 된다 (회수 없이 진형만 바꾼다) */
+/* 이동 — 목적지에 용사가 있으면 "자리 교환"이 된다 (회수 없이 진형만 바꾼다).
+ * 한 번 움직이면 선택을 푼다 — 선택이 남아 있으면 다음 클릭이
+ * 의도치 않은 이동/교환이 돼서 "누를 때마다 자리가 바뀌는" 불편이 생긴다. */
 function doMove(padIndex) {
   const occ = E.padOccupant(state, padIndex);
   if (occ && occ.id !== selHero) {
@@ -478,8 +508,7 @@ function doMove(padIndex) {
     padFx(r.a, 0x9fdcff);
     padFx(r.b, 0x9fdcff);
     ui.toast(`🔀 ${D.CLASSES[r.a.cls].name} ↔ ${D.CLASSES[r.b.cls].name} 자리를 바꿨어요!`);
-    kbPad = null;
-    renderer.setHover(null);
+    deselectAll();
     refreshAll();
     return;
   }
@@ -487,8 +516,7 @@ function doMove(padIndex) {
   if (!r.ok) return;
   SFX.place();
   padFx(r.hero, 0x9fdcff);
-  kbPad = null;
-  renderer.setHover(null);
+  deselectAll();
   refreshAll();
 }
 
@@ -526,6 +554,91 @@ function doRecall(heroId) {
   ui.toast('↩ 용사를 벤치로 회수했어요.');
   refreshAll();
 }
+
+/* ---------- 저장 / 불러오기 (간단한 파일 하나) ----------
+ * 저장 = 준비 단계 스냅샷을 JSON으로 내려받기, 불러오기 = 그 파일을 다시 열기.
+ * 별조각·최고 기록은 원래 localStorage에 있으니 파일에는 "이번 판"만 담는다. */
+function saveGame() {
+  if (state.phase === 'wave') {
+    ui.toast('⚔️ 전투 중에는 저장할 수 없어요 — 웨이브를 끝내고 눌러 주세요!', 'bad');
+    return;
+  }
+  if (state.phase === 'over') {
+    ui.toast('끝난 판은 저장할 수 없어요 — 새로 시작한 뒤에 저장해요', 'bad');
+    return;
+  }
+  const data = E.serialize(state);
+  data.grade = grade;                  // 문제 학년은 화면 설정이라 엔진 밖에서 얹는다
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `용사수학디펜스_${state.wave}웨이브_${D.DIFFICULTIES[state.difficulty].name}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  SFX.tap();
+  ui.toast(`💾 ${state.wave}웨이브 준비 상태를 파일로 저장했어요!`, 'good');
+}
+
+function loadGame(data) {
+  const next = data ? E.deserialize(data) : null;
+  if (!next) {
+    ui.toast('😢 저장 파일을 읽을 수 없어요 — 이 게임에서 저장한 파일이 맞는지 확인해 주세요', 'bad');
+    return false;
+  }
+  gameOverToken++;                     // 예약된 게임오버 연출이 불러온 판을 덮지 않게
+  state = next;
+  if (Number.isFinite(data.grade) && data.grade >= 3 && data.grade <= 6) {
+    grade = data.grade;
+    ui.setGradeActive(grade);
+  }
+  store.diff = state.difficulty;
+  selBench = null;
+  selHero = null;
+  streak = 0;
+  overHandled = false;
+  sellMode = false;
+  sellSel.clear();
+  renderer.setPlacementMode(false);
+  renderer.setSelectedHero(null);
+  renderer.setHover(null);
+  ui.hideOver();
+  refreshAll();
+  music.setWave(state.wave);
+  SFX.tap();
+  ui.toast(`📂 불러왔어요! ${state.wave}웨이브 준비부터 이어서 시작해요`, 'good');
+  autoSave();                          // 이어하기도 이 지점을 가리키게
+  return true;
+}
+
+/* ---------- 자동 저장 ----------
+ * 웨이브가 끝날 때마다 준비 단계 스냅샷을 브라우저(localStorage)에 남긴다.
+ * 직렬화는 그 순간(상태가 확실한 준비 단계일 때) 바로 하고, 실제 쓰기는
+ * 한가할 때로 미뤄 웨이브 클리어 연출 프레임을 방해하지 않는다.
+ * 단 requestIdleCallback은 숨은 탭에서 무기한 미뤄질 수 있어 timeout을 걸고,
+ * 탭이 가려지거나 닫힐 때는 그 자리에서 flush한다 — "곧 쓸게"가 유실이 되면 안 된다.
+ * 성이 함락되면 슬롯을 지운다 — 끝난 판은 이어하기 대상이 아니다. */
+const idle = window.requestIdleCallback
+  ? (fn) => window.requestIdleCallback(fn, { timeout: 400 })
+  : (fn) => setTimeout(fn, 60);
+let pendingAutosave = null;
+function flushAutosave() {
+  if (!pendingAutosave) return;
+  store.autosave = pendingAutosave;
+  pendingAutosave = null;
+}
+function autoSave() {
+  if (state.phase !== 'prep') return;
+  const data = E.serialize(state);
+  data.grade = grade;
+  data.savedAt = Date.now();
+  pendingAutosave = data;
+  idle(flushAutosave);
+}
+window.addEventListener('pagehide', flushAutosave);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushAutosave();
+});
 
 function handleEvents(events) {
   for (const ev of events) {
@@ -576,6 +689,7 @@ function handleEvents(events) {
       case 'waveEnd':
         SFX.waveClear();
         ui.toast(`🎉 ${ev.wave}웨이브 클리어! 보너스 💰${ev.bonus}`, 'good');
+        autoSave();                      // 매 웨이브가 이어하기 지점이 된다
         refreshAll();
         /* 클리어 토스트/효과음과 겹치지 않게 살짝 늦춘다. 준비 단계라 시뮬레이션 손실은 없다 */
         {
@@ -594,6 +708,8 @@ function onGameOver() {
   overHandled = true;
   SFX.gameOver();
   music.stop();
+  pendingAutosave = null;              // 쓰기 대기 중이던 스냅샷도 되살아나면 안 된다
+  store.autosave = null;               // 함락된 판은 이어하기에서 지운다
   store.shards = store.shards + state.shardsEarned;
   const best = store.best(state.difficulty);
   if (state.wave > best) store.setBest(state.difficulty, state.wave);
@@ -734,6 +850,50 @@ const handlers = {
     renderer.setSelectedHero(null);
     refreshAll();
   },
+  /* --- 여러 명 판매 --- */
+  onSellMode() { setSellMode(!sellMode); SFX.tap(); },
+  onSellToggle(id) {
+    if (!sellSel.delete(id)) sellSel.add(id);
+    SFX.tap();
+    ui.renderBench(state, null, sellSel);
+    ui.renderSellBar(state, true, sellSel);
+  },
+  onSellAll() {
+    const all = state.bench.length > 0 && state.bench.every(h => sellSel.has(h.id));
+    sellSel.clear();
+    if (!all) for (const h of state.bench) sellSel.add(h.id);
+    SFX.tap();
+    ui.renderBench(state, null, sellSel);
+    ui.renderSellBar(state, true, sellSel);
+  },
+  onSellGo() {
+    const picked = state.bench.filter(h => sellSel.has(h.id));
+    if (!picked.length) { ui.toast('팔 용사를 골라 주세요 — 카드를 누르면 선택돼요', 'bad'); return; }
+    let total = 0;
+    for (const h of picked) {
+      const r = E.sellHero(state, h.id);
+      if (r.ok) total += r.price;
+    }
+    sellSel.clear();
+    SFX.coin();
+    ui.toast(`💰 용사 ${picked.length}명을 보내주고 ${total} 골드를 받았어요.`, 'good');
+    if (!state.bench.length) setSellMode(false);   // 다 팔았으면 모드도 끝
+    refreshAll();
+  },
+  onSave: saveGame,
+  onLoad: loadGame,
+  /* --- 시작 메뉴 (자동 저장이 있을 때만 뜬다) --- */
+  onContinue() {
+    ui.hideStart();
+    SFX.tap();
+    /* 자동 저장이 깨져 있으면 이미 준비된 새 게임을 그대로 진행한다 */
+    if (!loadGame(store.autosave)) playStory('prologue');
+  },
+  onStartNew() {
+    ui.hideStart();
+    SFX.tap();
+    playStory('prologue');             // 새 게임은 boot에서 이미 만들어져 있다
+  },
   onCastle(key) {
     const r = E.castleUpgrade(state, key);
     if (!r.ok) {
@@ -812,6 +972,7 @@ function cyclePad(dir) {
 
 function cycleBench(dir) {
   if (!state.bench.length) { ui.toast('벤치가 비어 있어요. S키로 소환해 보세요!', 'bad'); return; }
+  setSellMode(false);                  // Tab으로 배치를 시작하면 판매 모드는 끝
   let idx = state.bench.findIndex(h => h.id === selBench);
   idx = (idx + dir + state.bench.length) % state.bench.length;
   const hero = state.bench[idx];
@@ -833,7 +994,7 @@ function deselectAll() {
   renderer.setPlacementMode(false);
   renderer.setSelectedHero(null);
   renderer.setHover(null);
-  ui.renderBench(state, selBench);
+  ui.renderBench(state, selBench, sellMode ? sellSel : null);
   ui.renderHeroPanel(state, null);
   ui.restoreTab();
 }
@@ -879,6 +1040,12 @@ document.addEventListener('keydown', (ev) => {
   let key = ev.key;
   if (KO[key]) key = KO[key];
   const lower = key.length === 1 ? key.toLowerCase() : key;
+
+  /* --- 시작 메뉴 (이어하기 / 처음부터) --- */
+  if (ui.isStartOpen()) {
+    if (key === 'Escape') { ev.preventDefault(); ui.el.newGameBtn.click(); }
+    return;               // Enter/Space는 포커스된 버튼이 알아서 처리한다
+  }
 
   /* --- 전설·신화 연출: 아무 키나 눌러 넘긴다 (수학 모달보다 위) --- */
   if (ui.isRevealOpen()) {
@@ -969,6 +1136,7 @@ document.addEventListener('keydown', (ev) => {
       return;
     }
     case 'Escape':
+      if (sellMode) { setSellMode(false); return; }
       deselectAll();
       return;
     case 'Tab':
@@ -1128,8 +1296,16 @@ function frame(now) {
   renderer.frame(isPaused() ? 0 : realDt * speed, state);
 }
 
-/* ---------- 시작 ---------- */
-newGame(store.diff);
+/* ---------- 시작 ----------
+ * 자동 저장이 있으면 "이어하기 / 처음부터"를 먼저 묻는다.
+ * 데모 링크(?demo=)는 구경이 목적이니 메뉴 없이 바로 시작한다. */
+const bootSave = (() => {
+  if (urlParams.has('demo')) return null;
+  const s = store.autosave;
+  return s && Number.isFinite(s.wave) && Array.isArray(s.bench) ? s : null;
+})();
+newGame(store.diff, { holdStory: !!bootSave });
+if (bootSave) ui.showStart(bootSave);
 ui.setSoundLabels(isSfxMuted(), isMusicMuted());
 ui.setSpeedLabel(speed);
 ui.coachChip();
@@ -1175,11 +1351,13 @@ demo.attach({
   onStart(profile) {
     grade = D.GRADES ? grade : grade;
     ui.setDemoMode(true, profile);
+    setSellMode(false);
     deselectAll();
     ui.restoreTab();
   },
   onStop() {
     ui.setDemoMode(false);
+    setSellMode(false);
     deselectAll();
   },
 });

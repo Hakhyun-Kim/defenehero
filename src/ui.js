@@ -98,6 +98,9 @@ export class UI {
       'revealModal', 'revealCard', 'revealTier', 'revealArt', 'revealName', 'revealDesc',
       'mHintBtn', 'mHint', 'mDiff', 'mSteps', 'mStreak', 'mTimer', 'mTimerFill', 'mTimerText',
       'wavePreview', 'bossBar', 'bossBarFill', 'bossBarName', 'bossWarnBanner',
+      'saveBtn', 'loadBtn', 'loadFile',
+      'sellModeBtn', 'sellInfo', 'sellAllBtn', 'sellGoBtn',
+      'startModal', 'continueInfo', 'continueBtn', 'newGameBtn',
       'overModal', 'overStats', 'overShards', 'restartBtn', 'shareBtn', 'overMetaBtn',
       'metaModal', 'metaShards', 'metaRows', 'metaClose', 'tooltip',
       'revealCard', 'rarityFlash',
@@ -147,6 +150,24 @@ export class UI {
     el.shareBtn.addEventListener('click', h.onShare);
     el.recallBtn.addEventListener('click', () => h.onRecall());
     el.sellBtn.addEventListener('click', () => h.onSell());
+    /* 저장/불러오기 — "간단한 파일" 하나로 오간다 */
+    el.saveBtn.addEventListener('click', () => h.onSave());
+    el.loadBtn.addEventListener('click', () => el.loadFile.click());
+    el.loadFile.addEventListener('change', () => {
+      const f = el.loadFile.files && el.loadFile.files[0];
+      el.loadFile.value = '';               // 같은 파일을 다시 골라도 change가 오게
+      if (!f) return;
+      f.text()
+        .then(t => { let d = null; try { d = JSON.parse(t); } catch { /* 형식 오류 */ } h.onLoad(d); })
+        .catch(() => h.onLoad(null));
+    });
+    /* 여러 명 판매 */
+    el.sellModeBtn.addEventListener('click', () => h.onSellMode());
+    el.sellAllBtn.addEventListener('click', () => h.onSellAll());
+    el.sellGoBtn.addEventListener('click', () => h.onSellGo());
+    /* 시작 메뉴 (이어하기 / 처음부터) */
+    el.continueBtn.addEventListener('click', () => h.onContinue());
+    el.newGameBtn.addEventListener('click', () => h.onStartNew());
     el.mSubmit.addEventListener('click', () => h.onMathSubmit(el.mInput.value));
     el.mNext.addEventListener('click', h.onMathNext);
     el.mClose.addEventListener('click', h.onMathClose);
@@ -308,18 +329,22 @@ export class UI {
     }
   }
 
-  /* ---------- 벤치 ---------- */
-  renderBench(state, selId) {
+  /* ---------- 벤치 ----------
+   * sell(Set)이 오면 판매 모드: 카드가 체크박스가 된다 — 가격을 크게, 고르면 ✓ */
+  renderBench(state, selId, sell = null) {
     const el = this.el.bench;
     if (!state.bench.length) {
       el.innerHTML = '<div class="empty-msg">벤치가 비어 있어요.<br>용사를 소환해 보세요!</div>';
+      this.el.benchHint.classList.add('hidden');
       return;
     }
     el.innerHTML = '';
     for (const hero of state.bench) {
       const C = D.CLASSES[hero.cls], T = D.TIERS[hero.tier];
       const d = document.createElement('div');
-      d.className = `hcard t${hero.tier}` + (selId === hero.id ? ' sel' : '') + (C.special ? ' sp' : '');
+      const selling = !!sell && sell.has(hero.id);
+      d.className = `hcard t${hero.tier}` + (selId === hero.id ? ' sel' : '') + (C.special ? ' sp' : '')
+        + (sell ? ' sellable' : '') + (selling ? ' sellsel' : '');
       const m = E.heroMods(hero);
       const rl = rangeLabel(m.range);
       /* 사거리를 카드에 직접 표시 — 배치 판단의 핵심 정보 */
@@ -331,15 +356,39 @@ export class UI {
       d.innerHTML =
         `<div class="em">${C.emoji}${badges ? `<span class="bdgs">${badges}</span>` : ''}</div>` +
         `<div class="nm">${C.name}</div>` +
-        `<div class="rg ${rl.cls}">🎯${m.range}</div>` +
-        `<div class="tr">${T.name}</div>`;
-      d.addEventListener('click', () => this.h.onBenchSelect(hero.id));
+        (sell
+          ? `<div class="sellprice">💰${D.SELL_PRICE[hero.tier]}</div>`
+          : `<div class="rg ${rl.cls}">🎯${m.range}</div>`) +
+        `<div class="tr">${T.name}</div>` +
+        (selling ? '<div class="sellcheck">✓</div>' : '');
+      d.addEventListener('click', () =>
+        sell ? this.h.onSellToggle(hero.id) : this.h.onBenchSelect(hero.id));
       d.addEventListener('mouseenter', (ev) => this.showTooltip(hero, state, ev.clientX, ev.clientY));
       d.addEventListener('mousemove', (ev) => this.moveTooltip(ev.clientX, ev.clientY));
       d.addEventListener('mouseleave', () => this.hideTooltip());
       el.appendChild(d);
     }
-    this.el.benchHint.classList.toggle('hidden', selId == null);
+    this.el.benchHint.classList.toggle('hidden', sell != null || selId == null);
+  }
+
+  /* 판매 모드 바 — 고른 인원과 받을 골드를 항상 보여 준다 */
+  renderSellBar(state, on, sel) {
+    const el = this.el;
+    el.sellModeBtn.textContent = on ? '✕ 판매 끝내기 (Esc)' : '💰 여러 명 판매';
+    el.sellModeBtn.classList.toggle('on', on);
+    el.sellInfo.classList.toggle('hidden', !on);
+    el.sellAllBtn.classList.toggle('hidden', !on);
+    el.sellGoBtn.classList.toggle('hidden', !on);
+    if (!on) return;
+    const picked = state.bench.filter(h => sel.has(h.id));
+    const total = picked.reduce((s, h) => s + D.SELL_PRICE[h.tier], 0);
+    el.sellInfo.textContent = picked.length
+      ? `${picked.length}명 선택 · 💰${total}`
+      : '카드를 눌러 골라요';
+    const allPicked = state.bench.length > 0 && picked.length === state.bench.length;
+    el.sellAllBtn.textContent = allPicked ? '전체 해제' : '전체 선택';
+    el.sellGoBtn.textContent = picked.length ? `💰${total} 받고 팔기` : '팔기';
+    el.sellGoBtn.disabled = !picked.length;
   }
 
   /* 부족한 재료가 "조합으로만 나오는 직업"일 때, 그 레시피 줄로 데려다 준다.
@@ -387,7 +436,7 @@ export class UI {
 
     /* 규칙을 화면에 못 박아 둔다 — 헷갈리면 조합을 안 하게 된다 */
     html += `<div class="combine-rule">
-      <b>규칙</b> ① 같은 용사 2명 = 등급 UP ② 다른 용사 2명 = 새 직업(등급 UP)<br>
+      <b>규칙</b> 조합은 <b>같은 등급 2명</b>끼리만! ① 같은 직업 = 등급 UP ② 다른 직업 = 새 직업(등급 UP)<br>
       기본·특수 용사는 <b>전설</b>이 최고 · <b>신화</b> 등급은 <b>신화 용사</b>만 (⚡😇🌌)<br>
       <b>⭐ 표시</b> = 그 조합에서 나올 <b>수학 문제 난이도</b>. 센 용사일수록 문제도 세요!
     </div>`;
@@ -429,7 +478,7 @@ export class UI {
      * "재료 하나 더"라고만 쓰면 무엇이 모자란지 알 수가 없다.
      * 부족한 재료를 크게 그리고, 그 자리에서 바로 할 행동(소환/선행 조합)을 준다. */
     const RECIPE_STATE_LABEL = {
-      ready: '', gold: '골드 부족', material: '재료 필요', cap: '등급 천장',
+      ready: '', gold: '골드 부족', material: '재료 필요', cap: '등급 천장', gap: '등급 안 맞음',
     };
     const renderRecipes = (gen) => {
       let out = '';
@@ -448,6 +497,11 @@ export class UI {
             class="${st.state === 'gold' ? 'lack' : ''}">⚗ ${D.TIERS[rtier].name} 💰${st.cost}</button>`;
         } else if (st.state === 'cap') {
           right = `<span class="cnt need">더 안 올라요 — 🌌 신화 조합으로</span>`;
+        } else if (st.state === 'gap') {
+          /* 두 직업 다 있는데 같은 등급 짝이 없다 — 무엇의 등급을 맞추면 되는지 알려준다 */
+          const L = D.CLASSES[st.low];
+          right = `<span class="cnt need" title="조합은 같은 등급 2명끼리만 돼요 — 등급을 맞춰 주세요">
+            ⚖️ 같은 등급끼리만! ${L.emoji} ${L.name} 등급을 맞춰요</span>`;
         } else {
           /* 부족한 재료를 어떻게 구하는가로 버튼이 갈린다:
            *   기본 4직업 → 소환하면 나온다 · 조합으로만 나오는 직업 → 그 레시피로 보낸다 */
@@ -459,12 +513,16 @@ export class UI {
             : `<button data-need="${need}" class="need">🎲 ${N.emoji} ${N.name} 뽑으러 가기</button>`;
         }
 
-        /* 보유한 재료의 최고 등급을 배지로 — "왜 전설이 안 나오지?"를 없앤다 */
+        /* 재료 등급을 배지로 — 조합이 되는 줄은 "실제로 쓸 재료", 아니면 "보유 최고" */
+        const usedNow = st.state === 'ready' || st.state === 'gold';
         const tierBadge = (t) => t == null || t < 0 ? ''
           : `<span class="ingt" style="background:${D.TIERS[t].color}">${D.TIERS[t].name[0]}</span>`;
         const ing = (cls, C, t) => {
           const have = t >= 0;
-          return `<span class="ing${have ? ' have' : ' lack'}" title="${C.name}${have ? ` (보유 최고 ${D.TIERS[t].name})` : ' — 아직 없어요'}">${C.emoji}${have ? tierBadge(t) : '<span class="ingx">?</span>'}</span>`;
+          const note = have
+            ? ` (${usedNow ? '재료로 쓸 등급' : '보유 최고'}: ${D.TIERS[t].name})`
+            : ' — 아직 없어요';
+          return `<span class="ing${have ? ' have' : ' lack'}" title="${C.name}${note}">${C.emoji}${have ? tierBadge(t) : '<span class="ingx">?</span>'}</span>`;
         };
         out += `<div class="combine-row recipe s-${st.state}${gen === 3 ? ' mythic' : ''}">
           ${ing(r.a, A, ta)}+${ing(r.b, B, tb)}
@@ -476,7 +534,7 @@ export class UI {
       return out;
     };
 
-    html += `<div class="combine-sub">✨ 특수 조합 <span class="cnt">서로 다른 두 용사 · 등급이 달라도 OK(낮은 쪽 +1)</span></div>`;
+    html += `<div class="combine-sub">✨ 특수 조합 <span class="cnt">서로 다른 두 직업 · 같은 등급 2명 → 등급 +1</span></div>`;
     html += renderRecipes(2);
     html += `<div class="combine-sub mythic">🌌 신화 조합 <span class="cnt">특수 2종 → 신화 용사 · 재료가 <b>전설</b>이면 결과가 <b>신화</b>!</span></div>`;
     html += renderRecipes(3);
@@ -732,6 +790,21 @@ export class UI {
   isRevealOpen() { return !this.el.revealModal.classList.contains('hidden'); }
 
   isMetaOpen() { return !this.el.metaModal.classList.contains('hidden'); }
+
+  /* ---------- 시작 메뉴 (자동 저장이 있을 때: 이어하기 / 처음부터) ---------- */
+  showStart(save) {
+    const el = this.el;
+    const heroes = (Array.isArray(save.bench) ? save.bench.length : 0)
+      + (Array.isArray(save.field) ? save.field.length : 0);
+    const diff = D.DIFFICULTIES[save.difficulty];
+    el.continueInfo.innerHTML =
+      `지난 모험이 자동 저장돼 있어요<br><b>${save.wave}웨이브</b> · ${diff ? diff.emoji + ' ' + diff.name : '⚔️ 보통'} 난이도 · 🧍 용사 ${heroes}명`;
+    el.continueBtn.textContent = `⏩ 이어하기 — ${save.wave}웨이브부터 (Enter)`;
+    el.startModal.classList.remove('hidden');
+    setTimeout(() => el.continueBtn.focus(), 30);
+  }
+  hideStart() { this.el.startModal.classList.add('hidden'); }
+  isStartOpen() { return !this.el.startModal.classList.contains('hidden'); }
 
   /* ---------- 수학 모달 ---------- */
   showMath(title, lv) {

@@ -76,6 +76,9 @@
       <p>⌨️ <b>Space</b> 웨이브 · <b>S</b> 소환 · <b>C</b> 조합 · <b>Tab</b> 벤치 · <b>F</b> 배치된 용사 ·
         <b>←→</b> 발판 · <b>Enter</b> 배치/이동/교환 · <b>R</b> 회수 · <b>X</b> 판매 ·
         <b>3~6</b> 학년 · <b>7~9</b> 성 · <b>M</b> 음소거 · <b>Esc</b> 취소</p>
+      <p>💾 <b>저장</b> 웨이브가 끝날 때마다 <b>자동 저장</b>돼요 — 다시 열면 이어하기 메뉴가 떠요 ·
+        💾 버튼으로 파일 저장(준비 중에만), 📂로 불러오기 ·
+        <b>여러 명 판매</b>는 벤치 아래 💰 버튼!</p>
       <p>💡 몬스터는 세 갈래 길로 와요(가운데는 보스 지름길!). 갈림길 옆 발판이 명당이에요.</p>
     </div>
   </div>
@@ -91,7 +94,10 @@
           <button id="speedBtn" title="게임 속도 (Q)">⏩ x1</button>
           <button id="sfxBtn" title="효과음 끄기/켜기">🔊</button>
           <button id="bgmBtn" title="배경음악 끄기/켜기 (M: 전체)">🎵</button>
+          <button id="saveBtn" title="이번 판을 파일로 저장해요 (준비 단계에서)">💾</button>
+          <button id="loadBtn" title="저장 파일을 불러와 이어서 해요">📂</button>
           <button id="demoBtn" title="AI가 대신 플레이하는 걸 구경해요 (D)">🎬 데모</button>
+          <input type="file" id="loadFile" accept=".json,application/json" class="hidden">
         </div>
       </div>
       <div class="gradebar">
@@ -109,6 +115,12 @@
       <button id="summonBtn" class="big amber">🎲 용사 소환 (💰 50 · S)</button>
       <div id="benchHint" class="benchhint hidden">🟩 빈 발판 = 배치 · 🟦 찬 발판 = 자리 교환 · ←→ 고르고 Enter</div>
       <div id="bench" class="bench"></div>
+      <div class="sellbar">
+        <button id="sellModeBtn" title="여러 용사를 골라 한 번에 팔아요">💰 여러 명 판매</button>
+        <span id="sellInfo" class="sellinfo hidden"></span>
+        <button id="sellAllBtn" class="hidden">전체 선택</button>
+        <button id="sellGoBtn" class="hidden">팔기</button>
+      </div>
     </section>
 
     <!-- 탭: 한 번에 하나만 보여 세로 길이를 줄인다 -->
@@ -172,6 +184,17 @@
       <button id="mNext" class="hidden">➡ 다음 문제 (Enter)</button>
       <button id="mClose">닫기 (Esc)</button>
     </div>
+  </div>
+</div>
+
+<!-- ===== 시작 메뉴 (자동 저장이 있을 때만) ===== -->
+<div id="startModal" class="modal hidden">
+  <div class="modal-card start">
+    <h2>🏰 용사 수학 디펜스</h2>
+    <p id="continueInfo" class="continue-info"></p>
+    <button id="continueBtn" class="big amber">⏩ 이어하기 (Enter)</button>
+    <button id="newGameBtn" class="big blue">🆕 처음부터 시작하기</button>
+    <p class="start-note">웨이브가 끝날 때마다 자동 저장돼요 · 💾 버튼으로 파일 저장도 됩니다</p>
   </div>
 </div>
 
