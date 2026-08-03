@@ -195,6 +195,11 @@ function openMath(mode, pending = null) {
  *   그래서 지금은 **뽑는 과정을 아예 보여 주지 않는다.** 조합을 누르면 바로
  *   문제가 뜨고, 난이도 배지가 한 번 뿅 튕기며 "이번엔 이게 걸렸다"를 알린다.
  *   변덕은 남기고 연출만 걷어낸 셈이다. */
+/* 환급 배수에 붙는 이름 — 슬롯 번호가 아니라 **배수 자체**를 설명한다.
+ * base가 1일 때는 아래로 밀 수 없어 가운데 장에도 보너스가 붙는데, 그때 슬롯 이름으로
+ * "보통 문제 ×1.55"라고 적으면 왜 더 주는지 설명이 안 된다. */
+const mulName = (mul) => (mul > 1 ? '센 문제' : '순한 문제');
+
 function rollProblem() {
   const base = modal.base;
   /* 뽑기는 게임 난수(state.rng)를 쓰지 않는다 — 문제를 뽑았다고 웨이브가 바뀌면 안 된다 */
@@ -241,7 +246,7 @@ function startProblem(prob, pop = false) {
   const refund = Math.round(cost * D.refundRatio(modal.grade) * state.mathMul * mul);
   const bonus = [];
   /* 배수가 1이 아니면 항상 적는다 — 깎일 때(순한 문제 ×0.5)도 왜 적은지 말해 줘야 한다 */
-  if (modal.card && Math.abs(mul - 1) > 0.01) bonus.push(`🎯${D.CARD_STYLE[modal.card.i].name} ×${mul.toFixed(2)}`);
+  if (Math.abs(mul - 1) > 0.01) bonus.push(`🎯${mulName(mul)} ×${mul.toFixed(2)}`);
   if (streak >= 1) bonus.push(`🔥${streak + 1}연승 ×${D.streakMul(streak + 1).toFixed(2)}`);
   const shard = modal.card && modal.card.shards ? ` ✨별조각 +${modal.card.shards}` : '';
   ui.setProblem({
@@ -328,7 +333,7 @@ function submitMath(value) {
           const cm = modal.card ? modal.card.mul : 1;
           const back = E.refundFirstTry(state, r.cost, modal.grade, speed * sm * cm);
           const tags = [`⚡속도 +${Math.round((speed - 1) * 100)}%`];
-          if (modal.card && Math.abs(cm - 1) > 0.01) tags.push(`🎯${D.CARD_STYLE[modal.card.i].name} ×${cm.toFixed(2)}`);
+          if (Math.abs(cm - 1) > 0.01) tags.push(`🎯${mulName(cm)} ×${cm.toFixed(2)}`);
           if (sm > 1) tags.push(`🔥${streak}연승 ×${sm.toFixed(2)}`);
           msg += ` ✅ 한 번에 정답! 💰+${back} 환급 (${tags.join(' · ')})`;
           /* 센 문제가 나왔는데 한 번에 통과했을 때만 별조각 — 흔해지면 의미가 없다.
