@@ -924,6 +924,10 @@ export class UI {
     el.mStreak.textContent = `🔥 ${o.streak}연승`;
     el.mStreak.classList.toggle('hidden', !o.streak || o.streak < 2);
     this._writeMath(el.mProblem, o.text);
+    /* 전술 문제는 판을 옮겨 적느라 길다(용사 네 명의 초당 피해 나열 등).
+     * 27px 그대로 두면 낮은 화면에서 입력칸이 밀려 나간다 — 길면 글자를 줄인다. */
+    const lines = String(o.text).split('\n').length;
+    el.mProblem.classList.toggle('long', lines >= 4 || o.text.length > 78);
     el.mInput.value = '';
     el.mInput.disabled = false;
     el.mSubmit.disabled = false;

@@ -621,6 +621,7 @@ export function gen(grade, lv = 1, remember = true) {
     lv: L,
     grade: g,
     type: t.id,
+    kind: 'arithmetic',
   };
   if (remember) keep(prob);
   return prob;

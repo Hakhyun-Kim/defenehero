@@ -192,7 +192,9 @@ function offerCards() {
   const cost = modal.info ? modal.info.cost : 0;
   const base = modal.base;
   modal.cards = D.cardLevels(base).map(lv => {
-    const prob = MathGen.gen(modal.grade, lv, false);
+    /* ctx를 넘기면 일부 카드가 "지금 이 판"을 묻는 전술 문제가 된다 (src/math.js).
+     * 낼 수 없는 상황(배치된 용사가 없다 등)이면 알아서 산술로 돌아온다. */
+    const prob = MathGen.gen(modal.grade, lv, { remember: false, ctx: state });
     const mul = D.cardRefundMul(lv, base);
     return {
       lv, prob, mul,
@@ -229,7 +231,7 @@ function pickCard(i) {
 
 /* 다음 단계(신화 2문제)·오답 재도전은 고른 난이도 그대로 새 문제를 뽑는다 —
  * 카드를 다시 고르게 하면 틀릴 때마다 쉬운 카드로 갈아탈 수 있다. */
-function newProblem() { startProblem(MathGen.gen(modal.grade, modal.lv)); }
+function newProblem() { startProblem(MathGen.gen(modal.grade, modal.lv, { ctx: state })); }
 
 function startProblem(prob) {
   modal.prob = prob;
@@ -275,7 +277,7 @@ function timeUp() {
 function submitMath(value) {
   if (!modal.prob || ui.isAnswered() || !String(value).trim()) return;
   modal.tries = (modal.tries || 0) + 1;
-  const ok = MathGen.check(value, modal.prob.answer);
+  const ok = MathGen.check(value, modal.prob.answer, modal.prob.kind);
   E.applyMathResult(state, ok);
   if (ok) {
     const clean = modal.tries === 1 && !modal.usedHint;

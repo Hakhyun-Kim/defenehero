@@ -17,6 +17,9 @@
  * ===================================================== */
 import * as M from '../src/math.js';
 import * as D from '../src/data.js';
+import * as E from '../src/engine.js';
+import * as T from '../src/mathgen/tactical.js';
+import { mulberry32 } from '../src/bot.js';
 
 const N = Number(process.argv[2]) || 3000;
 const gcd = (a, b) => (b ? gcd(b, a % b) : a);
@@ -135,6 +138,124 @@ if (gate.length) {
     const lvs = D.cardLevels(base);
     console.log(`  base ${base} → ${lvs.map((lv, i) =>
       `${D.CARD_STYLE[i].emoji}lv${lv}(×${D.cardRefundMul(lv, base).toFixed(2)}${D.cardShards(lv, base) ? ' ✨' : ''})`).join(' ')}`);
+  }
+}
+
+/* ---------- 전술 문제 ----------
+ * 여기서 잡아야 하는 사고는 딱 두 가지다.
+ *   ① 문제에 적힌 숫자가 엔진이 실제로 쓰는 값과 다르다 → 게임이 거짓말을 한다
+ *   ② 문제를 내면서 state.rng()를 건드린다 → 문제를 냈다는 이유로 웨이브가 바뀐다
+ * 둘 다 화면만 봐서는 절대 안 보이므로 기계가 대조한다. */
+const tac = [];
+const tacFail = (m) => tac.push(m);
+
+/* 실제로 굴러가는 판 하나를 만든다 (봇과 같은 방식) */
+function makeCtx(wave = 1, difficulty = 'normal') {
+  let calls = 0;
+  const base = mulberry32(1234 + wave);
+  const state = E.createGame({ rng: () => { calls++; return base(); }, difficulty });
+  for (const cls of ['knight', 'archer', 'mage', 'guard']) {
+    const h = E.makeHero(state, cls, wave > 6 ? 2 : 1);
+    state.bench.push(h);
+    E.placeHero(state, h.id, state.field.length);
+  }
+  for (let w = 1; w < wave; w++) { state.wave++; state.pendingWave = E.buildWave(state); }
+  return { state, rngCalls: () => calls };
+}
+
+/* ① 엔진이 실제로 스폰한 몬스터와 대조 — 체력·골드·성 피해 */
+for (const difficulty of ['easy', 'normal', 'hard']) {
+  for (const wave of [1, 4, 9, 15]) {
+    const { state } = makeCtx(wave, difficulty);
+    const expect = {};
+    for (const [type] of Object.entries(E.waveSummary(state))) {
+      expect[type] = { hp: T.enemyHp(state, type), gold: T.enemyGold(state, type) };
+    }
+    E.startWave(state);
+    for (let i = 0; i < 4000 && state.enemies.length < 6; i++) E.tick(state, 0.05);
+    for (const e of state.enemies) {
+      if (e.elite || !expect[e.type]) continue;          // 엘리트는 "성난" 개체라 따로 표시된다
+      if (e.maxHp !== expect[e.type].hp) {
+        tacFail(`${difficulty} w${wave} ${e.type}: 체력 ${expect[e.type].hp} 라고 냈는데 실제는 ${e.maxHp}`);
+      }
+      if (e.gold !== expect[e.type].gold) {
+        tacFail(`${difficulty} w${wave} ${e.type}: 골드 ${expect[e.type].gold} 라고 냈는데 실제는 ${e.gold}`);
+      }
+      const realDmg = Math.round(e.castleDmg * D.castleDmgScale(state.wave));
+      if (realDmg !== T.enemyCastleDmg(state, e.type)) {
+        tacFail(`${difficulty} w${wave} ${e.type}: 성 피해 ${T.enemyCastleDmg(state, e.type)} 라고 냈는데 실제는 ${realDmg}`);
+      }
+    }
+  }
+}
+/* 초당 피해도 화면 툴팁(engine.heroDps)과 같은 값이어야 한다 */
+{
+  const { state } = makeCtx(5);
+  for (const h of state.field) {
+    if (Math.round(E.heroDps(h)) !== Math.round(E.heroDps(h))) tacFail('heroDps 불안정');
+  }
+}
+
+/* ② 문제를 내도 판이 흔들리지 않는가 + 답이 성립하는가 */
+let tacCount = 0;
+for (const grade of [3, 4, 5, 6]) {
+  for (let lv = 1; lv <= MAXLV; lv++) {
+    const { state, rngCalls } = makeCtx(1 + ((lv * 3 + grade) % 14));
+    const before = rngCalls();
+    const waveBefore = JSON.stringify(E.waveSummary(state));
+    const goldBefore = state.gold, hpBefore = state.castleHp;
+    for (let i = 0; i < 60; i++) {
+      const p = T.gen(grade, lv, false, state);
+      if (!p) continue;
+      tacCount++;
+      if (!Number.isFinite(p.answer)) tacFail(`${grade}학년 lv${lv} [${p.type}]: 답이 숫자가 아니다 (${p.answer})`);
+      if (!Number.isInteger(p.answer)) tacFail(`${grade}학년 lv${lv} [${p.type}]: 답이 정수가 아니다 (${p.answer})`);
+      if (p.answer < 0) tacFail(`${grade}학년 lv${lv} [${p.type}]: 답이 음수다 (${p.answer})`);
+      if (!p.label || !(p.sec > 0)) tacFail(`${grade}학년 lv${lv} [${p.type}]: 카드에 적을 정보가 없다`);
+      if (p.lv - p.min > 1) tacFail(`${grade}학년 lv${lv} [${p.type}]: 난이도 하한선 위반 (min=${p.min})`);
+      if (p.kind !== 'tactical') tacFail(`${grade}학년 lv${lv} [${p.type}]: kind가 tactical이 아니다`);
+      if (/\*\*|undefined|NaN/.test(`${p.text}${p.hint}`)) tacFail(`${grade}학년 lv${lv} [${p.type}]: 문장이 깨졌다 — "${p.text.split('\n')[0]}"`);
+      if (!M.check(String(p.answer), p.answer, p.kind)) tacFail(`${grade}학년 lv${lv} [${p.type}]: 자기 답을 오답으로 채점한다`);
+    }
+    if (rngCalls() !== before) tacFail(`${grade}학년 lv${lv}: 문제를 내면서 state.rng()를 ${rngCalls() - before}번 썼다 (웨이브가 바뀐다)`);
+    if (JSON.stringify(E.waveSummary(state)) !== waveBefore) tacFail(`${grade}학년 lv${lv}: 웨이브 구성이 바뀌었다`);
+    if (state.gold !== goldBefore || state.castleHp !== hpBefore) tacFail(`${grade}학년 lv${lv}: 게임 상태가 바뀌었다`);
+  }
+}
+/* ③ 낼 수 없는 상황에서는 조용히 산술로 돌아가는가 */
+{
+  const { state } = makeCtx(3);
+  state.field = [];                                  // 배치된 용사가 없다
+  state.pendingWave = [];                            // 다음 웨이브 정보도 없다
+  state.gold = 0;                                    // 소환 계획도 세울 수 없다
+  for (let lv = 1; lv <= MAXLV; lv++) {
+    if (T.ready(3, lv, state)) tacFail(`lv${lv}: 아무 정보도 없는데 전술 문제를 낼 수 있다고 한다`);
+    if (T.gen(3, lv, false, state) !== null) tacFail(`lv${lv}: 낼 수 없는데 문제를 만들어 냈다`);
+    const p = M.gen(3, lv, { remember: false, ctx: state, tactical: 1 });
+    if (!p || p.kind !== 'arithmetic') tacFail(`lv${lv}: 전술이 불가능한데 산술로 되돌아가지 않았다`);
+  }
+}
+/* ④ 배치된 용사가 없어도 (준비 단계 첫 조합) 낼 수 있는 유형이 남아 있는가.
+ * 봇 순서가 소환 → 조합 → 배치라서 첫 관문에는 필드가 비어 있다.
+ * 여기서 전술 문제가 하나도 못 나오면 "판을 묻는다"는 감각 자체가 안 생긴다. */
+{
+  const { state } = makeCtx(4);
+  state.field = [];
+  let none = [];
+  for (let lv = 1; lv <= 5; lv++) if (!T.ready(4, lv, state)) none.push(lv);
+  if (none.length) tacFail(`배치 전인데 전술 문제를 못 내는 난이도가 있다: lv${none.join(',')}`);
+}
+
+console.log(`\n--- 전술 문제 (판을 읽는 문제 ${tacCount}개) ---`);
+if (tac.length) {
+  bad = true;
+  for (const m of [...new Set(tac)].slice(0, 8)) console.log(`   ❌ ${m}`);
+} else {
+  console.log('  ✅ 엔진 값 일치 · 상태 불변 · 답 성립 · 불가 상황 폴백 모두 통과');
+  const { state } = makeCtx(7);
+  for (const lv of [1, 3, 5]) {
+    const p = T.gen(5, lv, false, state);
+    if (p) console.log(`  lv${lv} ${p.label} → ${p.text.replace(/\n/g, ' ')} = ${p.answer}`);
   }
 }
 
