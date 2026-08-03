@@ -10,6 +10,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import * as D from './data.js';
+import { WindGrass, Sea, Fireflies, SHORE_Z, makePalette, daylightPalette, wavePhase } from './nature.js';
 
 const S = 1 / 36;
 const wx = (x) => (x - D.FIELD_W / 2) * S;
@@ -546,14 +547,24 @@ export class Renderer3D {
     this.renderer = r;
 
     this.scene = new THREE.Scene();
-    this.fogNear = 24; this.fogFar = 44;
+    /* 바다가 생기면서 시야가 훨씬 깊어졌다. 예전 far=44 는 수평선을 통째로
+     * 하얗게 지워 버린다 — 전장(거리 ~35)은 그대로 두고 far 만 밀어낸다. */
+    this.fogNear = 30; this.fogFar = 78;
     this.scene.fog = new THREE.Fog(0xcfe9ff, this.fogNear, this.fogFar);
     this.scene.background = new THREE.Color(0xcfe9ff);
-    /* 보스 분위기 전환용 기준값 */
-    this.baseFog = new THREE.Color(0xcfe9ff);
-    this.baseClear = new THREE.Color(0xbfe3ff);
+    /* 시간대(웨이브) → 조명·안개·물빛. 보스 분위기는 이 위에 덧칠된다. */
+    this.palette = makePalette();
+    this.dayPhase = 0;        // 실제 표시 중인 위상 (목표를 향해 서서히 따라간다)
+    this.dayTarget = 0;
+    daylightPalette(0, this.palette);
+    this.baseFog = this.palette.fog.clone();
+    this.baseClear = this.palette.sky.clone();
     this.bossMode = 0;        // 0 없음 · 1 중간보스 · 2 대보스
     this.bossBlend = 0;
+    this.baseSunI = this.palette.sunI;
+    this.baseHemiI = this.palette.hemiI;
+    this._tint = new THREE.Color();   // 매 프레임 새 Color 를 만들지 않으려고
+    this._clear = new THREE.Color();
 
     this.camera = new THREE.PerspectiveCamera(46, 16 / 10, 0.1, 120);
     this.camBase = new THREE.Vector3(0, 13.2, 12.8);
@@ -581,6 +592,11 @@ export class Renderer3D {
     this._buildCastle();
     this._buildParticles();
     this._buildDamageNumbers();
+
+    /* 자연 배경 — 잔디 물결 · 성 뒤편 바다 · 밤 반딧불이 */
+    this.grass = new WindGrass(this.scene, this.quality, wx, wz);
+    this.sea = new Sea(this.scene, this.quality);
+    this.fireflies = new Fireflies(this.scene, this.quality);
 
     this.heroViews = new Map();
     this.enemyViews = new Map();
@@ -625,6 +641,9 @@ export class Renderer3D {
     this.renderer.setPixelRatio(this._targetDpr());
     if (q === 'high') this._setupComposer();
     else { this.composer = null; }
+    if (this.grass) this.grass.setQuality(q);
+    if (this.sea) this.sea.setQuality(q);
+    if (this.fireflies) this.fireflies.setQuality(q);
     this._resize();
   }
 
@@ -641,13 +660,16 @@ export class Renderer3D {
 
   /* ---------- 지형: 잔디 + 세 갈래 길 + 발판 ---------- */
   _buildTerrain() {
+    /* 땅은 물가(SHORE_Z)에서 끝난다 — 그 너머는 바다(nature.js). */
+    const landDepth = 20 - SHORE_Z;
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(74, 40),
+      new THREE.PlaneGeometry(74, landDepth),
       new THREE.MeshLambertMaterial({ map: grassTexture(), color: 0xd2e3c2 })
     );
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.08;
+    ground.position.set(0, -0.08, SHORE_Z + landDepth / 2);
     ground.receiveShadow = true;
+    this.ground = ground;
     this.scene.add(ground);
 
     /* 길 (모든 루트, 공유 구간은 겹쳐 그려짐) */
@@ -1106,20 +1128,45 @@ export class Renderer3D {
   /* 보스 분위기: 하늘·안개·조명을 어둡게 (0 없음 / 1 중간 / 2 대보스) */
   setBossMode(level) { this.bossMode = level; }
 
+  /* ---------- 시간대: 웨이브가 지날수록 아침 → 석양 → 밤 ----------
+   * 팔레트가 "기준값"을 만들고 보스 분위기가 그 위에 덧칠한다.
+   * 순서가 중요하다 — 반대로 하면 보스 연출이 시간대에 덮여 사라진다. */
+  _updateDaylight(dt, state) {
+    if (state) this.dayTarget = wavePhase(state.wave);
+    /* 웨이브가 넘어갈 때 뚝 끊기지 않게 천천히 따라간다 */
+    this.dayPhase += (this.dayTarget - this.dayPhase) * Math.min(1, dt * 0.5);
+    const p = daylightPalette(this.dayPhase, this.palette);
+
+    this.baseFog.copy(p.fog);
+    this.baseClear.copy(p.sky);
+    this.sun.color.copy(p.sun);
+    this.hemi.color.copy(p.hemiSky);
+    this.hemi.groundColor.copy(p.hemiGnd);
+    /* 그림자 카메라 범위가 고정이라 거리는 유지하고 방향만 돌린다 */
+    this.sun.position.copy(p.sunPos).setLength(17);
+    this.baseSunI = p.sunI;
+    this.baseHemiI = p.hemiI;
+    /* 밤에는 땅도 같이 가라앉아야 한다 — 조명만으로는 잔디가 형광으로 뜬다 */
+    const n = p.night;
+    this.ground.material.color.setRGB(0.82 - n * 0.65, 0.89 - n * 0.71, 0.76 - n * 0.56);
+  }
+
   _updateBossMood(dt) {
     const target = this.bossMode;
     this.bossBlend += (target - this.bossBlend) * Math.min(1, dt * 1.6);
     const k = this.bossBlend;
     /* 중간보스는 보랏빛, 대보스는 핏빛으로 */
-    const tint = new THREE.Color(k > 1.2 ? 0x6b1418 : 0x3a2050);
+    this._tint.setHex(k > 1.2 ? 0x6b1418 : 0x3a2050);
     const strength = Math.min(1, k) * (k > 1.2 ? 0.85 : 0.6);
-    const fogCol = this.baseFog.clone().lerp(tint, strength);
-    const clearCol = this.baseClear.clone().lerp(tint, strength * 0.9);
-    this.scene.fog.color.copy(fogCol);
-    this.renderer.setClearColor(clearCol);
-    this.scene.fog.far = this.fogFar - Math.min(1, k) * 10;   // 안개가 조여든다
-    this.hemi.intensity = 1.05 - Math.min(1, k) * 0.42;
-    this.sun.intensity = 1.35 - Math.min(1, k) * 0.55;
+    this.scene.fog.color.copy(this.baseFog).lerp(this._tint, strength);
+    this._clear.copy(this.baseClear).lerp(this._tint, strength * 0.9);
+    /* scene.background 가 있으면 clearColor 보다 우선한다 — 둘 다 맞춘다 */
+    this.scene.background.copy(this._clear);
+    this.renderer.setClearColor(this._clear);
+    this.scene.fog.far = this.fogFar - Math.min(1, k) * 30;   // 안개가 조여든다
+    /* 시간대 기준값에 곱해서 낮/밤 어디서든 같은 비율로 어두워진다 */
+    this.hemi.intensity = this.baseHemiI * (1 - Math.min(1, k) * 0.40);
+    this.sun.intensity = this.baseSunI * (1 - Math.min(1, k) * 0.45);
   }
 
   _makeEnemyView(e) {
@@ -1766,7 +1813,12 @@ export class Renderer3D {
     this._updateNumbers(dt);
     this._updateWaves(dt);
     this._updatePillars(dt);
-    this._updateBossMood(dt);
+    this._updateDaylight(dt, state);    // 먼저 시간대 기준값을 만들고
+    this._updateBossMood(dt);           // 그 위에 보스 분위기를 덧칠한다
+
+    this.grass.frame(dt, t, this.palette, this.bossBlend);
+    this.sea.frame(dt, t, this.palette, this.bossBlend);
+    this.fireflies.frame(dt, t, this.palette);
 
     this.shake = Math.max(0, this.shake - dt * 1.7);
     const s2 = this.shake * this.shake;
@@ -1822,6 +1874,9 @@ export class Renderer3D {
 
   dispose() {
     this.ro.disconnect();
+    this.grass.dispose();
+    this.sea.dispose();
+    this.fireflies.dispose();
     this.renderer.dispose();
     this.container.removeChild(this.renderer.domElement);
   }
