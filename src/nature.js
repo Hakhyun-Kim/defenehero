@@ -29,24 +29,30 @@ const WATER_LINE = -13.2;
  * 웨이브가 진행될수록 아침 → 한낮 → 황금빛 → 노을 → 밤.
  * 13웨이브에 깊은 밤에 닿는다(보통 난이도 중앙값 10 ≈ 노을 무렵).
  * ===================================================== */
+/* zenith 는 하늘 밴드 위쪽 색. 밴드 아래쪽은 fog 색을 그대로 쓴다 —
+ * 멀어진 바다도 안개색으로 수렴하므로 둘을 맞추면 이음매가 사라진다.
+ * (이 카메라는 진짜 수평선이 화면 위로 벗어나 있어서 하늘은 "그려 넣은 배경"이다.
+ *  그래서 이음매를 감추는 게 하늘을 그리는 것보다 중요하다.) */
 const KEYS = [
-  { /* 아침   */ p: 0.00, fog: 0xcfe9ff, sky: 0xbfe3ff, sun: 0xfff2d8, sunI: 1.90,
+  /* fog 는 "수평선 색"이기도 하다 — 바다도 하늘 밴드 아래쪽도 이 색으로 수렴한다.
+   * 처음엔 0xcfe9ff 처럼 거의 흰색으로 뒀더니 낮 바다가 통째로 하얘졌다. */
+  { /* 아침   */ p: 0.00, fog: 0xa8d2f0, sky: 0xbfe3ff, zenith: 0x2f7fce, sun: 0xfff2d8, sunI: 1.90,
     hemiSky: 0xeaf6ff, hemiGnd: 0x5d8742, hemiI: 1.25, sunPos: [8, 14, 6],
-    deep: 0x1e5c86, shallow: 0x4fb3c9, night: 0 },
-  { /* 한낮   */ p: 0.28, fog: 0xdff1ff, sky: 0xcfeaff, sun: 0xfffaf0, sunI: 2.05,
+    deep: 0x1e5c86, shallow: 0x4fb3c9, night: 0, cloud: 0.55 },
+  { /* 한낮   */ p: 0.28, fog: 0xb2dcf8, sky: 0xcfeaff, zenith: 0x1f6ec4, sun: 0xfffaf0, sunI: 2.05,
     hemiSky: 0xf2faff, hemiGnd: 0x6a9a4a, hemiI: 1.35, sunPos: [4, 18, 3],
-    deep: 0x14618f, shallow: 0x53c6da, night: 0 },
-  { /* 황금빛 */ p: 0.56, fog: 0xffd9b0, sky: 0xffc98f, sun: 0xffb066, sunI: 1.85,
+    deep: 0x14618f, shallow: 0x53c6da, night: 0, cloud: 0.40 },
+  { /* 황금빛 */ p: 0.56, fog: 0xf5c194, sky: 0xffc98f, zenith: 0xe08a5a, sun: 0xffb066, sunI: 1.85,
     hemiSky: 0xffe3c0, hemiGnd: 0x6b7a3a, hemiI: 1.05, sunPos: [13, 6, 7],
-    deep: 0x2a4f7a, shallow: 0xd79a63, night: 0.1 },
-  { /* 노을   */ p: 0.80, fog: 0xb980a8, sky: 0x8a5f8f, sun: 0xff7a55, sunI: 1.15,
+    deep: 0x2a4f7a, shallow: 0xd79a63, night: 0.1, cloud: 0.70 },
+  { /* 노을   */ p: 0.80, fog: 0xb980a8, sky: 0x8a5f8f, zenith: 0x4a3a78, sun: 0xff7a55, sunI: 1.15,
     hemiSky: 0xc99ec0, hemiGnd: 0x47506a, hemiI: 0.80, sunPos: [15, 2.6, 6],
-    deep: 0x27304f, shallow: 0x8e6a94, night: 0.45 },
+    deep: 0x27304f, shallow: 0x8e6a94, night: 0.45, cloud: 0.60 },
   /* 밤: 분위기보다 가독성이 먼저다. 아이들이 몬스터와 발판을 못 보면 안 되니
    * "달빛이 밝은 밤" 정도로 잡는다(진짜 어둠은 재미가 아니라 스트레스다). */
-  { /* 밤     */ p: 1.00, fog: 0x223060, sky: 0x16224a, sun: 0xb2cdff, sunI: 1.02,
+  { /* 밤     */ p: 1.00, fog: 0x223060, sky: 0x16224a, zenith: 0x070c22, sun: 0xb2cdff, sunI: 1.02,
     hemiSky: 0x3b4f88, hemiGnd: 0x243050, hemiI: 0.96, sunPos: [-9, 13, 4],
-    deep: 0x0d1838, shallow: 0x244577, night: 1 },
+    deep: 0x0d1838, shallow: 0x244577, night: 1, cloud: 0.25 },
 ];
 
 const _cA = new THREE.Color(), _cB = new THREE.Color();
@@ -70,6 +76,7 @@ export function daylightPalette(phase, out) {
 
   mixHex(a.fog, b.fog, t, out.fog);
   mixHex(a.sky, b.sky, t, out.sky);
+  mixHex(a.zenith, b.zenith, t, out.zenith);
   mixHex(a.sun, b.sun, t, out.sun);
   mixHex(a.hemiSky, b.hemiSky, t, out.hemiSky);
   mixHex(a.hemiGnd, b.hemiGnd, t, out.hemiGnd);
@@ -78,6 +85,7 @@ export function daylightPalette(phase, out) {
   out.sunI = a.sunI + (b.sunI - a.sunI) * t;
   out.hemiI = a.hemiI + (b.hemiI - a.hemiI) * t;
   out.night = a.night + (b.night - a.night) * t;
+  out.cloud = a.cloud + (b.cloud - a.cloud) * t;
   out.sunPos.set(
     a.sunPos[0] + (b.sunPos[0] - a.sunPos[0]) * t,
     a.sunPos[1] + (b.sunPos[1] - a.sunPos[1]) * t,
@@ -88,10 +96,12 @@ export function daylightPalette(phase, out) {
 
 export function makePalette() {
   return {
-    fog: new THREE.Color(), sky: new THREE.Color(), sun: new THREE.Color(),
+    fog: new THREE.Color(), sky: new THREE.Color(), zenith: new THREE.Color(),
+    sun: new THREE.Color(),
     hemiSky: new THREE.Color(), hemiGnd: new THREE.Color(),
     deep: new THREE.Color(), shallow: new THREE.Color(),
-    sunI: 1.9, hemiI: 1.25, night: 0, sunPos: new THREE.Vector3(8, 14, 6),
+    sunI: 1.9, hemiI: 1.25, night: 0, cloud: 0.55,
+    sunPos: new THREE.Vector3(8, 14, 6),
   };
 }
 
@@ -385,9 +395,18 @@ void main() {
   float foam = smoothstep(-0.1, 0.4, d) * (1.0 - smoothstep(0.45, 1.7, d));
   foam *= 0.45 + 0.55 * vnoise(vec2(vWorld.x * 2.4, vWorld.z * 2.4 - uTime * 0.8));
   /* 밤에는 거품도 달빛만 받는다 — 낮과 같은 흰색이면 수평선에 형광 띠가 생긴다 */
-  col = mix(col, vec3(0.80, 0.88, 0.95), clamp(foam, 0.0, 1.0) * 0.75 * (1.0 - uNight * 0.62));
+  col = mix(col, vec3(0.80, 0.88, 0.95), clamp(foam, 0.0, 1.0) * 0.75 * (1.0 - uNight * 0.78));
 
   float alpha = smoothstep(-0.35, 0.7, d);
+
+  /* 먼 바다를 수평선 안개색으로 완전히 수렴시킨다.
+   * 이 색은 하늘 밴드의 아래쪽 색(uHorizon)과 같은 값이다 — 여기가 맞아야
+   * 화면 위쪽 하늘 밴드와의 경계선이 사라진다. three 의 안개만으로는
+   * 밴드가 시작되는 거리에서 아직 20% 밖에 안 섞여 경계가 그대로 드러났다.
+   * 범위는 재서 맞췄다: 보이는 바다는 물가 쪽 29.7 부터 밴드가 시작되는 39.7 까지,
+   * 겨우 10유닛 두께다. 전 구간에 안개를 걸면 바다가 통째로 하얘지므로
+   * 마지막 6유닛에서만 녹인다 — 앞쪽은 파랗게 두고 경계만 지운다. */
+  col = mix(col, uSky, smoothstep(34.0, 40.5, dist));
 
   gl_FragColor = vec4(col, alpha);
   #include <fog_fragment>

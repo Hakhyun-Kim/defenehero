@@ -11,6 +11,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import * as D from './data.js';
 import { WindGrass, Sea, Fireflies, SHORE_Z, makePalette, daylightPalette, wavePhase } from './nature.js';
+import { SkyBand } from './sky.js';
 
 const S = 1 / 36;
 const wx = (x) => (x - D.FIELD_W / 2) * S;
@@ -566,10 +567,16 @@ export class Renderer3D {
     this._tint = new THREE.Color();   // 매 프레임 새 Color 를 만들지 않으려고
     this._clear = new THREE.Color();
 
-    this.camera = new THREE.PerspectiveCamera(46, 16 / 10, 0.1, 120);
-    this.camBase = new THREE.Vector3(0, 13.2, 12.8);
+    /* 화면 위쪽을 하늘에 내준다. 그만큼 게임이 차지할 자리가 줄어드니
+     * 시야각을 넓혀(내용이 작아진다) + 시선을 살짝 올려(내용이 내려간다)
+     * 성 깃대부터 스폰 포탈까지가 밴드 아래에 들어오게 맞췄다.
+     * 공짜는 없다 — 하늘을 얻는 대신 전장이 조금 작아진다. */
+    this.skyFraction = 0.19;
+    this.camera = new THREE.PerspectiveCamera(54, 16 / 10, 0.1, 120);
+    this.camBase = new THREE.Vector3(0, 13.2, 13.6);
+    this.camLook = new THREE.Vector3(0, 2.4, -0.6);
     this.camera.position.copy(this.camBase);
-    this.camera.lookAt(0, 0, -0.6);
+    this.camera.lookAt(this.camLook);
 
     this.hemi = new THREE.HemisphereLight(0xeaf6ff, 0x5d8742, 1.25);
     this.scene.add(this.hemi);
@@ -597,6 +604,11 @@ export class Renderer3D {
     this.grass = new WindGrass(this.scene, this.quality, wx, wz);
     this.sea = new Sea(this.scene, this.quality);
     this.fireflies = new Fireflies(this.scene, this.quality);
+
+    /* 하늘 밴드 — 카메라 자식이라 카메라가 씬에 들어가 있어야 그려진다 */
+    this.scene.add(this.camera);
+    this.sky = new SkyBand(this.camera, this.skyFraction);
+    this.moonPhase = 0.15;
 
     this.heroViews = new Map();
     this.enemyViews = new Map();
@@ -655,6 +667,7 @@ export class Renderer3D {
     this.renderer.domElement.style.height = '100%';
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    if (this.sky) this.sky.layout();     // 절두체가 바뀌면 밴드 크기도 다시 잡는다
     if (this.composer) this.composer.setSize(w, h);
   }
 
@@ -1132,7 +1145,11 @@ export class Renderer3D {
    * 팔레트가 "기준값"을 만들고 보스 분위기가 그 위에 덧칠한다.
    * 순서가 중요하다 — 반대로 하면 보스 연출이 시간대에 덮여 사라진다. */
   _updateDaylight(dt, state) {
-    if (state) this.dayTarget = wavePhase(state.wave);
+    if (state) {
+      this.dayTarget = wavePhase(state.wave);
+      /* 달은 밤이 시작될 무렵 초승달이었다가 오래 버틸수록 차오른다 */
+      this.moonPhase = Math.max(0.12, Math.min(1, (state.wave - 8) / 15));
+    }
     /* 웨이브가 넘어갈 때 뚝 끊기지 않게 천천히 따라간다 */
     this.dayPhase += (this.dayTarget - this.dayPhase) * Math.min(1, dt * 0.5);
     const p = daylightPalette(this.dayPhase, this.palette);
@@ -1819,6 +1836,7 @@ export class Renderer3D {
     this.grass.frame(dt, t, this.palette, this.bossBlend);
     this.sea.frame(dt, t, this.palette, this.bossBlend);
     this.fireflies.frame(dt, t, this.palette);
+    this.sky.frame(dt, t, this.palette, this.moonPhase);
 
     this.shake = Math.max(0, this.shake - dt * 1.7);
     const s2 = this.shake * this.shake;
@@ -1827,7 +1845,7 @@ export class Renderer3D {
       this.camBase.y + Math.sin(t * 0.31) * 0.1 + (Math.random() - 0.5) * s2 * 1.4,
       this.camBase.z + (Math.random() - 0.5) * s2 * 2.2
     );
-    this.camera.lookAt(0, 0, -0.6);
+    this.camera.lookAt(this.camLook);
 
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
@@ -1877,6 +1895,7 @@ export class Renderer3D {
     this.grass.dispose();
     this.sea.dispose();
     this.fireflies.dispose();
+    this.sky.dispose();
     this.renderer.dispose();
     this.container.removeChild(this.renderer.domElement);
   }
