@@ -989,7 +989,45 @@ button { font-family: inherit; }
 
 /* 재료가 모자란 줄에서 눌러 바로 행동 */
 .combine-row button.need { background: #fff2e0; border-color: #f0b071; color: #8a5a12; }
-.combine-row button.lack { opacity: 0.85; }
+
+/* ===== 💰 부족 =====
+ * 돈이 없어서 못 하는 것과 재료가 없어서 못 하는 것은 다른 문제다.
+ * 전에는 골드가 모자라도 초록 버튼이 그대로 있어서 "된다"로 읽혔다 —
+ * 이제 얼마가 모자란지 동전으로 적고, 버튼은 회색 자물쇠로 잠근다. */
+.gshort {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 900;
+  color: #9a5600;
+  background: #fff3d6;
+  border: 1.5px solid #f3c268;
+  border-radius: 7px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+.combine-row .mlv + .gshort { margin-left: 6px; }
+.combine-row .gshort + button { margin-left: 6px; }
+.combine-row button.lack,
+.combine-row button:disabled {
+  background: #dbe2ec;
+  color: #8b95a5;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 1;
+}
+.combine-row button.lack::before { content: '🔒 '; }
+/* 돈만 모자란 줄은 "재료는 다 모았다"는 뜻이라 흐리지 않는다 — 테두리로만 잠금을 알린다 */
+.combine-row.broke,
+.combine-row.recipe.s-gold {
+  background: #fbfbfd;
+  border: 1.5px dashed #d7dfeb;
+  border-radius: 8px;
+  padding: 4px 6px;
+}
+/* 소환 버튼도 같은 규칙 — 돈이 모자라면 잠긴 얼굴 */
+.big.lack { background: #dbe2ec; color: #7b8698; box-shadow: none; cursor: not-allowed; }
+.big.lack::before { content: '🔒 '; }
 .combine-row.flash { animation: rowflash 1.4s ease-out; }
 @keyframes rowflash {
   0%   { background: #fff3c4; box-shadow: 0 0 0 3px #ffd76a inset; }

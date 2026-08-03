@@ -274,7 +274,15 @@ export class UI {
     const pct = state.castleMax ? (state.castleHp / state.castleMax) * 100 : 0;
     el.castleFill.style.width = `${pct}%`;
     el.castleGhost.style.width = `${pct}%`;
-    el.summonBtn.disabled = state.gold < D.SUMMON_COST || state.bench.length >= D.BENCH_MAX || state.phase === 'over';
+    /* 소환 버튼도 "왜 안 눌리는지"를 버튼 얼굴에 적는다 — 회색이 된 이유가 돈인지 자리인지 보이게 */
+    const canPay = state.gold >= D.SUMMON_COST;
+    const benchFull = state.bench.length >= D.BENCH_MAX;
+    el.summonBtn.disabled = !canPay || benchFull || state.phase === 'over';
+    el.summonBtn.classList.toggle('lack', !canPay && !benchFull);
+    el.summonBtn.textContent = benchFull
+      ? '🧺 벤치가 가득 찼어요 — 배치하거나 팔아요'
+      : canPay ? `🎲 용사 소환 (💰 ${D.SUMMON_COST} · S)`
+        : `💰${D.SUMMON_COST - state.gold} 더 모으면 소환! (💰${D.SUMMON_COST} 필요 · 지금 💰${state.gold})`;
 
   }
 
@@ -443,6 +451,12 @@ export class UI {
       문제는 <b>🟢순한 · 🔵보통 · 🔴센</b> 세 장 중에서 <b>룰렛으로 뽑혀요</b> — 센 문제일수록 환급이 커요
     </div>`;
 
+    /* 돈이 모자란 줄이 "지금 된다"처럼 보이면 안 된다.
+     * 얼마가 모자란지 동전으로 적어 주고(버튼 옆), 버튼은 아예 잠근다 —
+     * 눌러 봤자 토스트만 뜨는 버튼은 "되는 줄 알았는데"라는 실망만 남긴다. */
+    const shortBadge = (cost) => state.gold >= cost ? ''
+      : `<span class="gshort" title="골드가 💰${cost - state.gold} 모자라요 (필요 💰${cost} · 지금 💰${state.gold})">💰${cost - state.gold} 부족</span>`;
+
     /* 조합 난이도 = 카드 3장의 한가운데. 누르기 전에 미리 보여 준다.
      * 적응형 보정까지 얹어야 미리보기와 실제 관문이 어긋나지 않는다. */
     const adapt = D.adaptOffset(state.mathWindow);
@@ -470,12 +484,12 @@ export class UI {
     }
     for (const c of rankups) {
       const C = D.CLASSES[c.cls];
-      html += `<div class="combine-row${c.affordable ? ' ready' : ''}">
+      html += `<div class="combine-row${c.affordable ? ' ready' : ' broke'}">
         <span class="peek" data-cls="${c.cls}" data-rtier="${c.resultTier}">${C.emoji}</span> ${C.name}
         <span class="cnt" style="color:${D.TIERS[c.tier].color}">${D.TIERS[c.tier].name}×2</span>
-        ${lvBadge(c)}
+        ${lvBadge(c)}${shortBadge(c.cost)}
         <button data-kind="rankup" data-cls="${c.cls}" data-tier="${c.tier}"
-          ${c.affordable ? '' : 'disabled'}>⚗ ${D.TIERS[c.resultTier].name} 💰${c.cost}</button>
+          class="${c.affordable ? '' : 'lack'}" ${c.affordable ? '' : 'disabled'}>⚗ ${D.TIERS[c.resultTier].name} 💰${c.cost}</button>
       </div>`;
     }
 
@@ -497,9 +511,10 @@ export class UI {
 
         let right;
         if (st.state === 'ready' || st.state === 'gold') {
-          /* 골드가 모자라도 누를 수 있게 둔다 — 누르면 얼마가 필요한지 알려 주는 편이 낫다 */
-          right = `${c ? lvBadge(c) : ''}<button data-kind="recipe" data-result="${r.result}"
-            class="${st.state === 'gold' ? 'lack' : ''}">⚗ ${D.TIERS[rtier].name} 💰${st.cost}</button>`;
+          /* 골드가 모자라면 얼마가 모자란지 적고 버튼을 잠근다 — 재료는 다 모았다는 표시(초록 재료)는 그대로다 */
+          const broke = st.state === 'gold';
+          right = `${c ? lvBadge(c) : ''}${shortBadge(st.cost)}<button data-kind="recipe" data-result="${r.result}"
+            class="${broke ? 'lack' : ''}" ${broke ? 'disabled' : ''}>⚗ ${D.TIERS[rtier].name} 💰${st.cost}</button>`;
         } else if (st.state === 'cap') {
           right = `<span class="cnt need">더 안 올라요 — 🌌 신화 조합으로</span>`;
         } else if (st.state === 'gap') {
@@ -513,9 +528,12 @@ export class UI {
           const need = st.missing[0];
           const N = D.CLASSES[need];
           const byCombine = D.RECIPES.some(x => x.result === need);
+          /* 소환도 돈이 든다 — 뽑을 돈이 없으면 "뽑으러 가기"도 잠근다 */
+          const canSummon = state.gold >= D.SUMMON_COST;
           right = byCombine
             ? `<button data-goto="${need}" class="need">${N.emoji} ${N.name}부터 만들기</button>`
-            : `<button data-need="${need}" class="need">🎲 ${N.emoji} ${N.name} 뽑으러 가기</button>`;
+            : `${shortBadge(D.SUMMON_COST)}<button data-need="${need}"
+                class="need${canSummon ? '' : ' lack'}" ${canSummon ? '' : 'disabled'}>🎲 ${N.emoji} ${N.name} 뽑으러 가기</button>`;
         }
 
         /* 재료 등급을 배지로 — 조합이 되는 줄은 "실제로 쓸 재료", 아니면 "보유 최고" */
@@ -576,12 +594,16 @@ export class UI {
       const maxed = U.max && n >= U.max;
       const cost = U.cost(n);
       const full = key === 'repair' && state.castleHp >= state.castleMax;
-      const disabled = maxed || full || state.gold < cost || state.phase === 'over';
+      /* 못 누르는 이유가 셋이다 — MAX / 이미 가득 / 돈 부족.
+       * 회색 버튼만 두면 셋이 구분이 안 되니 돈 부족은 동전으로 따로 적어 준다. */
+      const broke = !maxed && !full && state.gold < cost;
+      const disabled = maxed || full || broke || state.phase === 'over';
       const lvLabel = U.max && key !== 'repair' ? ` <span class="cnt">${n}/${U.max}</span>` : '';
-      html += `<div class="combine-row">
+      html += `<div class="combine-row${broke ? ' broke' : ''}">
         <span>${U.emoji}</span> ${U.name}<span class="kbd">${hotkeys[key]}</span>${lvLabel}
         <span class="cdesc">${U.desc}</span>
-        <button data-key="${key}" ${disabled ? 'disabled' : ''}>${maxed ? 'MAX' : `💰${cost}`}</button>
+        ${broke ? `<span class="gshort" title="골드가 💰${cost - state.gold} 모자라요 (필요 💰${cost} · 지금 💰${state.gold})">💰${cost - state.gold} 부족</span>` : ''}
+        <button data-key="${key}" class="${broke ? 'lack' : ''}" ${disabled ? 'disabled' : ''}>${maxed ? 'MAX' : full ? '가득' : `💰${cost}`}</button>
       </div>`;
     }
     this.el.castleRows.innerHTML = html;
