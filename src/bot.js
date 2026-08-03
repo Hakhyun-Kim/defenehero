@@ -30,12 +30,13 @@ export function mulberry32(a) {
  * useCastle      true=전부 / 'repairOnly'=수리만 / false=안 씀
  * midWave        전투 중에도 소환·배치하는가
  * sloppy         배치를 아무 데나 할 확률
- * card           문제 카드 세 장 중 몇 번째를 집는가 (0=안전 1=정석 2=도전)
+ *
+ * 문제 난이도는 프로필에 없다 — 이제 룰렛이 정한다(balance/mathgate.js의 cardRoll).
  */
 export const PROFILES = {
-  '초보': { acc: 0.45, grade: 3, combineChance: 0.15, reserve: 0,   useCastle: false,        midWave: false, sloppy: 0.5, card: 0 },
-  '보통': { acc: 0.70, grade: 4, combineChance: 0.70, reserve: 50,  useCastle: 'repairOnly', midWave: false, sloppy: 0.3, card: 1 },
-  '고수': { acc: 0.90, grade: 6, combineChance: 1.00, reserve: 100, useCastle: true,         midWave: true,  sloppy: 0,   card: 2 },
+  '초보': { acc: 0.45, grade: 3, combineChance: 0.15, reserve: 0,   useCastle: false,        midWave: false, sloppy: 0.5 },
+  '보통': { acc: 0.70, grade: 4, combineChance: 0.70, reserve: 50,  useCastle: 'repairOnly', midWave: false, sloppy: 0.3 },
+  '고수': { acc: 0.90, grade: 6, combineChance: 1.00, reserve: 100, useCastle: true,         midWave: true,  sloppy: 0 },
 };
 
 /* ---------- 배치 정책 ----------
@@ -110,15 +111,6 @@ export const wantsSummon = (state, P) =>
  * 봇은 문제를 만들지도 풀지도 않고 동전을 던진다(state.rng() < acc).
  * 데모는 진짜 문제창이 뜨므로 "무엇을 입력할지"가 필요하다.
  * 틀릴 때는 채점기가 확실히 오답으로 볼 만큼 벗어난 값을 낸다. */
-/* 문제 카드 세 장 중 어느 것을 집을까.
- * 실력이 좋을수록 어려운 카드를 집는다 — 사람도 그렇게 한다. 가끔은 한 칸 물러선다
- * (항상 같은 카드만 고르면 카드 선택이 실제로 도는지 검증이 안 된다). */
-export function pickCardIndex(P, count = 3, rng = Math.random) {
-  const want = Math.max(0, Math.min(count - 1, P.card == null ? 1 : P.card));
-  if (want > 0 && rng() < 0.2) return want - 1;
-  return want;
-}
-
 export function answerFor(prob, P, rng = Math.random) {
   if (rng() < P.acc) return String(prob.answer);
   const off = (1 + Math.floor(rng() * 9)) * (rng() < 0.5 ? -1 : 1);

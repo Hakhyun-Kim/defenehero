@@ -10,9 +10,9 @@ import * as D from '../src/data.js';
 import * as E from '../src/engine.js';
 /* 판단 로직은 src/bot.js 하나뿐이다 — 브라우저 데모(src/demo.js)와 같은 것을 쓴다.
  * 여기서 다시 구현하면 "봇은 통과하는데 화면에선 다르게 노는" 상황이 생긴다. */
-import { PROFILES, mulberry32, placeAll, chooseCombo, castlePlan, wantsSummon, pickCardIndex } from '../src/bot.js';
+import { PROFILES, mulberry32, placeAll, chooseCombo, castlePlan, wantsSummon } from '../src/bot.js';
 
-/* 어려운 카드를 고르면 정답률이 떨어진다 — 이걸 모델링하지 않으면 도전 카드가 공짜 돈이 된다.
+/* 어려운 문제가 걸리면 정답률이 떨어진다 — 이걸 모델링하지 않으면 센 문제가 공짜 돈이 된다.
  * (게임에서도 실제로 그렇다: 한 칸 위 문제는 수가 크고 단계가 하나 더 많다) */
 const ACC_PER_LV = 0.08;
 
@@ -29,13 +29,13 @@ function prepActions(state, P) {
   for (let round = 0; round < 6; round++) {
     const pick = chooseCombo(state);
     if (!pick || state.rng() >= P.combineChance) break;
-    /* 문제 카드 세 장 중 하나를 고른다 — 어려운 카드는 환급이 크고 정답률이 낮다 */
-    /* 적응형 보정까지 그대로 태운다 — 게임에서 실제로 도는 규칙을 봇이 안 밟으면
-     * "봇은 통과하는데 사람은 다른 난이도를 푸는" 시뮬레이션이 된다 */
+    /* 문제 룰렛 + 적응형 보정까지 그대로 태운다 — 게임에서 실제로 도는 규칙을 봇이 안 밟으면
+     * "봇은 통과하는데 사람은 다른 난이도를 푸는" 시뮬레이션이 된다.
+     * 센 문제는 환급이 크고 정답률이 낮다. */
     const raw = D.mathLevel(pick.resultTier, pick.kind === 'recipe', !!D.CLASSES[pick.result].mythic);
     const base = Math.max(1, Math.min(5, raw + D.adaptOffset(state.mathWindow)));
     const lvs = D.cardLevels(base);
-    const ci = pickCardIndex(P, lvs.length, state.rng);
+    const ci = D.cardRoll(base, state.rng);      // 고르지 않는다 — 룰렛이 정한다
     const lv = lvs[ci];
     const acc = Math.max(0.05, P.acc - ACC_PER_LV * (lv - base));
     const rounds = D.mathRounds(lv);

@@ -95,22 +95,49 @@ for (const [name, list] of Object.entries(fails)) {
   }
 }
 /* ---------- 관문 규칙 불변식 ----------
- * 카드 세 장은 게임의 약속이다: 서로 다른 난이도여야 하고, 어려운 쪽이 더 줘야 하고,
- * 화면에 적어 준 시간·환급이 실제와 같아야 한다. 하나라도 깨지면 고를 이유가 사라진다. */
+ * 세 장은 게임의 약속이다: 서로 다른 난이도여야 하고, 센 쪽이 더 줘야 하고,
+ * 룰렛이 세 장 모두에 닿아야 한다. 하나라도 깨지면 뽑기가 뽑기가 아니게 된다. */
 const gate = [];
 const gateFail = (m) => gate.push(m);
 for (let base = 1; base <= 5; base++) {
   const [lo, mid, hi] = D.cardLevels(base);
-  if (!(lo < mid && mid < hi)) gateFail(`base=${base}: 카드 난이도가 겹친다 [${lo},${mid},${hi}]`);
+  if (!(lo < mid && mid < hi)) gateFail(`base=${base}: 세 장의 난이도가 겹친다 [${lo},${mid},${hi}]`);
   if (hi > D.MAX_MATH_LV || lo < 1) gateFail(`base=${base}: 난이도가 범위를 벗어난다 [${lo},${mid},${hi}]`);
   if (!D.MATH_LEVELS[hi]) gateFail(`base=${base}: MATH_LEVELS[${hi}] 가 없다`);
   const muls = [lo, mid, hi].map(lv => D.cardRefundMul(lv, base));
-  if (!(muls[0] < muls[1] && muls[1] < muls[2])) gateFail(`base=${base}: 어려운 카드가 더 주지 않는다 ${muls}`);
+  if (!(muls[0] < muls[1] && muls[1] < muls[2])) gateFail(`base=${base}: 센 문제가 더 주지 않는다 ${muls}`);
   if (Math.abs(D.cardRefundMul(base, base) - 1) > 1e-9 && base > 1) {
     gateFail(`base=${base}: 기준 난이도의 환급 배수가 1이 아니다 (${D.cardRefundMul(base, base)})`);
   }
-  /* 별조각은 "기준보다 어려운 걸 골랐을 때"만 — 안전 카드로는 절대 안 나온다 */
-  if (D.cardShards(lo, base) !== 0) gateFail(`base=${base}: 안전 카드에서 별조각이 나온다`);
+  /* 별조각은 "기준보다 센 게 걸렸을 때"만 — 순한 문제로는 절대 안 나온다 */
+  if (D.cardShards(lo, base) !== 0) gateFail(`base=${base}: 순한 문제에서 별조각이 나온다`);
+
+  /* --- 룰렛 --- */
+  const odds = D.cardOdds(base);
+  const sum = odds.reduce((a, b) => a + b, 0);
+  if (odds.length !== 3) gateFail(`base=${base}: 확률이 세 장 몫이 아니다 (${odds.length})`);
+  if (Math.abs(sum - 1) > 1e-9) gateFail(`base=${base}: 확률의 합이 1이 아니다 (${sum})`);
+  if (odds.some(p => p <= 0)) gateFail(`base=${base}: 절대 안 걸리는 장이 있다 ${odds}`);
+  /* 실제로 굴려서 세 장 모두 나오는지, 분포가 확률과 맞는지 */
+  const hit = [0, 0, 0];
+  let seed = 12345 + base;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  for (let i = 0; i < 60000; i++) hit[D.cardRoll(base, rnd)]++;
+  hit.forEach((n, i) => {
+    if (n === 0) gateFail(`base=${base}: ${i}번 장이 한 번도 안 걸린다`);
+    if (Math.abs(n / 60000 - odds[i]) > 0.02) {
+      gateFail(`base=${base}: ${i}번 장 실제 ${(n / 60000 * 100).toFixed(1)}% ≠ 규정 ${(odds[i] * 100).toFixed(0)}%`);
+    }
+  });
+  /* 2문제 연속 관문(lv5+)이 걸리는 빈도는 낮게 유지한다 — 매번 걸리면 벌칙이 된다 */
+  const hardShare = [lo, mid, hi].reduce((a, lv, i) => a + (D.mathRounds(lv) > 1 ? odds[i] : 0), 0);
+  if (hardShare > 0.7) gateFail(`base=${base}: 2문제 관문이 ${Math.round(hardShare * 100)}%로 너무 자주 걸린다`);
+}
+/* 룰렛은 게임 난수를 쓰지 않는다(기본값이 Math.random). 주입한 난수만 쓰는지 확인 */
+{
+  let used = 0;
+  D.cardRoll(3, () => { used++; return 0.5; });
+  if (used !== 1) gateFail(`cardRoll이 난수를 ${used}번 쓴다 — 정확히 한 번이어야 한다`);
 }
 /* 적응형 보정: 근거가 쌓이기 전엔 0, 잘하면 +1, 막히면 -1 */
 if (D.adaptOffset([]) !== 0) gateFail('기록이 없는데 난이도를 움직인다');
@@ -128,16 +155,17 @@ if (!(D.mathTime(18, 5) < D.mathTime(62, 1))) gateFail('쉬운 유형이 어려�
 for (let lv = 1; lv <= 4; lv++) if (D.mathRounds(lv) !== 1) gateFail(`lv${lv}: 2문제 관문이 너무 일찍 나온다`);
 if (D.mathRounds(5) !== 2 || D.mathRounds(6) !== 2) gateFail('최고 난이도가 2문제 관문이 아니다');
 
-console.log('\n--- 관문 규칙 (카드 3장 · 적응형) ---');
+console.log('\n--- 관문 규칙 (문제 룰렛 · 적응형) ---');
 if (gate.length) {
   bad = true;
   for (const m of gate) console.log(`   ❌ ${m}`);
 } else {
-  console.log('  ✅ 카드 3장 · 환급 · 시간 · 적응형 보정 불변식 모두 통과');
+  console.log('  ✅ 세 장 · 확률 · 환급 · 시간 · 적응형 보정 불변식 모두 통과');
   for (let base = 1; base <= 5; base++) {
     const lvs = D.cardLevels(base);
+    const odds = D.cardOdds(base);
     console.log(`  base ${base} → ${lvs.map((lv, i) =>
-      `${D.CARD_STYLE[i].emoji}lv${lv}(×${D.cardRefundMul(lv, base).toFixed(2)}${D.cardShards(lv, base) ? ' ✨' : ''})`).join(' ')}`);
+      `${D.CARD_STYLE[i].emoji}lv${lv} ${Math.round(odds[i] * 100)}%(×${D.cardRefundMul(lv, base).toFixed(2)}${D.cardShards(lv, base) ? ' ✨' : ''})`).join('  ')}`);
   }
 }
 

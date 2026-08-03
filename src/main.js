@@ -182,12 +182,14 @@ function openMath(mode, pending = null) {
   offerCards();
 }
 
-/* ---------- 문제 카드 3장 ----------
- * ★ 관문을 "세금"에서 "내기"로 바꾸는 곳.
- *   난이도를 아무리 잘 조율해도 어떤 아이에겐 쉽고 어떤 아이에겐 벅차다.
- *   그래서 마지막 보정을 푸는 사람 손에 넘긴다 — 세 장을 실제로 뽑아 놓고,
- *   유형 이름·제한 시간·환급 금액을 전부 적어서 알고 고르게 한다.
- *   (고르지 않은 두 장은 keep()하지 않는다 — 다음 관문의 후보가 좁아지면 안 된다) */
+/* ---------- 문제 룰렛 ----------
+ * ★ 관문을 "세금"에서 "뽑기"로 바꾸는 곳.
+ *   한동안은 세 장 중에서 고르게 했다. 난이도 보정을 푸는 사람 손에 넘긴다는
+ *   뜻이었는데, 조합이 연쇄로 이어지다 보니 한 판에 열댓 번 같은 메뉴를 넘기는
+ *   일이 됐다 — 선택이 재미가 아니라 짐이 됐다.
+ *   그래서 고르는 건 지우고 **변덕**만 남겼다: 세 장이 펼쳐지고 불빛이 돌다가
+ *   하나에서 뿅 멈춘다. 걸린 문제는 무조건 푼다. 결정 비용 0, 긴장은 그대로.
+ *   (걸리지 않은 두 장은 keep()하지 않는다 — 다음 관문의 후보가 좁아지면 안 된다) */
 function offerCards() {
   const cost = modal.info ? modal.info.cost : 0;
   const base = modal.base;
@@ -212,10 +214,21 @@ function offerCards() {
     : modal.adapt < 0
       ? '🌱 잠깐 숨 고르기 — 문제가 한 칸 쉬워졌어요'
       : '';
-  ui.showCards(modal.cards, pickCard, note);
+  /* 뽑기는 게임 난수(state.rng)를 쓰지 않는다 — 문제를 뽑았다고 웨이브가 바뀌면 안 된다 */
+  const landed = D.cardRoll(base);
+  ui.rollCards(modal.cards, landed, {
+    note,
+    onTick: () => SFX.tick(false),
+    onLand: (i) => {
+      const c = modal.cards[i];
+      SFX.challenge(c.lv);
+      if (c.shards) SFX.shard();
+    },
+    onDone: startCard,
+  });
 }
 
-function pickCard(i) {
+function startCard(i) {
   const c = modal.cards && modal.cards[i];
   if (!c || !ui.isMathOpen()) return;
   modal.card = c;
@@ -223,9 +236,9 @@ function pickCard(i) {
   modal.rounds = c.rounds;
   modal.round = 1;
   ui.setMathTone(c.lv);
-  SFX.challenge(c.lv);
-  if (c.rounds > 1) ui.toast(`🌌 ${c.rounds}문제를 연속으로 맞혀야 하는 관문이에요!`, 'bad');
-  MathGen.keep(c.prob);                  // 고른 한 장만 "낸 문제"로 기록
+  if (c.rounds > 1) ui.toast(`🌌 ${c.rounds}문제를 연속으로 맞혀야 하는 관문이 걸렸어요!`, 'bad');
+  else if (c.shards) ui.toast(`🔴 센 문제가 걸렸어요! 한 번에 맞히면 ✨별조각 +${c.shards}`, 'good');
+  MathGen.keep(c.prob);                  // 걸린 한 장만 "낸 문제"로 기록
   startProblem(c.prob);
 }
 
@@ -244,7 +257,7 @@ function startProblem(prob) {
   const mul = modal.card ? modal.card.mul : 1;
   const refund = Math.round(cost * D.refundRatio(modal.grade) * state.mathMul * mul);
   const bonus = [];
-  if (mul > 1.01) bonus.push(`🎯카드 ×${mul.toFixed(2)}`);
+  if (mul > 1.01) bonus.push(`🎯${modal.card ? D.CARD_STYLE[modal.cards.indexOf(modal.card)].name : '걸린 문제'} ×${mul.toFixed(2)}`);
   if (streak >= 1) bonus.push(`🔥${streak + 1}연승 ×${D.streakMul(streak + 1).toFixed(2)}`);
   const shard = modal.card && modal.card.shards ? ` ✨별조각 +${modal.card.shards}` : '';
   ui.setProblem({
@@ -1142,12 +1155,11 @@ document.addEventListener('keydown', (ev) => {
   /* --- 수학 모달 --- */
   if (ui.isMathOpen()) {
     if (key === 'Escape') { ev.preventDefault(); closeMathAll(); return; }
-    /* 카드를 고르는 중 — 숫자키로 고르고, Enter는 가운데(정석).
-     * 고르기 전에는 제출도 힌트도 없으므로 나머지 키는 전부 삼킨다. */
+    /* 뽑기가 도는 중 — 아무 키나 누르면 결과로 건너뛴다.
+     * 고를 것이 없으므로 나머지 키는 전부 삼킨다(뒤에서 제출이 새면 안 된다). */
     if (ui.isCardOpen()) {
-      const n = Number(key);
-      if (n >= 1 && n <= ui.cardCount()) { ev.preventDefault(); ui.pickCard(n - 1); }
-      else if (key === 'Enter' || key === ' ') { ev.preventDefault(); ui.pickCard(1); }
+      ev.preventDefault();
+      ui.skipRoll();
       return;
     }
     if (ui.isAnswered() && (key === 'Enter' || key === ' ')) {
@@ -1423,8 +1435,6 @@ demo.attach({
   isMathOpen: () => ui.isMathOpen(),
   isAnswered: () => ui.isAnswered(),
   isCardOpen: () => ui.isCardOpen(),
-  getCards: () => modal.cards || [],
-  pickCard: (i) => ui.pickCard(i),
   getProblem: () => modal.prob,
   closeStory,
   summon: doSummon,

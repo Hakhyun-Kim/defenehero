@@ -85,18 +85,9 @@ export const demo = {
     /* ③ 문제창 — 답을 넣는다. 봇은 동전을 던지지만 여기선 실제 정답을 타이핑한다 */
     if (A.isMathOpen()) {
       if (A.isAnswered()) return;              // 채점 결과 표시 중 (자동으로 다음으로 간다)
-      /* ③-1 카드 세 장 중 하나를 고른다 — 사람이 누르는 그 버튼을 그대로 누른다 */
-      if (A.isCardOpen()) {
-        if (this.t <= 0) {
-          const cards = A.getCards();
-          const i = Bot.pickCardIndex(P, cards.length || 3, state.rng || Math.random);
-          const c = cards[i];
-          this.say(`🃏 ${c ? `${c.label} (${c.lv}단계)` : '문제'} 카드를 고릅니다`);
-          A.pickCard(i);
-          this.t = PACE.answer;
-        }
-        return;
-      }
+      /* ③-1 문제 룰렛이 도는 중 — 사람과 똑같이 그냥 기다린다.
+       * 고를 것이 없어졌으므로 데모가 할 일도 없다 (뽑기는 스스로 멈춘다). */
+      if (A.isCardOpen()) { this.t = PACE.answer; return; }
       if (this.t <= 0) {
         const prob = A.getProblem();
         if (prob) {

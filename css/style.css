@@ -1440,30 +1440,30 @@ button { font-family: inherit; }
   border: 2px solid #dfe7f1;
   border-radius: 14px;
   background: #fbfdff;
-  cursor: pointer;
   font-family: inherit;
-  transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+  transition: transform 0.16s, opacity 0.22s, border-color 0.16s, box-shadow 0.16s;
 }
-.mcard:hover, .mcard:focus-visible {
-  transform: translateY(-3px);
+/* --- 룰렛 --- 불빛이 지나가는 칸 */
+.mcard.spot {
   border-color: #2478e0;
-  box-shadow: 0 8px 18px rgba(36, 120, 224, 0.22);
-  outline: none;
+  box-shadow: 0 0 0 3px rgba(36, 120, 224, 0.18), 0 8px 18px rgba(36, 120, 224, 0.2);
+  transform: translateY(-4px) scale(1.03);
 }
-.mcard .mc-key {
-  position: absolute;
-  top: -8px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 20px;
-  height: 20px;
-  line-height: 20px;
-  border-radius: 999px;
-  background: #23405f;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 900;
+/* 멈춘 칸 — 여기서 "뿅" 한다 */
+.mcard.won {
+  border-color: #f0a500;
+  box-shadow: 0 0 0 4px rgba(240, 165, 0, 0.28), 0 12px 26px rgba(240, 165, 0, 0.3);
+  animation: cardpop 0.42s cubic-bezier(0.2, 1.7, 0.4, 1);
+  z-index: 1;
 }
+@keyframes cardpop {
+  0% { transform: scale(0.9); }
+  55% { transform: scale(1.16); }
+  100% { transform: scale(1.08); }
+}
+.mcard.won { transform: scale(1.08); }
+/* 비껴간 칸 — 지우지 않고 흐리게만 남긴다. 무엇을 피했는지 보여야 뽑기가 산다 */
+.mcard.lost { opacity: 0.32; transform: scale(0.94); filter: grayscale(0.5); }
 .mcard .mc-name { font-size: 14px; font-weight: 900; color: #23405f; margin-top: 4px; }
 .mcard .mc-stars { font-size: 11px; font-weight: 900; letter-spacing: -1px; }
 .mcard .mc-label {
@@ -1479,9 +1479,15 @@ button { font-family: inherit; }
 .mcard .mc-time { font-size: 11px; color: #7b8ca1; }
 .mcard .mc-pay { font-size: 13px; font-weight: 900; color: #c77a00; }
 .mcard .mc-shard { color: #7b5cd6; }
-/* 도전 카드(가장 어려운 쪽)는 눈에 띄게 — 고르라고 부추기는 게 목적이다 */
+/* 센 문제(가장 어려운 쪽)는 한눈에 — 이게 걸리면 "당첨"이라는 신호 */
 .mcard.lv5, .mcard.lv6 { border-color: #ffc2da; background: #fff8fb; }
 .mcard.lv6 { border-color: #ffb3c4; }
+/* 결과 문구는 뽑기가 멈춘 뒤에만 강조된다 (돌아가는 동안은 적응형 안내가 앉아 있다) */
+.mcards-note.landed {
+  color: #7a3b00;
+  background: #ffe9c2;
+  animation: cardpop 0.4s cubic-bezier(0.2, 1.7, 0.4, 1);
+}
 
 /* ===== 좁거나 낮은 화면 =====
  * 두 열이 들어갈 폭이 안 되거나 세로가 너무 짧으면, 한 줄로 쌓고 페이지 스크롤을 되살린다.
