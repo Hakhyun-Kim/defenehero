@@ -61,9 +61,54 @@ function mixHex(a, b, t, out) {
   return out.copy(_cA).lerp(_cB, t);
 }
 
-/* 웨이브 → 0..1 위상. 13웨이브부터는 계속 밤. */
+/* 웨이브 → 0..1 위상. 13웨이브부터는 계속 밤.
+ * ★ 지금은 안 쓴다 — 시간대는 실제 시계가 정한다(clockPhase).
+ *   웨이브로 하루를 저물게 했더니 13웨이브를 넘기는 판에서는 **계속 밤**이었다.
+ *   오래 버틸수록 화면이 어두워지기만 하니, 잘하는 사람이 벌을 받는 꼴이었다.
+ *   대신 진짜 시각을 쓰면 낮에 켜면 낮이고 밤에 켜면 밤이라 한결 자연스럽다. */
 export function wavePhase(wave) {
   return Math.max(0, Math.min(1, ((wave || 1) - 1) / 12));
+}
+
+/* ---------- 실제 시각 → 시간대 위상 ----------
+ * 팔레트는 아침(0) → 한낮(0.28) → 황금빛(0.56) → 노을(0.80) → 밤(1.00) 한 방향이라
+ * 하루를 왕복시킨다: 밤 → 여명 → 아침 → 한낮 → 황금빛 → 노을 → 밤.
+ * 새벽에는 노을 팔레트를 거꾸로 쓴다 — 여명과 노을은 실제로도 비슷한 색이다. */
+const CLOCK = [
+  { h: 0,    p: 1.00 },   // 한밤
+  { h: 4.5,  p: 1.00 },
+  { h: 6.0,  p: 0.80 },   // 여명
+  { h: 7.5,  p: 0.30 },
+  { h: 9.0,  p: 0.05 },   // 아침
+  { h: 12.0, p: 0.28 },   // 한낮
+  { h: 15.0, p: 0.30 },
+  { h: 17.0, p: 0.56 },   // 황금빛
+  { h: 18.5, p: 0.80 },   // 노을
+  { h: 20.0, p: 1.00 },   // 밤
+  { h: 24.0, p: 1.00 },
+];
+/* hour: 0~24 실수. 넘겨주지 않으면 지금 시각을 쓴다 */
+export function clockPhase(hour) {
+  let h = hour;
+  if (h == null) { const d = new Date(); h = d.getHours() + d.getMinutes() / 60; }
+  h = ((h % 24) + 24) % 24;
+  let i = 0;
+  while (i < CLOCK.length - 2 && h > CLOCK[i + 1].h) i++;
+  const a = CLOCK[i], b = CLOCK[i + 1];
+  const t = (h - a.h) / (b.h - a.h);
+  return a.p + (b.p - a.p) * Math.max(0, Math.min(1, t));
+}
+
+/* 달의 위상도 진짜로 — 삭(0) → 보름(1) → 삭. 삭망월 29.53일 기준.
+ * 2000-01-06 18:14 UTC 가 삭이었다(천문 상수). 그림용이라 이 정도 정확도면 충분하다. */
+const SYNODIC = 29.530588853;
+const NEW_MOON = Date.UTC(2000, 0, 6, 18, 14) / 86400000;
+export function moonPhaseNow(now) {
+  const days = (now == null ? Date.now() : now) / 86400000;
+  const age = (((days - NEW_MOON) % SYNODIC) + SYNODIC) % SYNODIC;   // 0~29.53
+  /* 0=삭, 0.5=보름, 1=삭 → 밝기는 삼각파 (0 → 1 → 0) */
+  const frac = age / SYNODIC;
+  return 1 - Math.abs(frac - 0.5) * 2;
 }
 
 /* 위상 → 팔레트. 매 프레임 부르므로 객체를 새로 만들지 않고 out 에 채운다. */

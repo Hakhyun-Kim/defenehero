@@ -138,7 +138,7 @@ export function adaptOffset(window) {
  * 자릿수가 늘면 부분곱과 받아올림이 함께 늘어서 시간이 모자라진다.
  * 그래서 유형 기준시간(sec)에 크기 보정을 한 번 더 얹는다(최대 +35%). */
 export const mathTime = (sec, lv, over = 0) =>
-  Math.round((sec || 40) * (0.92 + 0.06 * clampLv(lv)) * (1 + 0.35 * Math.max(0, Math.min(1, over))));
+  Math.round((sec || 40) * (1.25 + 0.06 * clampLv(lv)) * (1 + 0.35 * Math.max(0, Math.min(1, over))));
 
 /* 세로셈 칸이 뜨기까지 — 바로 아는 문제까지 칸으로 덮으면 방해가 된다 */
 export const VERT_DELAY_MS = 5000;
@@ -163,6 +163,21 @@ export const MATH_TRIES = 3;        // 한 관문에서 틀릴 수 있는 횟수
 export const TIME_WARN = 0.3;          // 남은 시간 30% 이하 = 긴박 연출
 /* 빨리 풀수록 환급이 커진다 (남은 시간 비율 × 최대 60%) */
 export const SPEED_BONUS_MAX = 0.6;
+
+/* ---------- 빠른 풀이 = 더 센 용사 ----------
+ * ★ 시간을 넉넉히 준 대신, 빨리 푸는 데 진짜 이유를 붙였다.
+ *   제한 시간이 빠듯하면 "쫓기는 벌"이 되고, 넉넉하기만 하면 서두를 이유가 없다.
+ *   그래서 시간은 넉넉하게 주고, **남은 시간만큼 그 조합으로 태어난 용사가 세진다.**
+ *
+ *   골드 환급이 "얼마나 벌었나"라면 이건 "얼마나 강해졌나"다.
+ *   수학을 잘하면 성을 더 잘 지킨다 — 이 게임이 처음부터 하려던 말이 여기서 완성된다.
+ *   환급과 같은 조건(한 번에·힌트 없이)을 쓴다. 조건이 둘로 갈리면 설명이 어려워진다. */
+/* 0.30으로 잡았더니 밸런스 봇에서 고수가 기준선을 +6웨이브 넘겼다.
+ * 시간을 넉넉히 준 탓에 "남은 시간"이 전보다 크게 남아서 보너스가 거의 항상 만점 가까이
+ * 붙은 것이다 — 시간 넉넉함과 이 보너스는 같은 손잡이의 양쪽이라 함께 조여야 한다. */
+export const SPEED_POWER_MAX = 0.18;         // 남은 시간 100% = 공격력 +18%
+export const speedPower = (leftRatio) =>
+  Math.round(Math.max(0, Math.min(1, leftRatio)) * SPEED_POWER_MAX * 100) / 100;
 /* 지혜 연승: 한 번에 맞힌 문제가 연달아 쌓이면 환급 배수가 오른다 (최대 2배) */
 export const streakMul = (n) => 1 + Math.min(4, Math.max(0, n - 1)) * 0.25;
 export const STREAK_MAX = 5;

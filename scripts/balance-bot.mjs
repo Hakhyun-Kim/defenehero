@@ -60,6 +60,9 @@ function prepActions(state, P) {
     if (r.ok && tries === 0) {
       E.refundFirstTry(state, r.cost, P.grade, D.cardRefundMul(lv, base));
       state.mathShards = (state.mathShards || 0) + D.cardShards(lv, base);
+      /* 빠른 풀이 보너스 — 봇은 시계를 안 보므로 "실력만큼 빨리 푼다"로 근사한다.
+       * 안 태우면 사람은 세지는데 시뮬은 안 세져서 기준선이 실제와 갈라진다. */
+      E.empowerHero(r.hero, D.speedPower(P.acc * 0.6));
     }
   }
   /* 3) 배치 */

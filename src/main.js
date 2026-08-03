@@ -372,6 +372,15 @@ function submitMath(value) {
           renderer.celebrate(0xd8b4ff, true);
         }
         if (firstTry) {
+          /* ★ 빨리 푼 만큼 이 용사가 세진다 — 제한 시간을 넉넉히 준 대신,
+           * 서두를 이유를 "벌"이 아니라 "상"으로 붙였다 (mathgate.js 참고).
+           * 수학을 잘하면 성을 더 잘 지킨다 — 이 게임이 하려던 말이 여기서 완성된다. */
+          const power = D.speedPower(modal.minLeft);
+          if (power > 0) {
+            E.empowerHero(r.hero, power);
+            msg += ` ⚡빠른 풀이! 공격력 +${Math.round(power * 100)}%`;
+            renderer.celebrate(0xffe066, false);
+          }
           /* 정확 + 속도 + 연승 + 나온 난이도 = 환급. 시계를 보며 푸는 이유가 여기서 생긴다 */
           const speed = 1 + D.SPEED_BONUS_MAX * modal.minLeft;
           const sm = D.streakMul(streak);

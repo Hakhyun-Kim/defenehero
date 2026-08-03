@@ -24,7 +24,7 @@
  *     ready(grade, lv, ctx)         -> 지금 낼 수 있는 전술 문제가 있는가
  * ===================================================== */
 import * as D from '../data.js';
-import { heroDps, waveSummary } from '../engine.js';
+import { heroDps, waveSummary, mythicCount } from '../engine.js';
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const at = (over, lo, hi) => Math.round(lo + (hi - lo) * over);
@@ -32,14 +32,17 @@ const at = (over, lo, hi) => Math.round(lo + (hi - lo) * over);
 /* ---------- 엔진이 쓰는 값 그대로 (spawnEnemy와 같은 식) ----------
  * 여기 세 함수가 engine.js 와 어긋나면 문제가 통째로 거짓말이 된다.
  * scripts/math-check.mjs 가 실제로 웨이브를 돌려서 이 값들을 대조한다. */
+/* 신화의 압력(enemies.js) — 다음 웨이브는 **지금** 데리고 있는 신화 수에 반응한다.
+ * state.mythicPress 는 지난 웨이브의 값이라 준비 단계에서 쓰면 한 박자 늦는다. */
+const press = (ctx) => mythicCount(ctx);
 export function enemyHp(ctx, type) {
   const E = D.ENEMY_TYPES[type];
   const ramp = E.midBoss ? D.midBossRamp(ctx.wave) : 1;
-  return Math.round(E.hp * D.hpScale(ctx.wave) * ctx.diff.hpMul * ramp);
+  return Math.round(E.hp * D.hpScale(ctx.wave) * ctx.diff.hpMul * ramp * D.mythicHpMul(press(ctx)));
 }
 export function enemyGold(ctx, type) {
   const E = D.ENEMY_TYPES[type];
-  return Math.round(E.gold * D.enemyGoldScale(ctx.wave) * ctx.diff.goldMul);
+  return Math.round(E.gold * D.enemyGoldScale(ctx.wave) * ctx.diff.goldMul * D.mythicGoldMul(press(ctx)));
 }
 export function enemyCastleDmg(ctx, type) {
   return Math.round(D.ENEMY_TYPES[type].castleDmg * D.castleDmgScale(ctx.wave));
@@ -90,7 +93,7 @@ const TYPES = [
       const total = list.reduce((a, x) => a + x.n, 0);
       return {
         text: `이번 웨이브에 나오는 몬스터예요.\n${parts.join('\n')}\n모두 몇 마리일까요?`,
-        answer: total,
+        answer: total, needs: list.map(x => x.n),
         hint: `${list.map(x => x.n).join(' + ')} 를 차례대로 더해요.`,
       };
     },
@@ -112,7 +115,7 @@ const TYPES = [
       const { h, t, hp, n } = best;
       return {
         text: `${label(t)}의 체력은 ${hp}이에요.\n${heroLabel(h)}의 한 방은 ${h.dmg}.\n몇 번 때려야 쓰러질까요?`,
-        answer: n,
+        answer: n, needs: [hp, h.dmg],
         hint: `${hp} ÷ ${h.dmg} 를 계산하고, 딱 안 떨어지면 한 번 더 때려야 하니 「올림」해요.`,
       };
     },
@@ -129,7 +132,7 @@ const TYPES = [
       if (!two) {
         return {
           text: `이번 웨이브에는 ${label(a.type)}이(가) ${a.n}마리 나와요.\n한 마리를 잡으면 골드 ${g}.\n다 잡으면 골드를 얼마나 벌까요?`,
-          answer: a.n * g,
+          answer: a.n * g, needs: [a.n, g],
           hint: `${a.n} × ${g} 를 계산해요.`,
         };
       }
@@ -137,7 +140,7 @@ const TYPES = [
       const gb = enemyGold(ctx, b.type);
       return {
         text: `이번 웨이브에는 ${label(a.type)} ${a.n}마리(한 마리 ${g}골드)와\n${label(b.type)} ${b.n}마리(한 마리 ${gb}골드)가 나와요.\n둘을 다 잡으면 골드를 얼마나 벌까요?`,
-        answer: a.n * g + b.n * gb,
+        answer: a.n * g + b.n * gb, needs: [a.n, g, b.n, gb],
         hint: `① ${a.n} × ${g} = ${a.n * g} ② ${b.n} × ${gb} = ${b.n * gb} ③ 둘을 더해요.`,
       };
     },
@@ -152,7 +155,7 @@ const TYPES = [
       const sum = heroes.reduce((a, h) => a + dpsOf(h), 0);
       return {
         text: `지금 배치된 용사들의 「초당 피해」예요.\n${parts.join('\n')}\n모두 더하면 1초에 얼마일까요?`,
-        answer: sum,
+        answer: sum, needs: heroes.map(dpsOf),
         hint: `${heroes.map(h => dpsOf(h)).join(' + ')} 를 차례대로 더해요.`,
       };
     },
@@ -166,7 +169,7 @@ const TYPES = [
       const n = Math.ceil(ctx.castleHp / d);
       return {
         text: `성 체력이 ${ctx.castleHp} 남았어요.\n${label(t)}이(가) 성에 닿으면 ${d}의 피해를 줘요.\n몇 마리가 닿으면 성이 무너질까요?`,
-        answer: n,
+        answer: n, needs: [ctx.castleHp, d],
         hint: `${ctx.castleHp} ÷ ${d} 를 계산하고 「올림」해요 — 마지막 한 마리가 마무리를 하니까요.`,
       };
     },
@@ -183,9 +186,12 @@ const TYPES = [
       const want = Math.random() < 0.2 ? room + 2 : room - 1 - Math.floor(Math.random() * 3);
       const n = Math.min(a.n, Math.max(1, want));
       return {
-        text: `성 체력이 ${ctx.castleHp} 남았어요.\n${label(a.type)} ${n}마리를 하나도 못 막고 다 놓치면\n성 체력이 얼마나 남을까요? (0보다 작아지면 0)`,
+        /* ★ 한 마리당 피해(d)를 반드시 문장에 적는다. 예전엔 힌트에만 있어서
+         * 힌트를 사지 않으면 풀 수 없는 문제였다 — 규칙 ②(적힌 숫자만으로 풀린다) 위반. */
+        text: `성 체력이 ${ctx.castleHp} 남았어요.\n${label(a.type)}은(는) 성에 닿을 때마다 ${d}씩 깎아요.\n${n}마리를 하나도 못 막으면 성 체력이 얼마나 남을까요? (0보다 작아지면 0)`,
         answer: Math.max(0, ctx.castleHp - n * d),
-        hint: `한 마리가 ${d}씩 깎아요. ${n} × ${d} = ${n * d} 를 ${ctx.castleHp}에서 빼요 (음수면 0).`,
+        needs: [ctx.castleHp, d, n],
+        hint: `${n} × ${d} = ${n * d} 를 ${ctx.castleHp}에서 빼요 (음수면 0).`,
       };
     },
   },
@@ -210,7 +216,7 @@ const TYPES = [
        * 조금 다를 수 있다 — 그래서 특정 한 마리의 예언이 아니라 주어진 수의 계산으로 묻는다. */
       return {
         text: `${names[r]}의 길이는 ${len}이에요.\n${label(t)}의 빠르기는 1초에 ${spd}.\n이 빠르기로 포탈에서 성까지 가면 몇 초일까요? (반올림해서 정수로)`,
-        answer: Math.round(exact),
+        answer: Math.round(exact), needs: [len, spd],
         hint: `${len} ÷ ${spd} 를 계산하고 소수 첫째 자리에서 반올림해요.`,
       };
     },
@@ -223,7 +229,7 @@ const TYPES = [
       const dps = fieldDps(ctx);
       return {
         text: `이번 웨이브 몬스터의 체력을 모두 더하면 ${hp}이에요.\n지금 배치된 용사들의 초당 피해 합은 ${dps}.\n쉬지 않고 때린다면 정리하는 데 몇 초 걸릴까요? (올림)`,
-        answer: Math.ceil(hp / dps),
+        answer: Math.ceil(hp / dps), needs: [hp, dps],
         hint: `${hp} ÷ ${dps} 를 계산하고 「올림」해요. 남은 한 조각도 때려야 끝나니까요.`,
       };
     },
@@ -236,7 +242,7 @@ const TYPES = [
       const t = pick([10, 15, 20, 25, 30, 40]);
       return {
         text: `이번 웨이브 몬스터의 체력을 모두 더하면 ${hp}이에요.\n${t}초 안에 다 정리하려면\n용사들의 초당 피해 합이 「적어도」 얼마여야 할까요? (올림)`,
-        answer: Math.ceil(hp / t),
+        answer: Math.ceil(hp / t), needs: [hp, t],
         hint: `${hp} ÷ ${t} 를 계산하고 「올림」해요 — 모자라면 시간 안에 못 끝내니까요.`,
       };
     },
@@ -253,7 +259,7 @@ const TYPES = [
        * 하한선을 묻는 것으로 바꾸면 문장도 참이 되고 계산도 그대로 남는다. */
       return {
         text: `지금 골드가 ${ctx.gold}이에요.\n${label(a.type)} ${a.n}마리를 잡으면 한 마리당 ${g}골드,\n웨이브를 깨면 보너스로 ${bonus}골드를 더 받아요.\n웨이브가 끝나면 골드가 「적어도」 얼마가 될까요?`,
-        answer: ctx.gold + a.n * g + bonus,
+        answer: ctx.gold + a.n * g + bonus, needs: [ctx.gold, a.n, g, bonus],
         hint: `① ${a.n} × ${g} = ${a.n * g} ② ${ctx.gold} + ${a.n * g} + ${bonus}`,
       };
     },
@@ -264,7 +270,7 @@ const TYPES = [
     ready: (ctx) => ctx.gold >= D.SUMMON_COST,
     make: (over, ctx) => ({
       text: `지금 골드가 ${ctx.gold}이에요.\n용사 한 명을 소환하는 데 ${D.SUMMON_COST}골드가 들어요.\n최대 몇 명까지 뽑을 수 있을까요?`,
-      answer: Math.floor(ctx.gold / D.SUMMON_COST),
+      answer: Math.floor(ctx.gold / D.SUMMON_COST), needs: [ctx.gold, D.SUMMON_COST],
       hint: `${ctx.gold} ÷ ${D.SUMMON_COST} 를 계산하고, 남는 골드로는 못 뽑으니 「버림」해요.`,
     }),
   },
@@ -321,6 +327,7 @@ export function gen(grade, lv = 1, remember = true, ctx = null) {
     label: t.label,
     sec: t.sec,
     over,
+    needs: p.needs || [],
     min: t.min,
     lv: L,
     grade,

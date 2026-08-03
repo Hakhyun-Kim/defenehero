@@ -10,7 +10,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import * as D from './data.js';
-import { WindGrass, Sea, Fireflies, SHORE_Z, makePalette, daylightPalette, wavePhase } from './nature.js';
+import { WindGrass, Sea, Fireflies, SHORE_Z, makePalette, daylightPalette, clockPhase, moonPhaseNow } from './nature.js';
 import { SkyBand } from './sky.js';
 
 const S = 1 / 36;
@@ -553,11 +553,15 @@ export class Renderer3D {
     this.fogNear = 30; this.fogFar = 78;
     this.scene.fog = new THREE.Fog(0xcfe9ff, this.fogNear, this.fogFar);
     this.scene.background = new THREE.Color(0xcfe9ff);
-    /* 시간대(웨이브) → 조명·안개·물빛. 보스 분위기는 이 위에 덧칠된다. */
+    /* 시간대(실제 시각) → 조명·안개·물빛. 보스 분위기는 이 위에 덧칠된다. */
     this.palette = makePalette();
-    this.dayPhase = 0;        // 실제 표시 중인 위상 (목표를 향해 서서히 따라간다)
-    this.dayTarget = 0;
-    daylightPalette(0, this.palette);
+    /* ?hour=18.5 로 시간대를 강제할 수 있다 (확인용 · 다른 시간대 구경용) */
+    const hp = new URLSearchParams(location.search).get('hour');
+    this.forcedHour = hp != null && hp !== '' && Number.isFinite(Number(hp)) ? Number(hp) : null;
+    /* 첫 프레임부터 맞는 시간대로 시작한다 — 아침에 켰는데 밤이 한 번 스치면 어색하다 */
+    this.dayPhase = clockPhase(this.forcedHour);
+    this.dayTarget = this.dayPhase;
+    daylightPalette(this.dayPhase, this.palette);
     this.baseFog = this.palette.fog.clone();
     this.baseClear = this.palette.sky.clone();
     this.bossMode = 0;        // 0 없음 · 1 중간보스 · 2 대보스
@@ -1141,14 +1145,21 @@ export class Renderer3D {
   /* 보스 분위기: 하늘·안개·조명을 어둡게 (0 없음 / 1 중간 / 2 대보스) */
   setBossMode(level) { this.bossMode = level; }
 
-  /* ---------- 시간대: 웨이브가 지날수록 아침 → 석양 → 밤 ----------
+  /* ---------- 시간대: 지금 몇 시인가 ----------
+   * 예전에는 웨이브가 지날수록 저물었는데, 13웨이브를 넘기면 계속 밤이었다.
+   * 오래 버틸수록 화면이 어두워지기만 하니 잘하는 사람이 벌을 받는 꼴이었다.
+   * 이제 **실제 시각**이 정한다 — 낮에 켜면 낮, 밤에 켜면 밤. 달도 진짜 위상을 따른다.
+   * (?hour=18.5 로 강제할 수 있다 — 확인용이자 "다른 시간대를 보고 싶을 때"용)
+   *
    * 팔레트가 "기준값"을 만들고 보스 분위기가 그 위에 덧칠한다.
    * 순서가 중요하다 — 반대로 하면 보스 연출이 시간대에 덮여 사라진다. */
   _updateDaylight(dt, state) {
-    if (state) {
-      this.dayTarget = wavePhase(state.wave);
-      /* 달은 밤이 시작될 무렵 초승달이었다가 오래 버틸수록 차오른다 */
-      this.moonPhase = Math.max(0.12, Math.min(1, (state.wave - 8) / 15));
+    /* 시계는 1초에 한 번만 본다 — 매 프레임 Date를 만들 이유가 없다 */
+    this._clockT = (this._clockT || 0) - dt;
+    if (this._clockT <= 0) {
+      this._clockT = 1;
+      this.dayTarget = clockPhase(this.forcedHour);
+      this.moonPhase = Math.max(0.12, moonPhaseNow());
     }
     /* 웨이브가 넘어갈 때 뚝 끊기지 않게 천천히 따라간다 */
     this.dayPhase += (this.dayTarget - this.dayPhase) * Math.min(1, dt * 0.5);

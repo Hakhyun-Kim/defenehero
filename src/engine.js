@@ -41,6 +41,7 @@ export function createGame(opts = {}) {
     shardsEarned: 0, mathShards: 0,
     mathWindow: [],             // 최근 "한 번에 맞힘" 기록 (적응형 난이도, mathgate.js)
     mathLocked: new Set(),      // 포기했거나 세 번 틀린 조합 — 이번 준비 단계 동안 잠긴다
+    mythicPress: 0,             // 이번 웨이브가 반응하는 신화 용사 수 (enemies.js)
     combo: { count: 0, timer: 0 },
     discovered: new Set(),      // 이번 판에 만들어 본 조합 결과 (도감 ✓)
     time: 0,
@@ -56,6 +57,16 @@ export function makeHero(state, cls, tier) {
     dmg: Math.round(s.dmg * state.dmgMul),
     padIndex: -1, x: 0, y: 0, cd: 0,
   };
+}
+
+/* 빠른 풀이 보너스를 용사에게 새긴다 (mathgate.js 참고).
+ * spark 를 따로 들고 있는 이유: 저장/불러오기에서 dmg 는 등급표로 다시 계산되므로,
+ * 곱한 결과만 남기면 불러올 때 보너스가 사라진다. */
+export function empowerHero(hero, power) {
+  if (!hero || !(power > 0)) return 0;
+  hero.spark = Math.min(1, (hero.spark || 0) + power);
+  hero.dmg = Math.round(hero.dmg * (1 + power));
+  return hero.spark;
 }
 
 /* 등급 오버라이드를 합친 실효 수정자 (전설 → 신화 순으로 덮어씌움) */
@@ -519,9 +530,16 @@ export function waveSummary(state) {
   return counts;
 }
 
+/* 지금 데리고 있는 신화 용사 수 — 몬스터가 여기에 반응한다 (enemies.js의 신화의 압력) */
+export const mythicCount = (state) =>
+  [...state.bench, ...state.field].filter(h => h.tier >= 4).length;
+
 export function startWave(state) {
   if (state.phase !== 'prep') return { ok: false };
   state.phase = 'wave';
+  /* 웨이브가 시작될 때 한 번만 센다 — 전투 중 조합으로 몬스터가 갑자기 단단해지면
+   * 방금 본 체력바와 어긋나서 "버그처럼" 보인다 */
+  state.mythicPress = mythicCount(state);
   state.spawnQueue = [...(state.pendingWave || buildWave(state))];
   state.waveT = 0;
   return { ok: true, boss: D.isBossWave(state.wave) };
@@ -534,7 +552,9 @@ function spawnEnemy(state, type, events, presetRoute) {
   /* 엘리트 — 일반 몬스터 중 일부가 "성난" 개체로 나온다.
    * 등급을 여러 단계로 쪼개는 대신 보통/특별 두 가지로만 나눠 한눈에 읽히게 했다. */
   const elite = !E.boss && !E.midBoss && state.rng() < D.eliteChance(w);
-  const hp = Math.round(E.hp * D.hpScale(w) * state.diff.hpMul * rampMul * (elite ? D.ELITE.hpMul : 1));
+  const press = state.mythicPress || 0;
+  const hp = Math.round(E.hp * D.hpScale(w) * state.diff.hpMul * rampMul
+    * (elite ? D.ELITE.hpMul : 1) * D.mythicHpMul(press));
   /* 대보스는 지름길로 돌진 */
   const route = E.boss ? D.BOSS_ROUTE : (presetRoute != null ? presetRoute : pickRoute(state));
   const start = D.routePoint(route, 0);
@@ -545,7 +565,8 @@ function spawnEnemy(state, type, events, presetRoute) {
     off: state.ri(-10, 10),
     x: start.x, y: start.y,
     spd: E.spd * (0.92 + state.rng() * 0.16),
-    gold: Math.round(E.gold * D.enemyGoldScale(w) * state.diff.goldMul * (elite ? D.ELITE.goldMul : 1)),
+    gold: Math.round(E.gold * D.enemyGoldScale(w) * state.diff.goldMul
+      * (elite ? D.ELITE.goldMul : 1) * D.mythicGoldMul(press)),
     castleDmg: E.castleDmg,
     size: E.size * (elite ? D.ELITE.sizeMul : 1), boss: !!E.boss, midBoss: !!E.midBoss,
     elite,
@@ -949,7 +970,8 @@ const SAVE_STATS = [
 ];
 
 export function serialize(state) {
-  const hero = (h) => ({ cls: h.cls, tier: h.tier, pad: h.padIndex });
+  /* spark = 빠른 풀이 보너스. 안 담으면 불러올 때 공격력이 조용히 깎인다 */
+  const hero = (h) => ({ cls: h.cls, tier: h.tier, pad: h.padIndex, spark: h.spark || 0 });
   const stats = {};
   for (const k of SAVE_STATS) stats[k] = state[k];
   return {
@@ -995,6 +1017,7 @@ export function deserialize(data, opts = {}) {
     if (!rec || !D.CLASSES[rec.cls]) return;
     if (state.bench.length >= D.BENCH_MAX) return;
     const h = makeHero(state, rec.cls, clamp(rec.tier, 0, D.maxTierOf(rec.cls), 0));
+    empowerHero(h, clamp(rec.spark, 0, D.SPEED_POWER_MAX, 0));   // 빠른 풀이 보너스도 되살린다
     state.bench.push(h);
     if (Number.isInteger(pad) && pad >= 0 && pad < D.PADS.length && !padOccupant(state, pad)) {
       placeHero(state, h.id, pad);

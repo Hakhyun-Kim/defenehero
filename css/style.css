@@ -1689,3 +1689,9 @@ button { font-family: inherit; }
 }
 /* 데모 중에는 화면 테두리가 살짝 빛나 "지금 내가 조작하는 게 아니다"를 알린다 */
 body.demo-on #scene3d { box-shadow: inset 0 0 0 3px rgba(255, 123, 123, 0.55); }
+
+/* 빠른 풀이로 태어난 용사 — 카드에서 바로 알아보게 노란 번개 */
+.hcard .bdg.spark { color: #ffb300; text-shadow: 0 0 6px rgba(255, 179, 0, 0.6); }
+
+/* 신화의 압력 — 몬스터가 세진 만큼 골드도 는다는 걸 웨이브 미리보기에 붙인다 */
+.wchip.myth { background: linear-gradient(180deg, #ff8ac4, #d5399a); color: #fff; font-weight: 800; }

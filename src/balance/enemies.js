@@ -83,3 +83,16 @@ export const eliteChance = (w) => Math.min(0.11, Math.max(0, (w - 5) * 0.015));
 export const ELITE = { hpMul: 2.2, goldMul: 2.5, sizeMul: 1.15, name: '성난' };
 
 export const isBossWave = (w) => w % 5 === 0;
+
+/* ---------- 신화의 압력 ----------
+ * ★ 신화 용사가 나오면 게임이 갑자기 쉬워진다. 신화는 이 게임의 최종 목표라
+ *   도달하는 순간 곡선이 꺾여서, 제일 재미있어야 할 구간이 제일 심심해졌다.
+ *   그래서 몬스터도 같이 반응한다 — "신화의 기운을 느낀" 만큼 단단해지고,
+ *   대신 잡으면 더 준다.
+ *
+ *   벌이 아니라 **판돈**이다. 세진 만큼 골드도 늘어서, 신화를 만든 보상은
+ *   "쉬워짐"이 아니라 "더 큰 판에서 논다"가 된다.
+ *   신화 4명이면 체력 +48% · 골드 +40%에서 멈춘다(무한히 조이면 벽이 된다). */
+export const MYTHIC_PRESSURE_CAP = 4;
+export const mythicHpMul = (n) => 1 + 0.12 * Math.min(MYTHIC_PRESSURE_CAP, Math.max(0, n));
+export const mythicGoldMul = (n) => 1 + 0.10 * Math.min(MYTHIC_PRESSURE_CAP, Math.max(0, n));

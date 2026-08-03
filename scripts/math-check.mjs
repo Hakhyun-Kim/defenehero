@@ -197,7 +197,7 @@ const tac = [];
 const tacFail = (m) => tac.push(m);
 
 /* 실제로 굴러가는 판 하나를 만든다 (봇과 같은 방식) */
-function makeCtx(wave = 1, difficulty = 'normal') {
+function makeCtx(wave = 1, difficulty = 'normal', mythics = 0) {
   let calls = 0;
   const base = mulberry32(1234 + wave);
   const state = E.createGame({ rng: () => { calls++; return base(); }, difficulty });
@@ -206,6 +206,8 @@ function makeCtx(wave = 1, difficulty = 'normal') {
     state.bench.push(h);
     E.placeHero(state, h.id, state.field.length);
   }
+  /* 신화를 데리고 있으면 몬스터가 단단해진다(신화의 압력) — 그 상태도 대조해야 한다 */
+  for (let i = 0; i < mythics; i++) state.bench.push(E.makeHero(state, 'swordsaint', 4));
   for (let w = 1; w < wave; w++) { state.wave++; state.pendingWave = E.buildWave(state); }
   return { state, rngCalls: () => calls };
 }
@@ -213,7 +215,8 @@ function makeCtx(wave = 1, difficulty = 'normal') {
 /* ① 엔진이 실제로 스폰한 몬스터와 대조 — 체력·골드·성 피해 */
 for (const difficulty of ['easy', 'normal', 'hard']) {
   for (const wave of [1, 4, 9, 15]) {
-    const { state } = makeCtx(wave, difficulty);
+    /* 신화 0명·2명 두 상태로 — 압력을 빠뜨리면 문제의 체력이 실제와 어긋난다 */
+    const { state } = makeCtx(wave, difficulty, wave >= 9 ? 2 : 0);
     const expect = {};
     for (const [type] of Object.entries(E.waveSummary(state))) {
       expect[type] = { hp: T.enemyHp(state, type), gold: T.enemyGold(state, type) };
@@ -263,6 +266,15 @@ for (const grade of [3, 4, 5, 6]) {
       if (p.kind !== 'tactical') tacFail(`${grade}학년 lv${lv} [${p.type}]: kind가 tactical이 아니다`);
       if (/\*\*|undefined|NaN/.test(`${p.text}${p.hint}`)) tacFail(`${grade}학년 lv${lv} [${p.type}]: 문장이 깨졌다 — "${p.text.split('\n')[0]}"`);
       if (!M.check(String(p.answer), p.answer, p.kind)) tacFail(`${grade}학년 lv${lv} [${p.type}]: 자기 답을 오답으로 채점한다`);
+      /* ★ 규칙 ②: 답에 필요한 수가 전부 문장에 적혀 있는가.
+       * "오크 11마리를 다 놓치면?" 인데 한 마리당 피해가 문장에 없어서 풀 수 없던 적이 있다.
+       * 힌트에만 적혀 있으면 힌트를 사야만 풀리는 문제가 된다 — 그건 문제가 아니라 함정이다. */
+      if (!p.needs || !p.needs.length) tacFail(`${grade}학년 lv${lv} [${p.type}]: needs가 비어 있다 (검사 불가)`);
+      for (const nv of (p.needs || [])) {
+        if (!new RegExp(`(^|[^0-9])${nv}([^0-9]|$)`).test(p.text)) {
+          tacFail(`${grade}학년 lv${lv} [${p.type}]: 풀려면 필요한 수 ${nv} 가 문장에 없다 — "${p.text.replace(/\n/g, ' ')}"`);
+        }
+      }
     }
     if (rngCalls() !== before) tacFail(`${grade}학년 lv${lv}: 문제를 내면서 state.rng()를 ${rngCalls() - before}번 썼다 (웨이브가 바뀐다)`);
     if (JSON.stringify(E.waveSummary(state)) !== waveBefore) tacFail(`${grade}학년 lv${lv}: 웨이브 구성이 바뀌었다`);

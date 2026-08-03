@@ -42,6 +42,8 @@ export function describeHero(hero, state, preview) {
   if (m.pierce > 1) rows.push(`🎯 <b>관통</b> ${m.pierce}명`);
   if (m.cleave) rows.push(`🌀 <b>회전베기</b>: 사거리 안 전부 타격`);
   if (m.healOnKill) rows.push(`💚 처치 시 성 회복 <b>+${m.healOnKill}</b>`);
+  /* 수학을 빨리 풀어 얻은 힘 — 어디서 온 공격력인지 보여야 다음에도 서두를 이유가 된다 */
+  if (hero.spark > 0) rows.push(`⚡ <b>빠른 풀이 +${Math.round(hero.spark * 100)}%</b> (수학을 빨리 맞혀 얻은 힘)`);
 
   let ability = '';
   const MA = hero.tier >= 4 ? D.MYTHIC_ABILITIES[hero.cls] : null;
@@ -361,6 +363,8 @@ export class UI {
         m.crit ? '<span class="bdg">💥</span>' : '',
         m.block ? '<span class="bdg">🛡️</span>' : '',
         m.splash ? '<span class="bdg">✹</span>' : '',
+        /* 빨리 푼 문제로 태어난 용사 — 카드에서 바로 알아보게 */
+        hero.spark > 0 ? '<span class="bdg spark" title="빠른 풀이 +' + Math.round(hero.spark * 100) + '%">⚡</span>' : '',
       ].join('');
       d.innerHTML =
         `<div class="em">${C.emoji}${badges ? `<span class="bdgs">${badges}</span>` : ''}</div>` +
@@ -671,7 +675,13 @@ export class UI {
         return `<span class="wchip${cls}">${T.emoji}×${n}</span>`;
       })
       .join('');
-    el.innerHTML = `<span class="wlabel">다음 웨이브</span>${chips}`;
+    /* 신화 용사를 데리고 있으면 몬스터가 그만큼 단단해진다 — 시작 전에 알려 준다.
+     * 말없이 체력만 올리면 "왜 갑자기 안 죽지?"가 되고, 그건 버그처럼 느껴진다. */
+    const press = E.mythicCount(state);
+    const warn = press > 0
+      ? `<span class="wchip myth" title="신화 용사 ${press}명 — 몬스터 체력 +${Math.round((D.mythicHpMul(press) - 1) * 100)}% · 골드 +${Math.round((D.mythicGoldMul(press) - 1) * 100)}%">🌌 체력 +${Math.round((D.mythicHpMul(press) - 1) * 100)}% · 💰 +${Math.round((D.mythicGoldMul(press) - 1) * 100)}%</span>`
+      : '';
+    el.innerHTML = `<span class="wlabel">다음 웨이브</span>${chips}${warn}`;
     el.classList.remove('hidden');
   }
 
