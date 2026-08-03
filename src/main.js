@@ -179,74 +179,57 @@ function openMath(mode, pending = null) {
   }
   ui.showMath(title, modal.base);
   SFX.challenge(modal.base);
-  offerCards();
+  rollProblem();
 }
 
-/* ---------- 문제 룰렛 ----------
- * ★ 관문을 "세금"에서 "뽑기"로 바꾸는 곳.
- *   한동안은 세 장 중에서 고르게 했다. 난이도 보정을 푸는 사람 손에 넘긴다는
- *   뜻이었는데, 조합이 연쇄로 이어지다 보니 한 판에 열댓 번 같은 메뉴를 넘기는
- *   일이 됐다 — 선택이 재미가 아니라 짐이 됐다.
- *   그래서 고르는 건 지우고 **변덕**만 남겼다: 세 장이 펼쳐지고 불빛이 돌다가
- *   하나에서 뿅 멈춘다. 걸린 문제는 무조건 푼다. 결정 비용 0, 긴장은 그대로.
- *   (걸리지 않은 두 장은 keep()하지 않는다 — 다음 관문의 후보가 좁아지면 안 된다) */
-function offerCards() {
-  const cost = modal.info ? modal.info.cost : 0;
+/* ---------- 난이도 뽑기 ----------
+ * ★ 관문의 난이도는 조합 등급을 한가운데 두고 위아래로 한 칸씩 흔들린다.
+ *   같은 조합이라도 어떤 날은 순하게, 어떤 날은 세게 나온다 — 그 변덕이
+ *   환급 배수와 별조각으로 이어져서, 문제를 여는 순간이 매번 조금씩 다르다.
+ *
+ *   여기까지 오는 데 두 번 갈아엎었다.
+ *   ① 세 장을 펼쳐 놓고 고르게 했다 → 조합이 연쇄로 이어지다 보니 한 판에
+ *      열댓 번 같은 메뉴를 넘기는 일이 됐다. 선택이 재미가 아니라 짐이 됐다.
+ *   ② 세 장을 펼쳐 놓고 룰렛을 돌렸다 → 뽑는 과정이 슬롯머신처럼 요란해서,
+ *      수학 문제를 푸는 게임이 아니라 뽑기 게임처럼 보였다.
+ *   그래서 지금은 **뽑는 과정을 아예 보여 주지 않는다.** 조합을 누르면 바로
+ *   문제가 뜨고, 난이도 배지가 한 번 뿅 튕기며 "이번엔 이게 걸렸다"를 알린다.
+ *   변덕은 남기고 연출만 걷어낸 셈이다. */
+function rollProblem() {
   const base = modal.base;
-  modal.cards = D.cardLevels(base).map(lv => {
-    /* ctx를 넘기면 일부 카드가 "지금 이 판"을 묻는 전술 문제가 된다 (src/math.js).
-     * 낼 수 없는 상황(배치된 용사가 없다 등)이면 알아서 산술로 돌아온다. */
-    const prob = MathGen.gen(modal.grade, lv, { remember: false, ctx: state });
-    const mul = D.cardRefundMul(lv, base);
-    return {
-      lv, prob, mul,
-      label: prob.label,
-      sec: D.mathTime(prob.sec, lv),
-      rounds: D.mathRounds(lv),
-      shards: D.cardShards(lv, base),
-      refund: Math.round(cost * D.refundRatio(modal.grade) * state.mathMul * mul),
-    };
-  });
+  /* 뽑기는 게임 난수(state.rng)를 쓰지 않는다 — 문제를 뽑았다고 웨이브가 바뀌면 안 된다 */
+  const i = D.cardRoll(base);
+  const lv = D.cardLevels(base)[i];
+  modal.card = {
+    i, lv,
+    mul: D.cardRefundMul(lv, base),
+    shards: D.cardShards(lv, base),
+    rounds: D.mathRounds(lv),
+  };
+  modal.lv = lv;
+  modal.rounds = modal.card.rounds;
+  modal.round = 1;
+  ui.setMathTone(lv);
+  SFX.challenge(lv);
   /* 난이도가 저절로 움직였으면 반드시 말해 준다 — 말없이 조용히 조이면
    * "왜 갑자기 어려워졌지?"가 되고, 아이는 자기가 못한다고 생각한다. */
-  const note = modal.adapt > 0
-    ? '🔥 요즘 척척 맞히고 있어요 — 문제가 한 칸 올라갔어요!'
-    : modal.adapt < 0
-      ? '🌱 잠깐 숨 고르기 — 문제가 한 칸 쉬워졌어요'
-      : '';
-  /* 뽑기는 게임 난수(state.rng)를 쓰지 않는다 — 문제를 뽑았다고 웨이브가 바뀌면 안 된다 */
-  const landed = D.cardRoll(base);
-  ui.rollCards(modal.cards, landed, {
-    note,
-    onTick: () => SFX.tick(false),
-    onLand: (i) => {
-      const c = modal.cards[i];
-      SFX.challenge(c.lv);
-      if (c.shards) SFX.shard();
-    },
-    onDone: startCard,
-  });
+  if (modal.adapt > 0) ui.toast('🔥 요즘 척척 맞히고 있어요 — 문제가 한 칸 올라갔어요!', 'good');
+  else if (modal.adapt < 0) ui.toast('🌱 잠깐 숨 고르기 — 문제가 한 칸 쉬워졌어요');
+  if (modal.rounds > 1) ui.toast(`🌌 ${modal.rounds}문제를 연속으로 맞혀야 하는 관문이에요!`, 'bad');
+  else if (modal.card.shards) {
+    SFX.shard();
+    ui.toast(`🔴 센 문제가 나왔어요! 한 번에 맞히면 ✨별조각 +${modal.card.shards}`, 'good');
+  }
+  newProblem(true);
 }
 
-function startCard(i) {
-  const c = modal.cards && modal.cards[i];
-  if (!c || !ui.isMathOpen()) return;
-  modal.card = c;
-  modal.lv = c.lv;
-  modal.rounds = c.rounds;
-  modal.round = 1;
-  ui.setMathTone(c.lv);
-  if (c.rounds > 1) ui.toast(`🌌 ${c.rounds}문제를 연속으로 맞혀야 하는 관문이 걸렸어요!`, 'bad');
-  else if (c.shards) ui.toast(`🔴 센 문제가 걸렸어요! 한 번에 맞히면 ✨별조각 +${c.shards}`, 'good');
-  MathGen.keep(c.prob);                  // 걸린 한 장만 "낸 문제"로 기록
-  startProblem(c.prob);
+/* 다음 단계(신화 2문제)·오답 재도전은 뽑힌 난이도 그대로 새 문제를 낸다 —
+ * 다시 뽑게 하면 틀릴 때마다 쉬운 쪽이 걸리기를 기대하며 버티게 된다. */
+function newProblem(pop = false) {
+  startProblem(MathGen.gen(modal.grade, modal.lv, { ctx: state }), pop);
 }
 
-/* 다음 단계(신화 2문제)·오답 재도전은 고른 난이도 그대로 새 문제를 뽑는다 —
- * 카드를 다시 고르게 하면 틀릴 때마다 쉬운 카드로 갈아탈 수 있다. */
-function newProblem() { startProblem(MathGen.gen(modal.grade, modal.lv, { ctx: state })); }
-
-function startProblem(prob) {
+function startProblem(prob, pop = false) {
   modal.prob = prob;
   modal.tries = 0;
   modal.usedHint = false;                // 힌트는 문제마다 새로 산다
@@ -257,13 +240,14 @@ function startProblem(prob) {
   const mul = modal.card ? modal.card.mul : 1;
   const refund = Math.round(cost * D.refundRatio(modal.grade) * state.mathMul * mul);
   const bonus = [];
-  if (mul > 1.01) bonus.push(`🎯${modal.card ? D.CARD_STYLE[modal.cards.indexOf(modal.card)].name : '걸린 문제'} ×${mul.toFixed(2)}`);
+  /* 배수가 1이 아니면 항상 적는다 — 깎일 때(순한 문제 ×0.5)도 왜 적은지 말해 줘야 한다 */
+  if (modal.card && Math.abs(mul - 1) > 0.01) bonus.push(`🎯${D.CARD_STYLE[modal.card.i].name} ×${mul.toFixed(2)}`);
   if (streak >= 1) bonus.push(`🔥${streak + 1}연승 ×${D.streakMul(streak + 1).toFixed(2)}`);
   const shard = modal.card && modal.card.shards ? ` ✨별조각 +${modal.card.shards}` : '';
   ui.setProblem({
     grade: modal.grade, lv: modal.lv, text: prob.text, label: prob.label,
     round: modal.round, rounds: modal.rounds,
-    time: modal.timeMax, streak,
+    time: modal.timeMax, streak, pop,
     reward: refund
       ? `⏱ 빨리 한 번에 맞힐수록 환급이 커져요! (기본 💰${refund}${bonus.length ? ' · ' + bonus.join(' ') : ''})${shard}`
       : '맞히면 조합 성공!',
@@ -338,17 +322,17 @@ function submitMath(value) {
           renderer.celebrate(0xd8b4ff, true);
         }
         if (firstTry) {
-          /* 정확 + 속도 + 연승 + 고른 카드 = 환급. 시계를 보며 푸는 이유가 여기서 생긴다 */
+          /* 정확 + 속도 + 연승 + 나온 난이도 = 환급. 시계를 보며 푸는 이유가 여기서 생긴다 */
           const speed = 1 + D.SPEED_BONUS_MAX * modal.minLeft;
           const sm = D.streakMul(streak);
           const cm = modal.card ? modal.card.mul : 1;
           const back = E.refundFirstTry(state, r.cost, modal.grade, speed * sm * cm);
           const tags = [`⚡속도 +${Math.round((speed - 1) * 100)}%`];
-          if (cm > 1.01) tags.push(`🎯${D.CARD_STYLE[modal.cards.indexOf(modal.card)].name} ×${cm.toFixed(2)}`);
+          if (modal.card && Math.abs(cm - 1) > 0.01) tags.push(`🎯${D.CARD_STYLE[modal.card.i].name} ×${cm.toFixed(2)}`);
           if (sm > 1) tags.push(`🔥${streak}연승 ×${sm.toFixed(2)}`);
           msg += ` ✅ 한 번에 정답! 💰+${back} 환급 (${tags.join(' · ')})`;
-          /* 어려운 카드를 골라 한 번에 통과했을 때만 별조각 — 흔해지면 의미가 없다.
-           * 판이 끝날 때까지 기다리지 않고 바로 준다: 지금 이 순간의 보상이라야 다음에도 집는다. */
+          /* 센 문제가 나왔는데 한 번에 통과했을 때만 별조각 — 흔해지면 의미가 없다.
+           * 판이 끝날 때까지 기다리지 않고 바로 준다: 지금 이 순간의 보상이라야 다음에도 반갑다. */
           const sh = modal.card ? modal.card.shards : 0;
           if (sh) {
             store.shards = store.shards + sh;
@@ -1155,13 +1139,6 @@ document.addEventListener('keydown', (ev) => {
   /* --- 수학 모달 --- */
   if (ui.isMathOpen()) {
     if (key === 'Escape') { ev.preventDefault(); closeMathAll(); return; }
-    /* 뽑기가 도는 중 — 아무 키나 누르면 결과로 건너뛴다.
-     * 고를 것이 없으므로 나머지 키는 전부 삼킨다(뒤에서 제출이 새면 안 된다). */
-    if (ui.isCardOpen()) {
-      ev.preventDefault();
-      ui.skipRoll();
-      return;
-    }
     if (ui.isAnswered() && (key === 'Enter' || key === ' ')) {
       ev.preventDefault();
       /* 자동 진행을 기다리는 중이면 Enter는 "기다리지 말고 지금" 이라는 뜻이다 */
@@ -1326,7 +1303,7 @@ function frame(now) {
 
   /* 제한 시간 — 전투는 멈춰 있어도 시계는 흐른다. 문제창의 유일한 압박 장치.
    * 카드를 고르는 동안은 흐르지 않는다: 고르는 시간까지 재면 안 읽고 찍게 된다. */
-  if (ui.isMathOpen() && !ui.isCardOpen() && modal.prob && !ui.isAnswered()) {
+  if (ui.isMathOpen() && modal.prob && !ui.isAnswered()) {
     const prev = modal.time;
     modal.time = Math.max(0, modal.time - realDt);
     ui.setTimer(modal.time, modal.timeMax);
@@ -1434,7 +1411,6 @@ demo.attach({
   isRevealOpen: () => ui.isRevealOpen(),
   isMathOpen: () => ui.isMathOpen(),
   isAnswered: () => ui.isAnswered(),
-  isCardOpen: () => ui.isCardOpen(),
   getProblem: () => modal.prob,
   closeStory,
   summon: doSummon,

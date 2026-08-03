@@ -97,7 +97,7 @@ export class UI {
       'demoBtn', 'demoBar', 'demoCaption', 'demoExit',
       'revealModal', 'revealCard', 'revealTier', 'revealArt', 'revealName', 'revealDesc',
       'mHintBtn', 'mHint', 'mDiff', 'mSteps', 'mStreak', 'mTimer', 'mTimerFill', 'mTimerText',
-      'mCards', 'mCardRow', 'mQuiz', 'mCardNote',
+      'mQuiz',
       'wavePreview', 'bossBar', 'bossBarFill', 'bossBarName', 'bossWarnBanner',
       'saveBtn', 'loadBtn', 'loadFile',
       'sellModeBtn', 'sellInfo', 'sellAllBtn', 'sellGoBtn',
@@ -182,7 +182,7 @@ export class UI {
      * 버튼이나 배경을 한 번 클릭하면 포커스가 거기 남아서, 답을 쓰고 Enter를 눌러도
      * 입력창 핸들러가 안 돌던 문제가 있었다. */
     el.mathModal.addEventListener('mousedown', (ev) => {
-      if (this._answered || this.isCardOpen() || ev.target.closest('button')) return;
+      if (this._answered || ev.target.closest('button')) return;
       setTimeout(() => el.mInput.focus(), 0);
     });
     el.mInput.addEventListener('keydown', (ev) => {
@@ -448,7 +448,7 @@ export class UI {
       <b>규칙</b> 조합은 <b>같은 등급 2명</b>끼리만! ① 같은 직업 = 등급 UP ② 다른 직업 = 새 직업(등급 UP)<br>
       기본·특수 용사는 <b>전설</b>이 최고 · <b>신화</b> 등급은 <b>신화 용사</b>만 (⚡😇🌌)<br>
       <b>⭐ 표시</b> = 그 조합에서 나올 <b>수학 문제 난이도</b>. 센 용사일수록 문제도 세요!<br>
-      문제는 <b>🟢순한 · 🔵보통 · 🔴센</b> 세 장 중에서 <b>룰렛으로 뽑혀요</b> — 센 문제일수록 환급이 커요
+      문제 난이도는 관문마다 <b>조금씩 흔들려요</b> (🟢순한 · 🔵보통 · 🔴센) — 센 문제가 나올수록 환급이 커요
     </div>`;
 
     /* 돈이 모자란 줄이 "지금 된다"처럼 보이면 안 된다.
@@ -840,135 +840,12 @@ export class UI {
     this.el.mathModal.classList.remove('hidden');
   }
   /* 난이도가 창 전체의 분위기를 바꾼다 — 열리는 순간 "센 문제"임을 알아챈다.
-   * 뽑기가 멈추면 그 자리에서 색이 바뀌므로 따로 부를 수 있게 떼어 놨다. */
+   * 난이도는 창이 열린 뒤에 뽑히므로 따로 부를 수 있게 떼어 놨다. */
   setMathTone(lv) {
     const card = this.el.mathModal.querySelector('.modal-card');
     card.className = `modal-card lv${Math.max(1, Math.min(D.MAX_MATH_LV, lv || 1))}`;
   }
 
-  /* ---------- 문제 룰렛 ----------
-   * cards: [{ lv, label, sec, rounds, refund, shards }] · landed: 걸린 장의 번호
-   *
-   * 고르게 하지 않는다(mathgate.js 참고). 세 장을 펼쳐 놓고 불빛이 돌다가
-   * 하나에서 "뿅" 멈춘다. 그래도 세 장을 다 보여 주는 이유는, 무엇이 걸렸고
-   * 무엇을 비껴갔는지가 보여야 뽑기가 뽑기로 느껴지기 때문이다.
-   *
-   * opts: { note, onTick, onLand, onDone } — 소리는 main이 넣는다(ui는 SFX를 모른다) */
-  rollCards(cards, landed, opts = {}) {
-    const el = this.el;
-    const { note = '', onTick = null, onLand = null, onDone = null } = opts;
-    this._cards = cards;
-    this._landed = landed;
-    this._onLand = onLand;
-    this._onDone = onDone;
-    el.mCardRow.textContent = '';
-    el.mCardNote.textContent = note;
-    el.mCardNote.classList.toggle('hidden', !note);
-    cards.forEach((c, i) => {
-      const S = D.CARD_STYLE[i];
-      const L = D.MATH_LEVELS[Math.max(1, Math.min(D.MAX_MATH_LV, c.lv))];
-      const box = document.createElement('div');
-      box.className = `mcard lv${c.lv}`;
-      const add = (cls, text) => {
-        const d = document.createElement('div');
-        d.className = cls;
-        d.textContent = text;
-        box.append(d);
-        return d;
-      };
-      add('mc-name', `${S.emoji} ${S.name}`);
-      const stars = add('mc-stars', `${L.stars} ${L.name}`);
-      stars.style.color = L.color;
-      add('mc-label', c.label);
-      add('mc-time', `⏳ ${c.sec}초${c.rounds > 1 ? ` · ${c.rounds}문제 연속` : ''}`);
-      const pay = add('mc-pay', c.refund ? `💰 +${c.refund}` : '조합 성공!');
-      if (c.shards) {
-        const s = document.createElement('b');
-        s.className = 'mc-shard';
-        s.textContent = ` ✨+${c.shards}`;
-        pay.append(s);
-      }
-      el.mCardRow.append(box);
-    });
-    el.mCards.classList.remove('hidden');
-    el.mCards.classList.add('rolling');
-    el.mQuiz.classList.add('hidden');
-    el.mFeedback.classList.add('hidden');
-    el.mHintBtn.classList.add('hidden');
-    el.mNext.classList.add('hidden');
-    this._answered = false;
-    this._rollToken = (this._rollToken || 0) + 1;
-    this._spin(this._rollToken, onTick);
-  }
-
-  /* 불빛이 세 장 위를 돌다가 점점 느려지며 landed에서 멈춘다.
-   * 0번부터 한 칸씩 도니 마지막 걸음은 (걸음수 % 장수) 자리다 —
-   * 그게 landed가 되는 걸음 수를 미리 정해 놓고 시작한다.
-   * 전체 0.6초쯤: 조합은 연쇄로 이어지므로 뽑기가 길면 그것대로 지루해진다.
-   * (고르는 수고를 없애 놓고 기다리는 수고를 새로 만들면 남는 게 없다) */
-  _spin(token, onTick) {
-    const el = this.el;
-    const n = this._cards.length;
-    let steps = 8;
-    while (steps % n !== this._landed) steps++;
-    let i = 0, at = 0, wait = 40;
-    const hop = () => {
-      if (token !== this._rollToken) return;
-      el.mCardRow.querySelectorAll('.mcard').forEach((b, k) => b.classList.toggle('spot', k === at));
-      if (onTick) onTick();
-      if (i >= steps) { this._land(token); return; }
-      i++; at = (at + 1) % n;
-      wait *= 1.13;
-      this._rollTimer = setTimeout(hop, wait);
-    };
-    hop();
-  }
-
-  /* 멈추는 순간 — 걸린 장만 남기고 나머지는 물러난다 */
-  _land(token) {
-    if (token !== this._rollToken) return;
-    const el = this.el;
-    el.mCards.classList.remove('rolling');
-    el.mCardRow.querySelectorAll('.mcard').forEach((b, k) => {
-      b.classList.remove('spot');
-      b.classList.toggle('won', k === this._landed);
-      b.classList.toggle('lost', k !== this._landed);
-    });
-    const c = this._cards[this._landed];
-    el.mCardNote.textContent = `${D.CARD_STYLE[this._landed].emoji} ${c.label} — 이 문제를 풀어요!`;
-    el.mCardNote.classList.remove('hidden');
-    el.mCardNote.classList.add('landed');
-    if (this._onLand) this._onLand(this._landed);
-    this._rollTimer = setTimeout(() => this._finish(token), 550);
-  }
-
-  /* 애니메이션을 끝까지 볼 이유가 없는 사람도 있다 — 아무 키나 누르면 결과로 건너뛴다 */
-  skipRoll() {
-    if (!this.isCardOpen()) return;
-    if (this.el.mCards.classList.contains('rolling')) { this._land(this._rollToken); return; }
-    this._finish(this._rollToken);
-  }
-
-  _finish(token) {
-    if (token !== this._rollToken || !this._onDone) return;
-    const fn = this._onDone;
-    this._onDone = null;
-    this._rollToken++;                     // 예약된 타이머를 모두 무효로
-    this.hideCards();
-    fn(this._landed);
-  }
-
-  hideCards() {
-    const el = this.el;
-    clearTimeout(this._rollTimer);
-    el.mCards.classList.add('hidden');
-    el.mCards.classList.remove('rolling');
-    el.mCardNote.classList.remove('landed');
-    el.mQuiz.classList.remove('hidden');
-    el.mFeedback.classList.remove('hidden');
-    el.mHintBtn.classList.remove('hidden');
-  }
-  isCardOpen() { return !this.el.mCards.classList.contains('hidden'); }
   /* 문제·힌트 안의 {a/b} 를 세로 분수로 그린다.
    * "15 ÷ 3/6" 처럼 한 줄로 쓰면 15÷3÷6 으로도 읽혀서 아이가 헷갈린다.
    * (문자열을 그대로 넣지 않고 DOM으로 조립한다 — innerHTML을 쓸 이유가 없다) */
@@ -1017,10 +894,15 @@ export class UI {
     el.mHintBtn.disabled = false;
     el.mHintBtn.textContent = `💡 힌트 (💰${D.HINT_GOLD} · H)`;
     this.setTimer(o.time, o.time);
-    /* 문제가 바뀔 때마다 카드를 한 번 튕겨 준다 — 새 문제가 왔다는 신호 */
-    el.mProblem.classList.remove('pop');
-    void el.mProblem.offsetWidth;
-    el.mProblem.classList.add('pop');
+    /* 문제가 바뀔 때마다 카드를 한 번 튕겨 준다 — 새 문제가 왔다는 신호.
+     * o.pop이 오면 난이도 배지도 같이 튕긴다 = "이번엔 이게 걸렸다"는 뿅. */
+    const bounce = (node) => {
+      node.classList.remove('pop');
+      void node.offsetWidth;
+      node.classList.add('pop');
+    };
+    bounce(el.mProblem);
+    if (o.pop) bounce(el.mDiff);
     setTimeout(() => el.mInput.focus(), 30);
   }
   /* 남은 시간 바 — 매 프레임 호출되므로 바뀔 때만 DOM을 만진다 */
@@ -1062,15 +944,7 @@ export class UI {
       el.mNext.classList.add('hidden');
     }
   }
-  hideMath() {
-    /* 뽑기 도중에 닫았다 — 예약된 콜백과 타이머가 살아 있으면
-     * 창이 닫힌 뒤에 문제가 시작된다 */
-    this._onDone = null;
-    this._onLand = null;
-    this._rollToken = (this._rollToken || 0) + 1;
-    this.hideCards();
-    this.el.mathModal.classList.add('hidden');
-  }
+  hideMath() { this.el.mathModal.classList.add('hidden'); }
   isMathOpen() { return !this.el.mathModal.classList.contains('hidden'); }
   isAnswered() { return !!this._answered; }
   setGradeActive(g) {

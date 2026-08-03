@@ -1430,6 +1430,15 @@ button { font-family: inherit; }
 /* 새 문제가 뜰 때 한 번 튕겨 준다 */
 .mproblem.pop { animation: probpop 0.32s cubic-bezier(0.2, 1.5, 0.4, 1); }
 @keyframes probpop { from { transform: scale(0.9); opacity: 0.2; } }
+/* 관문이 열리는 순간 난이도 배지가 "뿅" — 이번엔 어떤 문제가 나왔는지 알리는 신호.
+ * (예전엔 세 장을 펼쳐 룰렛을 돌렸는데, 뽑는 과정이 요란해서 뽑기 게임처럼 보였다.
+ *  변덕은 남기고 연출만 이 한 줄로 줄였다) */
+.mdiff.pop { animation: diffpop 0.5s cubic-bezier(0.2, 1.8, 0.4, 1); }
+@keyframes diffpop {
+  0% { transform: scale(0.5); opacity: 0; }
+  55% { transform: scale(1.22); opacity: 1; }
+  100% { transform: scale(1); }
+}
 
 /* 난이도별 문제창 분위기 — 고난도일수록 카드가 뜨거워진다 */
 .modal-card.lv4 { box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35), 0 0 0 3px #f59e0b; }
@@ -1447,85 +1456,6 @@ button { font-family: inherit; }
   animation: modalin 0.25s cubic-bezier(0.2, 1.4, 0.4, 1), mythicaura 1.1s ease-in-out infinite 0.25s;
 }
 .modal-card.lv6 .mproblem { background: #fff0f3; }
-
-/* ===== 문제 카드 3장 =====
- * 관문을 "세금"에서 "내기"로 바꾸는 화면. 세 장이 한눈에 비교돼야 고르는 재미가 산다 —
- * 그래서 같은 자리에 같은 항목(난이도 · 유형 · 시간 · 환급)을 세로로 맞춰 쌓는다. */
-.mcards { margin-bottom: 12px; }
-.mcards-lead { font-size: 13px; color: #3d5573; margin-bottom: 10px; }
-.mcards-lead b { color: #d2691e; }
-.mcards-foot { font-size: 11px; color: #8a9bb0; margin-top: 8px; }
-/* 난이도가 저절로 움직였을 때만 뜬다 — 말없이 조이면 아이가 자기 탓을 한다 */
-.mcards-note {
-  font-size: 12px;
-  font-weight: 800;
-  color: #7a4a00;
-  background: #fff5e0;
-  border-radius: 10px;
-  padding: 6px 10px;
-  margin-bottom: 10px;
-}
-.mcard-row { display: flex; gap: 8px; }
-.mcard {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 12px 6px 10px;
-  border: 2px solid #dfe7f1;
-  border-radius: 14px;
-  background: #fbfdff;
-  font-family: inherit;
-  transition: transform 0.16s, opacity 0.22s, border-color 0.16s, box-shadow 0.16s;
-}
-/* --- 룰렛 --- 불빛이 지나가는 칸 */
-.mcard.spot {
-  border-color: #2478e0;
-  box-shadow: 0 0 0 3px rgba(36, 120, 224, 0.18), 0 8px 18px rgba(36, 120, 224, 0.2);
-  transform: translateY(-4px) scale(1.03);
-}
-/* 멈춘 칸 — 여기서 "뿅" 한다 */
-.mcard.won {
-  border-color: #f0a500;
-  box-shadow: 0 0 0 4px rgba(240, 165, 0, 0.28), 0 12px 26px rgba(240, 165, 0, 0.3);
-  animation: cardpop 0.42s cubic-bezier(0.2, 1.7, 0.4, 1);
-  z-index: 1;
-}
-@keyframes cardpop {
-  0% { transform: scale(0.9); }
-  55% { transform: scale(1.16); }
-  100% { transform: scale(1.08); }
-}
-.mcard.won { transform: scale(1.08); }
-/* 비껴간 칸 — 지우지 않고 흐리게만 남긴다. 무엇을 피했는지 보여야 뽑기가 산다 */
-.mcard.lost { opacity: 0.32; transform: scale(0.94); filter: grayscale(0.5); }
-.mcard .mc-name { font-size: 14px; font-weight: 900; color: #23405f; margin-top: 4px; }
-.mcard .mc-stars { font-size: 11px; font-weight: 900; letter-spacing: -1px; }
-.mcard .mc-label {
-  font-size: 12px;
-  font-weight: 800;
-  color: #3d5573;
-  word-break: keep-all;
-  line-height: 1.3;
-  min-height: 2.6em;
-  display: flex;
-  align-items: center;
-}
-.mcard .mc-time { font-size: 11px; color: #7b8ca1; }
-.mcard .mc-pay { font-size: 13px; font-weight: 900; color: #c77a00; }
-.mcard .mc-shard { color: #7b5cd6; }
-/* 센 문제(가장 어려운 쪽)는 한눈에 — 이게 걸리면 "당첨"이라는 신호 */
-.mcard.lv5, .mcard.lv6 { border-color: #ffc2da; background: #fff8fb; }
-.mcard.lv6 { border-color: #ffb3c4; }
-/* 결과 문구는 뽑기가 멈춘 뒤에만 강조된다 (돌아가는 동안은 적응형 안내가 앉아 있다) */
-.mcards-note.landed {
-  color: #7a3b00;
-  background: #ffe9c2;
-  animation: cardpop 0.4s cubic-bezier(0.2, 1.7, 0.4, 1);
-}
 
 /* ===== 좁거나 낮은 화면 =====
  * 두 열이 들어갈 폭이 안 되거나 세로가 너무 짧으면, 한 줄로 쌓고 페이지 스크롤을 되살린다.
