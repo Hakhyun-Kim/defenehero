@@ -38,7 +38,8 @@ export function createGame(opts = {}) {
     kills: 0, bossKills: 0, midBossKills: 0, summons: 0, combos: 0,
     solved: 0, correct: 0, goldEarned: 0, hints: 0, firstTryWins: 0, bestStreak: 0, timeOuts: 0,
     specialsMade: 0, mythicsMade: 0,
-    shardsEarned: 0,
+    shardsEarned: 0, mathShards: 0,
+    mathWindow: [],             // 최근 "한 번에 맞힘" 기록 (적응형 난이도, mathgate.js)
     combo: { count: 0, timer: 0 },
     discovered: new Set(),      // 이번 판에 만들어 본 조합 결과 (도감 ✓)
     time: 0,
@@ -400,6 +401,16 @@ export function applyMathResult(state, correct) {
   state.solved++;
   if (correct) state.correct++;
   return { correct };
+}
+
+/* 적응형 난이도의 원재료 — "한 번에, 힌트 없이" 맞혔는지만 남긴다.
+ * 왜 정답 여부가 아니라 '깔끔한 정답'인가: 오답이어도 다시 풀면 결국 맞히므로
+ * 정답률은 어떤 난이도에서든 100%에 수렴한다. 난이도 신호가 되지 못한다. */
+export function recordMathOutcome(state, clean) {
+  if (!state.mathWindow) state.mathWindow = [];
+  state.mathWindow.push(clean ? 1 : 0);
+  while (state.mathWindow.length > D.ADAPT_WINDOW) state.mathWindow.shift();
+  return state.mathWindow;
 }
 
 /* 첫 시도에 맞히면 조합 비용 일부를 환급 — 정확도 × 학년이 곧 골드
@@ -911,7 +922,7 @@ export const SAVE_VERSION = 1;
 const SAVE_STATS = [
   'kills', 'bossKills', 'midBossKills', 'summons', 'combos', 'solved', 'correct',
   'goldEarned', 'hints', 'firstTryWins', 'bestStreak', 'timeOuts',
-  'specialsMade', 'mythicsMade',
+  'specialsMade', 'mythicsMade', 'mathShards',
 ];
 
 export function serialize(state) {
@@ -931,6 +942,7 @@ export function serialize(state) {
     field: state.field.map(hero),
     stats,
     discovered: [...state.discovered],
+    mathWindow: [...(state.mathWindow || [])],   // 적응형 난이도가 이어하기에서도 이어지게
     seenStory: state.seenStory ? [...state.seenStory] : [],
     revealed: state.revealed ? [...state.revealed] : [],
   };
@@ -973,6 +985,9 @@ export function deserialize(data, opts = {}) {
   state.revealed = new Set(strings(data.revealed));
   const stats = (data.stats && typeof data.stats === 'object') ? data.stats : {};
   for (const k of SAVE_STATS) state[k] = clamp(stats[k], 0, 1e9, 0);
+  /* 0/1만 남긴다 — 저장 파일은 사용자가 고칠 수 있는 입력이라 값을 그대로 믿지 않는다 */
+  state.mathWindow = (Array.isArray(data.mathWindow) ? data.mathWindow : [])
+    .filter(v => v === 0 || v === 1).slice(-D.ADAPT_WINDOW);
 
   state.pendingWave = buildWave(state);
   return state;

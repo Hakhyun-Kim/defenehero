@@ -168,16 +168,26 @@
       <span id="mSteps" class="msteps hidden">1 / 2</span>
       <span id="mStreak" class="mstreak hidden">🔥 2연승</span>
     </div>
-    <div id="mTimer" class="mtimer">
-      <div id="mTimerFill"></div>
-      <span id="mTimerText">45</span>
+    <!-- 문제를 고르는 단계: 세 장 중 하나 (1·2·3 키 / Enter=가운데) -->
+    <div id="mCards" class="mcards hidden">
+      <p class="mcards-lead">풀 문제를 골라요 — <b>어려운 쪽일수록 환급이 커져요</b></p>
+      <p id="mCardNote" class="mcards-note hidden"></p>
+      <div id="mCardRow" class="mcard-row"></div>
+      <p class="mcards-foot">1 · 2 · 3 키로도 고를 수 있어요 (Enter = 가운데)</p>
     </div>
-    <div id="mProblem" class="mproblem"></div>
-    <div class="mrow">
-      <input id="mInput" type="text" inputmode="decimal" autocomplete="off" placeholder="정답을 입력하세요">
-      <button id="mSubmit" class="big blue">확인!</button>
+
+    <div id="mQuiz">
+      <div id="mTimer" class="mtimer">
+        <div id="mTimerFill"></div>
+        <span id="mTimerText">45</span>
+      </div>
+      <div id="mProblem" class="mproblem"></div>
+      <div class="mrow">
+        <input id="mInput" type="text" inputmode="decimal" autocomplete="off" placeholder="정답을 입력하세요">
+        <button id="mSubmit" class="big blue">확인!</button>
+      </div>
+      <div id="mHint" class="mhint hidden"></div>
     </div>
-    <div id="mHint" class="mhint hidden"></div>
     <div id="mFeedback" class="mfeedback"></div>
     <div class="mrow">
       <button id="mHintBtn" class="hintbtn">💡 힌트 (💰30 · H)</button>

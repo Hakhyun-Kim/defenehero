@@ -10,7 +10,11 @@ import * as D from '../src/data.js';
 import * as E from '../src/engine.js';
 /* 판단 로직은 src/bot.js 하나뿐이다 — 브라우저 데모(src/demo.js)와 같은 것을 쓴다.
  * 여기서 다시 구현하면 "봇은 통과하는데 화면에선 다르게 노는" 상황이 생긴다. */
-import { PROFILES, mulberry32, placeAll, chooseCombo, castlePlan, wantsSummon } from '../src/bot.js';
+import { PROFILES, mulberry32, placeAll, chooseCombo, castlePlan, wantsSummon, pickCardIndex } from '../src/bot.js';
+
+/* 어려운 카드를 고르면 정답률이 떨어진다 — 이걸 모델링하지 않으면 도전 카드가 공짜 돈이 된다.
+ * (게임에서도 실제로 그렇다: 한 칸 위 문제는 수가 크고 단계가 하나 더 많다) */
+const ACC_PER_LV = 0.08;
 
 /* ---------- 가상 플레이어 프로필 ---------- */
 /* ---------- 준비 페이즈 정책 ----------
@@ -25,18 +29,37 @@ function prepActions(state, P) {
   for (let round = 0; round < 6; round++) {
     const pick = chooseCombo(state);
     if (!pick || state.rng() >= P.combineChance) break;
-    /* 조합 관문: 정답까지 최대 3회 시도. 첫 시도 정답이면 비용 일부 환급 */
+    /* 문제 카드 세 장 중 하나를 고른다 — 어려운 카드는 환급이 크고 정답률이 낮다 */
+    /* 적응형 보정까지 그대로 태운다 — 게임에서 실제로 도는 규칙을 봇이 안 밟으면
+     * "봇은 통과하는데 사람은 다른 난이도를 푸는" 시뮬레이션이 된다 */
+    const raw = D.mathLevel(pick.resultTier, pick.kind === 'recipe', !!D.CLASSES[pick.result].mythic);
+    const base = Math.max(1, Math.min(5, raw + D.adaptOffset(state.mathWindow)));
+    const lvs = D.cardLevels(base);
+    const ci = pickCardIndex(P, lvs.length, state.rng);
+    const lv = lvs[ci];
+    const acc = Math.max(0.05, P.acc - ACC_PER_LV * (lv - base));
+    const rounds = D.mathRounds(lv);
+    /* 조합 관문: 정답까지 최대 3회 시도. 최고 난이도는 연속 정답이라야 통과 */
     let passed = false, tries = 0;
     for (; tries < 3; tries++) {
-      const ok = state.rng() < P.acc;
-      E.applyMathResult(state, ok);
-      if (ok) { passed = true; break; }
+      let streakOk = true;
+      for (let s = 0; s < rounds; s++) {
+        const ok = state.rng() < acc;
+        E.applyMathResult(state, ok);
+        /* 봇은 힌트를 안 사고 재도전마다 새 문제를 받으므로 "한 번에 맞힘" = 정답 여부 */
+        E.recordMathOutcome(state, ok);
+        if (!ok) { streakOk = false; break; }
+      }
+      if (streakOk) { passed = true; break; }
     }
     if (!passed) break;
     const r = pick.kind === 'recipe'
       ? E.combineRecipe(state, pick.result)
       : E.combineRankUp(state, pick.cls, pick.tier);
-    if (r.ok && tries === 0) E.refundFirstTry(state, r.cost, P.grade);
+    if (r.ok && tries === 0) {
+      E.refundFirstTry(state, r.cost, P.grade, D.cardRefundMul(lv, base));
+      state.mathShards = (state.mathShards || 0) + D.cardShards(lv, base);
+    }
   }
   /* 3) 배치 */
   placeAll(state, P.sloppy || 0);

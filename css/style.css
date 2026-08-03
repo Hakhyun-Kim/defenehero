@@ -1399,6 +1399,84 @@ button { font-family: inherit; }
   50% { box-shadow: 0 20px 70px rgba(255, 77, 157, 0.5), 0 0 0 5px #ff4d9d; }
 }
 .modal-card.lv5 .mproblem { background: #fff2f8; }
+.modal-card.lv6 {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 4px #ff2d55;
+  animation: modalin 0.25s cubic-bezier(0.2, 1.4, 0.4, 1), mythicaura 1.1s ease-in-out infinite 0.25s;
+}
+.modal-card.lv6 .mproblem { background: #fff0f3; }
+
+/* ===== 문제 카드 3장 =====
+ * 관문을 "세금"에서 "내기"로 바꾸는 화면. 세 장이 한눈에 비교돼야 고르는 재미가 산다 —
+ * 그래서 같은 자리에 같은 항목(난이도 · 유형 · 시간 · 환급)을 세로로 맞춰 쌓는다. */
+.mcards { margin-bottom: 12px; }
+.mcards-lead { font-size: 13px; color: #3d5573; margin-bottom: 10px; }
+.mcards-lead b { color: #d2691e; }
+.mcards-foot { font-size: 11px; color: #8a9bb0; margin-top: 8px; }
+/* 난이도가 저절로 움직였을 때만 뜬다 — 말없이 조이면 아이가 자기 탓을 한다 */
+.mcards-note {
+  font-size: 12px;
+  font-weight: 800;
+  color: #7a4a00;
+  background: #fff5e0;
+  border-radius: 10px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+}
+.mcard-row { display: flex; gap: 8px; }
+.mcard {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 12px 6px 10px;
+  border: 2px solid #dfe7f1;
+  border-radius: 14px;
+  background: #fbfdff;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+.mcard:hover, .mcard:focus-visible {
+  transform: translateY(-3px);
+  border-color: #2478e0;
+  box-shadow: 0 8px 18px rgba(36, 120, 224, 0.22);
+  outline: none;
+}
+.mcard .mc-key {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  border-radius: 999px;
+  background: #23405f;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+.mcard .mc-name { font-size: 14px; font-weight: 900; color: #23405f; margin-top: 4px; }
+.mcard .mc-stars { font-size: 11px; font-weight: 900; letter-spacing: -1px; }
+.mcard .mc-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #3d5573;
+  word-break: keep-all;
+  line-height: 1.3;
+  min-height: 2.6em;
+  display: flex;
+  align-items: center;
+}
+.mcard .mc-time { font-size: 11px; color: #7b8ca1; }
+.mcard .mc-pay { font-size: 13px; font-weight: 900; color: #c77a00; }
+.mcard .mc-shard { color: #7b5cd6; }
+/* 도전 카드(가장 어려운 쪽)는 눈에 띄게 — 고르라고 부추기는 게 목적이다 */
+.mcard.lv5, .mcard.lv6 { border-color: #ffc2da; background: #fff8fb; }
+.mcard.lv6 { border-color: #ffb3c4; }
 
 /* ===== 좁거나 낮은 화면 =====
  * 두 열이 들어갈 폭이 안 되거나 세로가 너무 짧으면, 한 줄로 쌓고 페이지 스크롤을 되살린다.

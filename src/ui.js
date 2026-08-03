@@ -97,6 +97,7 @@ export class UI {
       'demoBtn', 'demoBar', 'demoCaption', 'demoExit',
       'revealModal', 'revealCard', 'revealTier', 'revealArt', 'revealName', 'revealDesc',
       'mHintBtn', 'mHint', 'mDiff', 'mSteps', 'mStreak', 'mTimer', 'mTimerFill', 'mTimerText',
+      'mCards', 'mCardRow', 'mQuiz', 'mCardNote',
       'wavePreview', 'bossBar', 'bossBarFill', 'bossBarName', 'bossWarnBanner',
       'saveBtn', 'loadBtn', 'loadFile',
       'sellModeBtn', 'sellInfo', 'sellAllBtn', 'sellGoBtn',
@@ -181,7 +182,7 @@ export class UI {
      * 버튼이나 배경을 한 번 클릭하면 포커스가 거기 남아서, 답을 쓰고 Enter를 눌러도
      * 입력창 핸들러가 안 돌던 문제가 있었다. */
     el.mathModal.addEventListener('mousedown', (ev) => {
-      if (this._answered || ev.target.closest('button')) return;
+      if (this._answered || this.isCardOpen() || ev.target.closest('button')) return;
       setTimeout(() => el.mInput.focus(), 0);
     });
     el.mInput.addEventListener('keydown', (ev) => {
@@ -438,15 +439,19 @@ export class UI {
     html += `<div class="combine-rule">
       <b>규칙</b> 조합은 <b>같은 등급 2명</b>끼리만! ① 같은 직업 = 등급 UP ② 다른 직업 = 새 직업(등급 UP)<br>
       기본·특수 용사는 <b>전설</b>이 최고 · <b>신화</b> 등급은 <b>신화 용사</b>만 (⚡😇🌌)<br>
-      <b>⭐ 표시</b> = 그 조합에서 나올 <b>수학 문제 난이도</b>. 센 용사일수록 문제도 세요!
+      <b>⭐ 표시</b> = 그 조합에서 나올 <b>수학 문제 난이도</b>. 센 용사일수록 문제도 세요!<br>
+      문제는 <b>🟢안전 · 🔵정석 · 🔴도전</b> 세 장 중에서 <b>직접 고릅니다</b> — 어려울수록 환급이 커요
     </div>`;
 
-    /* 조합 난이도 = 문제 난이도. 누르기 전에 미리 보여 준다 */
+    /* 조합 난이도 = 카드 3장의 한가운데. 누르기 전에 미리 보여 준다.
+     * 적응형 보정까지 얹어야 미리보기와 실제 관문이 어긋나지 않는다. */
+    const adapt = D.adaptOffset(state.mathWindow);
     const lvBadge = (c) => {
-      const lv = D.mathLevel(c.resultTier, c.kind === 'recipe', !!D.CLASSES[c.result].mythic);
+      const raw = D.mathLevel(c.resultTier, c.kind === 'recipe', !!D.CLASSES[c.result].mythic);
+      const lv = Math.max(1, Math.min(5, raw + adapt));
       const L = D.MATH_LEVELS[lv];
-      const gate = D.mathRounds(lv) > 1 ? ` ${D.mathRounds(lv)}문제` : '';
-      return `<span class="mlv" style="background:${L.color}" title="수학 난이도: ${L.name}${gate}">${L.stars}${gate}</span>`;
+      const [lo, , hi] = D.cardLevels(lv);
+      return `<span class="mlv" style="background:${L.color}" title="수학 난이도: ${L.name} — 카드로 ${D.MATH_LEVELS[lo].name}~${D.MATH_LEVELS[hi].name} 중에서 고를 수 있어요">${L.stars}</span>`;
     };
 
     /* ① 등급업 — 같은 용사 2명 */
@@ -809,11 +814,83 @@ export class UI {
   /* ---------- 수학 모달 ---------- */
   showMath(title, lv) {
     this.el.mTitle.textContent = title;
-    /* 난이도가 카드 전체의 분위기를 바꾼다 — 열리는 순간 "센 문제"임을 알아챈다 */
-    const card = this.el.mathModal.querySelector('.modal-card');
-    card.className = `modal-card lv${Math.max(1, Math.min(5, lv || 1))}`;
+    this.setMathTone(lv);
     this.el.mathModal.classList.remove('hidden');
   }
+  /* 난이도가 창 전체의 분위기를 바꾼다 — 열리는 순간 "센 문제"임을 알아챈다.
+   * 카드를 고르면 그 자리에서 색이 바뀌므로 따로 부를 수 있게 떼어 놨다. */
+  setMathTone(lv) {
+    const card = this.el.mathModal.querySelector('.modal-card');
+    card.className = `modal-card lv${Math.max(1, Math.min(D.MAX_MATH_LV, lv || 1))}`;
+  }
+
+  /* ---------- 문제 카드 3장 ----------
+   * cards: [{ lv, label, sec, rounds, refund, shards, base }]
+   * 무엇을 고르는지 알고 골라야 선택이 선택이 된다 — 유형 이름·시간·환급을 모두 적는다. */
+  showCards(cards, onPick, note = '') {
+    const el = this.el;
+    this._cards = cards;
+    this._onPick = onPick;
+    el.mCardRow.textContent = '';
+    el.mCardNote.textContent = note;
+    el.mCardNote.classList.toggle('hidden', !note);
+    cards.forEach((c, i) => {
+      const S = D.CARD_STYLE[i];
+      const L = D.MATH_LEVELS[Math.max(1, Math.min(D.MAX_MATH_LV, c.lv))];
+      const btn = document.createElement('button');
+      btn.className = `mcard lv${c.lv}`;
+      btn.dataset.i = String(i);
+      const add = (cls, text) => {
+        const d = document.createElement('div');
+        d.className = cls;
+        d.textContent = text;
+        btn.append(d);
+        return d;
+      };
+      add('mc-key', `${i + 1}`);
+      add('mc-name', `${S.emoji} ${S.name}`);
+      const stars = add('mc-stars', `${L.stars} ${L.name}`);
+      stars.style.color = L.color;
+      add('mc-label', c.label);
+      add('mc-time', `⏳ ${c.sec}초${c.rounds > 1 ? ` · ${c.rounds}문제 연속` : ''}`);
+      const pay = add('mc-pay', c.refund ? `💰 +${c.refund}` : '조합 성공!');
+      if (c.shards) {
+        const s = document.createElement('b');
+        s.className = 'mc-shard';
+        s.textContent = ` ✨+${c.shards}`;
+        pay.append(s);
+      }
+      btn.addEventListener('click', () => this.pickCard(i));
+      el.mCardRow.append(btn);
+    });
+    el.mCards.classList.remove('hidden');
+    el.mQuiz.classList.add('hidden');
+    el.mFeedback.classList.add('hidden');
+    el.mHintBtn.classList.add('hidden');
+    el.mNext.classList.add('hidden');
+    this._answered = false;
+    /* 가운데(정석)에 포커스 — 고민하기 싫으면 Enter만 눌러도 게임이 굴러간다 */
+    setTimeout(() => {
+      const b = el.mCardRow.children[1];
+      if (b) b.focus();
+    }, 30);
+  }
+  pickCard(i) {
+    if (!this._onPick || !this._cards || !this._cards[i]) return;
+    const fn = this._onPick;
+    this._onPick = null;
+    this.hideCards();
+    fn(i);
+  }
+  hideCards() {
+    const el = this.el;
+    el.mCards.classList.add('hidden');
+    el.mQuiz.classList.remove('hidden');
+    el.mFeedback.classList.remove('hidden');
+    el.mHintBtn.classList.remove('hidden');
+  }
+  isCardOpen() { return !this.el.mCards.classList.contains('hidden'); }
+  cardCount() { return this._cards ? this._cards.length : 0; }
   /* 문제·힌트 안의 {a/b} 를 세로 분수로 그린다.
    * "15 ÷ 3/6" 처럼 한 줄로 쓰면 15÷3÷6 으로도 읽혀서 아이가 헷갈린다.
    * (문자열을 그대로 넣지 않고 DOM으로 조립한다 — innerHTML을 쓸 이유가 없다) */
@@ -837,10 +914,10 @@ export class UI {
   /* o: { grade, lv, text, round, rounds, time, streak, reward } */
   setProblem(o) {
     const el = this.el;
-    const L = D.MATH_LEVELS[Math.max(1, Math.min(5, o.lv))];
+    const L = D.MATH_LEVELS[Math.max(1, Math.min(D.MAX_MATH_LV, o.lv))];
     this._answered = false;
     el.mGrade.textContent = `${o.grade}학년`;
-    el.mDiff.textContent = `${L.stars} ${L.name}`;
+    el.mDiff.textContent = `${L.stars} ${L.name}${o.label ? ` · ${o.label}` : ''}`;
     el.mDiff.style.background = L.color;
     el.mSteps.textContent = `${o.round} / ${o.rounds}단계`;
     el.mSteps.classList.toggle('hidden', o.rounds < 2);
@@ -903,7 +980,11 @@ export class UI {
       el.mNext.classList.add('hidden');
     }
   }
-  hideMath() { this.el.mathModal.classList.add('hidden'); }
+  hideMath() {
+    this._onPick = null;                 // 고르지 않고 닫았다 — 예약된 콜백이 살아 있으면 안 된다
+    this.hideCards();
+    this.el.mathModal.classList.add('hidden');
+  }
   isMathOpen() { return !this.el.mathModal.classList.contains('hidden'); }
   isAnswered() { return !!this._answered; }
   setGradeActive(g) {
@@ -919,7 +1000,7 @@ export class UI {
        👾 물리친 몬스터: <b>${state.kills}마리</b>${state.midBossKills ? ` · 👿 중간보스 ${state.midBossKills}` : ''}${state.bossKills ? ` · 🐉 대보스 ${state.bossKills}` : ''}<br>
        🎲 소환 <b>${state.summons}</b> · ⚗️ 조합 <b>${state.combos}</b> · ✨ 특수 <b>${state.specialsMade}</b> · 🌌 신화 <b>${state.mythicsMade}</b><br>
        🧮 수학 문제: <b>${state.solved}문제 중 ${state.correct}개 정답 (${rate}%)</b>${state.hints ? ` · 💡 힌트 ${state.hints}회` : ''}<br>
-       🔥 최고 연승: <b>${state.bestStreak || 0}연속</b> (한 번에 맞히기)${state.timeOuts ? ` · ⏰ 시간 초과 ${state.timeOuts}회` : ''}`;
+       🔥 최고 연승: <b>${state.bestStreak || 0}연속</b> (한 번에 맞히기)${state.timeOuts ? ` · ⏰ 시간 초과 ${state.timeOuts}회` : ''}${state.mathShards ? `<br>🔴 도전 카드로 번 별조각: <b>✨${state.mathShards}</b>` : ''}`;
     this.el.overShards.textContent = `✨ 별조각 +${state.shardsEarned} 획득!`;
     this.el.overModal.classList.remove('hidden');
   }

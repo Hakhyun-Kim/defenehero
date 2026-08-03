@@ -47,7 +47,7 @@ export const demo = {
     this.active = true;
     this.t = 0.6;
     this.midT = 0;
-    this.api.onStart(this.profileName);
+    this.api.onStart(this.profileName, Bot.PROFILES[this.profileName]);
     this.say(`🎬 데모 — ${this.profileName} 플레이어가 대신 플레이합니다`);
     return true;
   },
@@ -85,6 +85,18 @@ export const demo = {
     /* ③ 문제창 — 답을 넣는다. 봇은 동전을 던지지만 여기선 실제 정답을 타이핑한다 */
     if (A.isMathOpen()) {
       if (A.isAnswered()) return;              // 채점 결과 표시 중 (자동으로 다음으로 간다)
+      /* ③-1 카드 세 장 중 하나를 고른다 — 사람이 누르는 그 버튼을 그대로 누른다 */
+      if (A.isCardOpen()) {
+        if (this.t <= 0) {
+          const cards = A.getCards();
+          const i = Bot.pickCardIndex(P, cards.length || 3, state.rng || Math.random);
+          const c = cards[i];
+          this.say(`🃏 ${c ? `${c.label} (${c.lv}단계)` : '문제'} 카드를 고릅니다`);
+          A.pickCard(i);
+          this.t = PACE.answer;
+        }
+        return;
+      }
       if (this.t <= 0) {
         const prob = A.getProblem();
         if (prob) {

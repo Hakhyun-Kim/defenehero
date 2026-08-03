@@ -52,6 +52,7 @@ const renderer = new Renderer3D(ui.el.scene3d, {
 
 let state = null;
 let grade = 3;
+let gradeBeforeDemo = null;   // 데모가 프로필 학년으로 바꾸기 전의 값
 let speed = 1;
 let selBench = null;      // 배치 대기 중인 벤치 용사
 let selHero = null;       // 정보 패널에 표시 중인 용사 (벤치/필드)
@@ -151,8 +152,18 @@ function openMath(mode, pending = null) {
   modal.pending = pending;
   const info = comboInfo(pending);
   modal.info = info;
-  modal.lv = comboLevel(info);
-  modal.rounds = D.mathRounds(modal.lv);
+  /* 카드 3장의 한가운데. 최근 성적에 따라 세 장이 통째로 한 칸 오르내린다 */
+  modal.adapt = D.adaptOffset(state.mathWindow);
+  modal.base = Math.max(1, Math.min(5, comboLevel(info) + modal.adapt));
+  /* 학년은 관문이 열리는 순간 얼려 둔다.
+   * 카드에 "💰+57"이라고 적어 놓고 도중에 학년이 바뀌면 실제 환급이 달라진다 —
+   * 적어 준 숫자와 주는 숫자가 다르면 카드를 고를 이유가 사라진다.
+   * (데모를 켜고 끄면 프로필 학년으로 갈아타므로 실제로 벌어질 수 있는 일이다) */
+  modal.grade = grade;
+  modal.card = null;
+  modal.prob = null;                     // 카드를 고르기 전엔 "낸 문제"가 없다 (시계·힌트가 돌면 안 된다)
+  modal.lv = modal.base;
+  modal.rounds = 1;
   modal.round = 1;
   modal.allClean = true;                 // 모든 단계를 한 번에 맞혔는가
   modal.minLeft = 1;                     // 단계별 남은 시간 비율의 최솟값
@@ -166,28 +177,80 @@ function openMath(mode, pending = null) {
       title = `${R.mythic ? '🌌 신화의 시험!' : '⚗️ 조합 시험!'} (${R.emoji} ${R.name} 만들기)`;
     }
   }
-  ui.showMath(title, modal.lv);
-  SFX.challenge(modal.lv);
-  if (modal.rounds > 1) ui.toast(`🌌 신화의 관문! ${modal.rounds}문제를 연속으로 맞혀야 해요`, 'bad');
-  newProblem();
+  ui.showMath(title, modal.base);
+  SFX.challenge(modal.base);
+  offerCards();
 }
 
-function newProblem() {
-  modal.prob = MathGen.gen(grade, modal.lv);
+/* ---------- 문제 카드 3장 ----------
+ * ★ 관문을 "세금"에서 "내기"로 바꾸는 곳.
+ *   난이도를 아무리 잘 조율해도 어떤 아이에겐 쉽고 어떤 아이에겐 벅차다.
+ *   그래서 마지막 보정을 푸는 사람 손에 넘긴다 — 세 장을 실제로 뽑아 놓고,
+ *   유형 이름·제한 시간·환급 금액을 전부 적어서 알고 고르게 한다.
+ *   (고르지 않은 두 장은 keep()하지 않는다 — 다음 관문의 후보가 좁아지면 안 된다) */
+function offerCards() {
+  const cost = modal.info ? modal.info.cost : 0;
+  const base = modal.base;
+  modal.cards = D.cardLevels(base).map(lv => {
+    const prob = MathGen.gen(modal.grade, lv, false);
+    const mul = D.cardRefundMul(lv, base);
+    return {
+      lv, prob, mul,
+      label: prob.label,
+      sec: D.mathTime(prob.sec, lv),
+      rounds: D.mathRounds(lv),
+      shards: D.cardShards(lv, base),
+      refund: Math.round(cost * D.refundRatio(modal.grade) * state.mathMul * mul),
+    };
+  });
+  /* 난이도가 저절로 움직였으면 반드시 말해 준다 — 말없이 조용히 조이면
+   * "왜 갑자기 어려워졌지?"가 되고, 아이는 자기가 못한다고 생각한다. */
+  const note = modal.adapt > 0
+    ? '🔥 요즘 척척 맞히고 있어요 — 문제가 한 칸 올라갔어요!'
+    : modal.adapt < 0
+      ? '🌱 잠깐 숨 고르기 — 문제가 한 칸 쉬워졌어요'
+      : '';
+  ui.showCards(modal.cards, pickCard, note);
+}
+
+function pickCard(i) {
+  const c = modal.cards && modal.cards[i];
+  if (!c || !ui.isMathOpen()) return;
+  modal.card = c;
+  modal.lv = c.lv;
+  modal.rounds = c.rounds;
+  modal.round = 1;
+  ui.setMathTone(c.lv);
+  SFX.challenge(c.lv);
+  if (c.rounds > 1) ui.toast(`🌌 ${c.rounds}문제를 연속으로 맞혀야 하는 관문이에요!`, 'bad');
+  MathGen.keep(c.prob);                  // 고른 한 장만 "낸 문제"로 기록
+  startProblem(c.prob);
+}
+
+/* 다음 단계(신화 2문제)·오답 재도전은 고른 난이도 그대로 새 문제를 뽑는다 —
+ * 카드를 다시 고르게 하면 틀릴 때마다 쉬운 카드로 갈아탈 수 있다. */
+function newProblem() { startProblem(MathGen.gen(modal.grade, modal.lv)); }
+
+function startProblem(prob) {
+  modal.prob = prob;
   modal.tries = 0;
   modal.usedHint = false;                // 힌트는 문제마다 새로 산다
-  modal.timeMax = D.mathTime(modal.lv, grade);
+  /* 제한 시간은 관문 등급이 아니라 문제 유형이 정한다 (mathgate.js 참고) */
+  modal.timeMax = D.mathTime(prob.sec, modal.lv);
   modal.time = modal.timeMax;
   const cost = modal.info ? modal.info.cost : 0;
-  const refund = Math.round(cost * D.refundRatio(grade) * state.mathMul);
+  const mul = modal.card ? modal.card.mul : 1;
+  const refund = Math.round(cost * D.refundRatio(modal.grade) * state.mathMul * mul);
   const bonus = [];
+  if (mul > 1.01) bonus.push(`🎯카드 ×${mul.toFixed(2)}`);
   if (streak >= 1) bonus.push(`🔥${streak + 1}연승 ×${D.streakMul(streak + 1).toFixed(2)}`);
+  const shard = modal.card && modal.card.shards ? ` ✨별조각 +${modal.card.shards}` : '';
   ui.setProblem({
-    grade, lv: modal.lv, text: modal.prob.text,
+    grade: modal.grade, lv: modal.lv, text: prob.text, label: prob.label,
     round: modal.round, rounds: modal.rounds,
     time: modal.timeMax, streak,
     reward: refund
-      ? `⏱ 빨리 한 번에 맞힐수록 환급이 커져요! (기본 💰${refund}${bonus.length ? ' · ' + bonus.join(' ') : ''})`
+      ? `⏱ 빨리 한 번에 맞힐수록 환급이 커져요! (기본 💰${refund}${bonus.length ? ' · ' + bonus.join(' ') : ''})${shard}`
       : '맞히면 조합 성공!',
   });
 }
@@ -199,6 +262,7 @@ function timeUp() {
   modal.allClean = false;
   state.timeOuts++;
   E.applyMathResult(state, false);
+  E.recordMathOutcome(state, false);
   SFX.timeOut();
   ui.flashHit();
   const again = modal.rounds > 1 ? ' 1단계부터 다시!' : '';
@@ -215,6 +279,7 @@ function submitMath(value) {
   E.applyMathResult(state, ok);
   if (ok) {
     const clean = modal.tries === 1 && !modal.usedHint;
+    E.recordMathOutcome(state, clean);       // 적응형 난이도의 원재료
     modal.allClean = modal.allClean && clean;
     modal.minLeft = Math.min(modal.minLeft, modal.timeMax ? modal.time / modal.timeMax : 0);
     if (clean) {
@@ -258,13 +323,24 @@ function submitMath(value) {
           renderer.celebrate(0xd8b4ff, true);
         }
         if (firstTry) {
-          /* 정확 + 속도 + 연승 = 환급. 시계를 보며 푸는 이유가 여기서 생긴다 */
+          /* 정확 + 속도 + 연승 + 고른 카드 = 환급. 시계를 보며 푸는 이유가 여기서 생긴다 */
           const speed = 1 + D.SPEED_BONUS_MAX * modal.minLeft;
           const sm = D.streakMul(streak);
-          const back = E.refundFirstTry(state, r.cost, grade, speed * sm);
+          const cm = modal.card ? modal.card.mul : 1;
+          const back = E.refundFirstTry(state, r.cost, modal.grade, speed * sm * cm);
           const tags = [`⚡속도 +${Math.round((speed - 1) * 100)}%`];
+          if (cm > 1.01) tags.push(`🎯${D.CARD_STYLE[modal.cards.indexOf(modal.card)].name} ×${cm.toFixed(2)}`);
           if (sm > 1) tags.push(`🔥${streak}연승 ×${sm.toFixed(2)}`);
           msg += ` ✅ 한 번에 정답! 💰+${back} 환급 (${tags.join(' · ')})`;
+          /* 어려운 카드를 골라 한 번에 통과했을 때만 별조각 — 흔해지면 의미가 없다.
+           * 판이 끝날 때까지 기다리지 않고 바로 준다: 지금 이 순간의 보상이라야 다음에도 집는다. */
+          const sh = modal.card ? modal.card.shards : 0;
+          if (sh) {
+            store.shards = store.shards + sh;
+            state.mathShards = (state.mathShards || 0) + sh;
+            SFX.shard();
+            msg += ` ✨별조각 +${sh}!`;
+          }
         }
         if (r.hero.tier >= 4) ui.toast(`🌌 신화 등급 [${C.name}] 탄생!! 최강의 용사예요!`, 'good');
         /* 영웅(2) 이상 탄생은 확실한 연출로 */
@@ -298,6 +374,7 @@ function submitMath(value) {
   } else {
     streak = 0;
     modal.allClean = false;
+    E.recordMathOutcome(state, false);
     SFX.wrong();
     /* 다단계 관문은 "연속"이 조건이니 처음 단계로 되돌린다 */
     const again = modal.rounds > 1 ? ' 1단계부터 다시!' : '';
@@ -1063,6 +1140,14 @@ document.addEventListener('keydown', (ev) => {
   /* --- 수학 모달 --- */
   if (ui.isMathOpen()) {
     if (key === 'Escape') { ev.preventDefault(); closeMathAll(); return; }
+    /* 카드를 고르는 중 — 숫자키로 고르고, Enter는 가운데(정석).
+     * 고르기 전에는 제출도 힌트도 없으므로 나머지 키는 전부 삼킨다. */
+    if (ui.isCardOpen()) {
+      const n = Number(key);
+      if (n >= 1 && n <= ui.cardCount()) { ev.preventDefault(); ui.pickCard(n - 1); }
+      else if (key === 'Enter' || key === ' ') { ev.preventDefault(); ui.pickCard(1); }
+      return;
+    }
     if (ui.isAnswered() && (key === 'Enter' || key === ' ')) {
       ev.preventDefault();
       /* 자동 진행을 기다리는 중이면 Enter는 "기다리지 말고 지금" 이라는 뜻이다 */
@@ -1225,8 +1310,9 @@ function frame(now) {
     }
   }
 
-  /* 제한 시간 — 전투는 멈춰 있어도 시계는 흐른다. 문제창의 유일한 압박 장치. */
-  if (ui.isMathOpen() && modal.prob && !ui.isAnswered()) {
+  /* 제한 시간 — 전투는 멈춰 있어도 시계는 흐른다. 문제창의 유일한 압박 장치.
+   * 카드를 고르는 동안은 흐르지 않는다: 고르는 시간까지 재면 안 읽고 찍게 된다. */
+  if (ui.isMathOpen() && !ui.isCardOpen() && modal.prob && !ui.isAnswered()) {
     const prev = modal.time;
     modal.time = Math.max(0, modal.time - realDt);
     ui.setTimer(modal.time, modal.timeMax);
@@ -1334,6 +1420,9 @@ demo.attach({
   isRevealOpen: () => ui.isRevealOpen(),
   isMathOpen: () => ui.isMathOpen(),
   isAnswered: () => ui.isAnswered(),
+  isCardOpen: () => ui.isCardOpen(),
+  getCards: () => modal.cards || [],
+  pickCard: (i) => ui.pickCard(i),
   getProblem: () => modal.prob,
   closeStory,
   summon: doSummon,
@@ -1348,14 +1437,24 @@ demo.attach({
     : `${D.CLASSES[c.result].name}`),
   heroLabel: (h) => `${D.TIERS[h.tier].name} ${D.CLASSES[h.cls].name}`,
   onCaption: (text) => ui.setDemoCaption(text),
-  onStart(profile) {
-    grade = D.GRADES ? grade : grade;
+  /* 프로필마다 푸는 학년이 다르다(초보 3 · 고수 6). 데모가 끝나면 사람이 고른 학년으로 되돌린다 */
+  onStart(profile, P) {
+    if (P && P.grade) {
+      if (gradeBeforeDemo == null) gradeBeforeDemo = grade;
+      grade = P.grade;
+      ui.setGradeActive(grade);
+    }
     ui.setDemoMode(true, profile);
     setSellMode(false);
     deselectAll();
     ui.restoreTab();
   },
   onStop() {
+    if (gradeBeforeDemo != null) {
+      grade = gradeBeforeDemo;
+      gradeBeforeDemo = null;
+      ui.setGradeActive(grade);
+    }
     ui.setDemoMode(false);
     setSellMode(false);
     deselectAll();
