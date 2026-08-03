@@ -71,6 +71,13 @@ function maybeWord(op, a, b, ans, plain, plainHint) {
   return { text: plain, answer: ans, hint: plainHint };
 }
 
+/* ---------- 세로셈 칸 ----------
+ * 자리를 맞춰 쓰지 않으면 받아올림에서 틀린다. 문제집의 계산 칸이 하는 일이
+ * 딱 그것이라, 화면에도 같은 걸 띄워 준다(ui.js가 그린다).
+ * 여기서는 "어떤 두 수를 어떤 연산으로 세로로 쓰면 되는가"만 실어 보낸다 —
+ * 문장제로 포장돼도 계산은 같으므로 문장형/식형 모두에 붙는다. */
+const vert = (p, op, a, b) => { p.vert = { op, a, b }; return p; };
+
 /* =====================================================
  * 문제 유형 표
  *   min   : 이 난이도부터 등장 (= 난이도가 오르면 새 유형이 "해금"된다)
@@ -84,15 +91,15 @@ const G3 = [
   {
     id: 'add2', min: 1, sec: 22, label: '두 자리 덧셈', make: (o) => {
       const a = ri(23, at(o, 58, 89)), b = ri(14, at(o, 45, 89));
-      return maybeWord('add', a, b, a + b, `${a} + ${b} = ?`,
-        `일의 자리부터 더하고, 10이 넘으면 받아올림! ${digitHint(a + b)}`);
+      return vert(maybeWord('add', a, b, a + b, `${a} + ${b} = ?`,
+        `일의 자리부터 더하고, 10이 넘으면 받아올림! ${digitHint(a + b)}`), '+', a, b);
     },
   },
   {
     id: 'sub2', min: 1, sec: 24, label: '두 자리 뺄셈', make: (o) => {
       const a = ri(42, at(o, 72, 98)), b = ri(13, a - 11);
-      return maybeWord('sub', a, b, a - b, `${a} − ${b} = ?`,
-        `일의 자리부터 빼요. 모자라면 십의 자리에서 10을 빌려와요! ${digitHint(a - b)}`);
+      return vert(maybeWord('sub', a, b, a - b, `${a} − ${b} = ?`,
+        `일의 자리부터 빼요. 모자라면 십의 자리에서 10을 빌려와요! ${digitHint(a - b)}`), '−', a, b);
     },
   },
   {
@@ -105,22 +112,22 @@ const G3 = [
   {
     id: 'add3', min: 2, sec: 30, label: '세 자리 덧셈', make: (o) => {
       const a = ri(123, at(o, 560, 867)), b = ri(102, 999 - a);
-      return maybeWord('add', a, b, a + b, `${a} + ${b} = ?`,
-        `일의 자리부터 차례대로 더해요. 받아올림 조심! ${digitHint(a + b)}`);
+      return vert(maybeWord('add', a, b, a + b, `${a} + ${b} = ?`,
+        `일의 자리부터 차례대로 더해요. 받아올림 조심! ${digitHint(a + b)}`), '+', a, b);
     },
   },
   {
     id: 'sub3', min: 2, sec: 32, label: '세 자리 뺄셈', make: (o) => {
       const a = ri(310, at(o, 700, 985)), b = ri(102, a - 105);
-      return maybeWord('sub', a, b, a - b, `${a} − ${b} = ?`,
-        `일의 자리부터 빼요. 모자라면 윗자리에서 10을 빌려와요! ${digitHint(a - b)}`);
+      return vert(maybeWord('sub', a, b, a - b, `${a} − ${b} = ?`,
+        `일의 자리부터 빼요. 모자라면 윗자리에서 10을 빌려와요! ${digitHint(a - b)}`), '−', a, b);
     },
   },
   {
     id: 'mul21', min: 2, sec: 30, label: '두 자리 × 한 자리', make: (o) => {
       const a = ri(12, at(o, 33, 89)), b = ri(3, at(o, 7, 9));
-      return maybeWord('mul', a, b, a * b, `${a} × ${b} = ?`,
-        `${a}를 ${Math.floor(a / 10) * 10} + ${a % 10}으로 나눠서 각각 ${b}를 곱한 뒤 더해요. ${digitHint(a * b)}`);
+      return vert(maybeWord('mul', a, b, a * b, `${a} × ${b} = ?`,
+        `${a}를 ${Math.floor(a / 10) * 10} + ${a % 10}으로 나눠서 각각 ${b}를 곱한 뒤 더해요. ${digitHint(a * b)}`), '×', a, b);
     },
   },
   {
@@ -155,7 +162,7 @@ const G3 = [
     id: 'mul31', min: 5, sec: 42, label: '세 자리 × 한 자리', make: (o) => {
       const a = ri(112, at(o, 320, 489)), b = ri(4, at(o, 7, 9));
       return {
-        text: `${a} × ${b} = ?`, answer: a * b,
+        text: `${a} × ${b} = ?`, answer: a * b, vert: { op: '×', a, b },
         hint: `일의 자리부터 곱하고 받아올림을 더해요. ${digitHint(a * b)}`,
       };
     },
@@ -176,15 +183,15 @@ const G4 = [
   {
     id: 'mul22', min: 1, sec: 40, label: '두 자리 × 두 자리', make: (o) => {
       const a = ri(12, at(o, 22, 29)), b = ri(11, at(o, 18, 24));
-      return maybeWord('mul', a, b, a * b, `${a} × ${b} = ?`,
-        `${a} × ${b} = ${a} × ${Math.floor(b / 10) * 10} + ${a} × ${b % 10} 으로 나눠 계산해요. ${digitHint(a * b)}`);
+      return vert(maybeWord('mul', a, b, a * b, `${a} × ${b} = ?`,
+        `${a} × ${b} = ${a} × ${Math.floor(b / 10) * 10} + ${a} × ${b % 10} 으로 나눠 계산해요. ${digitHint(a * b)}`), '×', a, b);
     },
   },
   {
     id: 'mul31', min: 1, sec: 42, label: '세 자리 × 한 자리', make: (o) => {
       const a = ri(112, at(o, 260, 389)), b = ri(3, at(o, 5, 7));
       return {
-        text: `${a} × ${b} = ?`, answer: a * b,
+        text: `${a} × ${b} = ?`, answer: a * b, vert: { op: '×', a, b },
         hint: `일의 자리부터 곱하고 받아올림을 더해요. ${digitHint(a * b)}`,
       };
     },
@@ -200,7 +207,7 @@ const G4 = [
     id: 'bigAdd', min: 2, sec: 36, label: '네 자리 덧셈', make: (o) => {
       const a = ri(1250, at(o, 5200, 7800)), b = ri(1020, 9999 - a);
       return {
-        text: `${a} + ${b} = ?`, answer: a + b,
+        text: `${a} + ${b} = ?`, answer: a + b, vert: { op: '+', a, b },
         hint: `천의 자리까지 자리를 맞춰 더해요. ${digitHint(a + b)}`,
       };
     },
@@ -209,7 +216,7 @@ const G4 = [
     id: 'bigSub', min: 2, sec: 40, label: '네 자리 뺄셈', make: (o) => {
       const a = ri(3200, at(o, 6800, 9850)), b = ri(1120, a - 1050);
       return {
-        text: `${a} − ${b} = ?`, answer: a - b,
+        text: `${a} − ${b} = ?`, answer: a - b, vert: { op: '−', a, b },
         hint: `자리를 맞춰 일의 자리부터 빼요. ${digitHint(a - b)}`,
       };
     },
@@ -218,7 +225,7 @@ const G4 = [
     id: 'mul22b', min: 3, sec: 50, label: '큰 두 자리 곱셈', make: (o) => {
       const a = ri(32, at(o, 58, 79)), b = ri(23, at(o, 36, 49));
       return {
-        text: `${a} × ${b} = ?`, answer: a * b,
+        text: `${a} × ${b} = ?`, answer: a * b, vert: { op: '×', a, b },
         hint: `${a} × ${Math.floor(b / 10) * 10} 와 ${a} × ${b % 10} 을 각각 구해서 더해요. ${digitHint(a * b)}`,
       };
     },
@@ -255,7 +262,7 @@ const G4 = [
     id: 'mul32', min: 5, sec: 62, label: '세 자리 × 두 자리', make: (o) => {
       const a = ri(112, at(o, 320, 468)), b = ri(23, at(o, 45, 68));
       return {
-        text: `${a} × ${b} = ?`, answer: a * b,
+        text: `${a} × ${b} = ?`, answer: a * b, vert: { op: '×', a, b },
         hint: `${a} × ${Math.floor(b / 10) * 10} = ${a * Math.floor(b / 10) * 10}, 여기에 ${a} × ${b % 10} 을 더해요.`,
       };
     },
@@ -617,6 +624,7 @@ export function gen(grade, lv = 1, remember = true) {
     label: t.label,
     sec: t.sec,
     over,
+    vert: p.vert || null,
     min: t.min,
     lv: L,
     grade: g,

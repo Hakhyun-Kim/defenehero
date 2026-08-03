@@ -39,9 +39,10 @@ function prepActions(state, P) {
     const lv = lvs[ci];
     const acc = Math.max(0.05, P.acc - ACC_PER_LV * (lv - base));
     const rounds = D.mathRounds(lv);
-    /* 조합 관문: 정답까지 최대 3회 시도. 최고 난이도는 연속 정답이라야 통과 */
+    /* 조합 관문: MATH_TRIES 번까지 도전. 최고 난이도는 연속 정답이라야 통과.
+     * 다 쓰면 그 조합이 잠기고 다음 후보로 넘어간다 (게임과 같은 규칙) */
     let passed = false, tries = 0;
-    for (; tries < 3; tries++) {
+    for (; tries < D.MATH_TRIES; tries++) {
       let streakOk = true;
       for (let s = 0; s < rounds; s++) {
         const ok = state.rng() < acc;
@@ -52,7 +53,7 @@ function prepActions(state, P) {
       }
       if (streakOk) { passed = true; break; }
     }
-    if (!passed) break;
+    if (!passed) { E.lockCombo(state, E.comboKey(pick)); continue; }   // 잠기고 다음 후보로
     const r = pick.kind === 'recipe'
       ? E.combineRecipe(state, pick.result)
       : E.combineRankUp(state, pick.cls, pick.tier);

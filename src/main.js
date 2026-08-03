@@ -167,6 +167,7 @@ function openMath(mode, pending = null) {
   modal.round = 1;
   modal.allClean = true;                 // 모든 단계를 한 번에 맞혔는가
   modal.minLeft = 1;                     // 단계별 남은 시간 비율의 최솟값
+  modal.fails = 0;                        // 이 관문에서 틀린 횟수 (MATH_TRIES 넘으면 잠긴다)
   let title = '✏️ 지혜의 시험!';
   if (mode === 'combine' && pending) {
     if (pending.kind === 'rankup') {
@@ -239,7 +240,7 @@ function startProblem(prob, pop = false) {
   modal.tries = 0;
   modal.usedHint = false;                // 힌트는 문제마다 새로 산다
   /* 제한 시간은 관문 등급이 아니라 문제 유형이 정한다 (mathgate.js 참고) */
-  modal.timeMax = D.mathTime(prob.sec, modal.lv);
+  modal.timeMax = D.mathTime(prob.sec, modal.lv, prob.over);
   modal.time = modal.timeMax;
   const cost = modal.info ? modal.info.cost : 0;
   const mul = modal.card ? modal.card.mul : 1;
@@ -253,27 +254,71 @@ function startProblem(prob, pop = false) {
     grade: modal.grade, lv: modal.lv, text: prob.text, label: prob.label,
     round: modal.round, rounds: modal.rounds,
     time: modal.timeMax, streak, pop,
+    vert: prob.vert,
+    triesLeft: Math.max(0, D.MATH_TRIES - (modal.fails || 0)),
+    canGiveUp: modal.mode === 'combine' && !!modal.pending,
     reward: refund
       ? `⏱ 빨리 한 번에 맞힐수록 환급이 커져요! (기본 💰${refund}${bonus.length ? ' · ' + bonus.join(' ') : ''})${shard}`
       : '맞히면 조합 성공!',
   });
 }
 
-/* 시간 초과 — 조합이 날아가진 않지만 환급은 사라지고 연승도 끊긴다 */
-function timeUp() {
-  if (!modal.prob || ui.isAnswered()) return;
+/* ---------- 포기 · 실패 ----------
+ * ★ 예전에는 문제창을 닫는 데 아무 대가가 없었다. 그래서 껐다 다시 켜면 난이도와 유형이
+ *   새로 뽑혔고(공짜 리롤), 틀려도 새 문제가 무한히 나왔다. 결국 아무렇게나 눌러도
+ *   언젠간 조합이 됐고, 수학은 있으나 마나였다.
+ *   이제 포기하거나 세 번 틀리면 **그 조합이 이번 준비 단계 동안 잠긴다.**
+ *   조합이 이 게임의 유일한 성장 수단이라 이게 가장 자연스러운 대가다. */
+function lockPending(why) {
+  const p = modal.pending;
+  if (!p) return false;
+  E.lockCombo(state, E.comboKey(p));
+  streak = 0;
+  modal.pending = null;                  // 여기서 비워야 재도전 경로로 새 문제가 나가지 않는다
+  ui.toast(`🔒 ${why} — 이 조합은 이번 웨이브엔 못 해요 (웨이브를 치르면 다시 열려요)`, 'bad');
+  return true;
+}
+
+/* 닫기·Esc = 포기. 조합이 걸려 있으면 대가가 따른다 */
+function giveUpMath() {
+  if (modal.mode === 'combine' && modal.pending) {
+    SFX.wrong();
+    lockPending('문제를 포기했어요');
+  }
+  closeMathAll();
+  refreshAll();
+}
+
+/* 오답·시간 초과 공통 뒤처리. 남은 도전이 없으면 관문이 잠긴다 */
+function afterMiss(msg) {
   streak = 0;
   modal.allClean = false;
+  modal.fails = (modal.fails || 0) + 1;
+  E.recordMathOutcome(state, false);
+  const left = D.MATH_TRIES - modal.fails;
+  if (left <= 0 && modal.mode === 'combine' && modal.pending) {
+    lockPending(`${D.MATH_TRIES}번 틀렸어요`);
+    ui.mathFeedback(false, `${msg} 여기까지! 이 조합은 이번 웨이브엔 못 해요.`, null);
+    autoNext(RETRY_MS);                  // 결과를 읽을 시간을 준 뒤 알아서 닫힌다
+    refreshAll();
+    return;
+  }
+  if (modal.rounds > 1) modal.round = 1;
+  const again = modal.rounds > 1 ? ' 1단계부터 다시!' : '';
+  ui.mathFeedback(false, `${msg}${again} (남은 도전 ${left}번)`, '🔁 다시 도전 (Enter)');
+  autoNext(RETRY_MS);
+  refreshAll();
+}
+
+/* 시간 초과 — 오답과 똑같이 도전 횟수를 깎는다.
+ * 예전엔 시간이 지나도 무한히 새 문제가 나와서, 가만히 두는 게 전략이 될 수 있었다. */
+function timeUp() {
+  if (!modal.prob || ui.isAnswered()) return;
   state.timeOuts++;
   E.applyMathResult(state, false);
-  E.recordMathOutcome(state, false);
   SFX.timeOut();
   ui.flashHit();
-  const again = modal.rounds > 1 ? ' 1단계부터 다시!' : '';
-  if (modal.rounds > 1) modal.round = 1;
-  ui.mathFeedback(false, `⏰ 시간 초과! 정답은 ${modal.prob.answer} 이에요.${again}`, '🔁 다시 도전 (Enter)');
-  autoNext(RETRY_MS);          // 시간 초과는 자리를 비웠을 가능성이 크다 — 더더욱 멈춰 있으면 안 된다
-  refreshAll();
+  afterMiss(`⏰ 시간 초과! 정답은 ${modal.prob.answer} 이에요.`);
 }
 
 function submitMath(value) {
@@ -376,15 +421,10 @@ function submitMath(value) {
       afterCorrect('🎉 정답!');
     }
   } else {
-    streak = 0;
-    modal.allClean = false;
-    E.recordMathOutcome(state, false);
     SFX.wrong();
-    /* 다단계 관문은 "연속"이 조건이니 처음 단계로 되돌린다 */
-    const again = modal.rounds > 1 ? ' 1단계부터 다시!' : '';
-    if (modal.rounds > 1) modal.round = 1;
-    ui.mathFeedback(false, `😢 아쉬워요! 정답은 ${modal.prob.answer} 이에요.${again}`, '🔁 다시 도전 (Enter)');
-    autoNext(RETRY_MS);        // 가만히 둬도 다시 문제가 나온다 — 정답을 읽을 시간은 준다
+    /* 다단계 관문은 "연속"이 조건이니 처음 단계로 되돌린다 (afterMiss가 처리) */
+    afterMiss(`😢 아쉬워요! 정답은 ${modal.prob.answer} 이에요.`);
+    return;
   }
   refreshAll();
 }
@@ -439,7 +479,7 @@ function closeMathAll() {
   modal.pending = null;
 }
 function chooseBestCombo() {
-  const combos = E.listCombos(state).filter(c => c.affordable);
+  const combos = E.listCombos(state).filter(c => c.affordable && !c.locked);
   if (!combos.length) return null;
   /* 가장 높은 등급을 만들 수 있는 것 우선, 동급이면 특수 레시피 우선 */
   return combos.sort((a, b) =>
@@ -1021,7 +1061,7 @@ const handlers = {
   onDragStart, onDragMove, onDragEnd,
   onMathSubmit: submitMath,
   onMathNext: advanceMath,
-  onMathClose: closeMathAll,
+  onMathClose: giveUpMath,
   onDemoToggle() { demo.toggle(); SFX.tap(); },
   onStoryClose: closeStory,
   onStoryOff() { store.storyOff = true; ui.toast('이야기를 끄었어요. 다시 보려면 새로고침 후 설정에서…', 'bad'); closeStory(); },
@@ -1143,7 +1183,7 @@ document.addEventListener('keydown', (ev) => {
 
   /* --- 수학 모달 --- */
   if (ui.isMathOpen()) {
-    if (key === 'Escape') { ev.preventDefault(); closeMathAll(); return; }
+    if (key === 'Escape') { ev.preventDefault(); giveUpMath(); return; }
     if (ui.isAnswered() && (key === 'Enter' || key === ' ')) {
       ev.preventDefault();
       /* 자동 진행을 기다리는 중이면 Enter는 "기다리지 말고 지금" 이라는 뜻이다 */

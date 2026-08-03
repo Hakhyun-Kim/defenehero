@@ -97,7 +97,7 @@ export class UI {
       'demoBtn', 'demoBar', 'demoCaption', 'demoExit',
       'revealModal', 'revealCard', 'revealTier', 'revealArt', 'revealName', 'revealDesc',
       'mHintBtn', 'mHint', 'mDiff', 'mSteps', 'mStreak', 'mTimer', 'mTimerFill', 'mTimerText',
-      'mQuiz',
+      'mQuiz', 'mVert', 'mTries',
       'wavePreview', 'bossBar', 'bossBarFill', 'bossBarName', 'bossWarnBanner',
       'saveBtn', 'loadBtn', 'loadFile',
       'sellModeBtn', 'sellInfo', 'sellAllBtn', 'sellGoBtn',
@@ -417,13 +417,14 @@ export class UI {
     const combos = E.listCombos(state);
     /* 다른 탭을 보고 있어도 "지금 조합할 수 있다"를 놓치지 않게 점을 찍는다 */
     this.el.combineDot.classList.toggle('hidden',
-      this._tab === 'combine' || !combos.some(c => c.affordable));
+      this._tab === 'combine' || !combos.some(c => c.affordable && !c.locked));
     const byResult = new Map(combos.filter(c => c.kind === 'recipe').map(c => [c.result, c]));
     let html = '';
 
     /* 지금 당장 되는 것을 맨 위에 모은다 — 아이는 스크롤하지 않는다.
      * "확실히 알고, 되면 착착"의 핵심이라 규칙 안내보다도 위에 둔다. */
-    const ready = combos.filter(c => c.affordable);
+    /* 포기했거나 세 번 틀린 조합은 "지금 바로"에서 빠진다 — 눌러도 안 되는 버튼을 위에 두면 안 된다 */
+    const ready = combos.filter(c => c.affordable && !c.locked);
     if (ready.length) {
       html += `<div class="combine-now"><div class="now-title">⚡ 지금 바로 조합!</div>`;
       for (const c of ready) {
@@ -484,12 +485,13 @@ export class UI {
     }
     for (const c of rankups) {
       const C = D.CLASSES[c.cls];
-      html += `<div class="combine-row${c.affordable ? ' ready' : ' broke'}">
+      html += `<div class="combine-row${c.locked ? ' locked' : c.affordable ? ' ready' : ' broke'}">
         <span class="peek" data-cls="${c.cls}" data-rtier="${c.resultTier}">${C.emoji}</span> ${C.name}
         <span class="cnt" style="color:${D.TIERS[c.tier].color}">${D.TIERS[c.tier].name}×2</span>
         ${lvBadge(c)}${shortBadge(c.cost)}
         <button data-kind="rankup" data-cls="${c.cls}" data-tier="${c.tier}"
-          class="${c.affordable ? '' : 'lack'}" ${c.affordable ? '' : 'disabled'}>⚗ ${D.TIERS[c.resultTier].name} 💰${c.cost}</button>
+          class="${c.locked || !c.affordable ? 'lack' : ''}" ${c.locked || !c.affordable ? 'disabled' : ''}
+          title="${c.locked ? '이번 웨이브엔 못 해요 — 웨이브를 치르면 다시 열려요' : ''}">${c.locked ? '🔒 이번 웨이브엔 못 해요' : `⚗ ${D.TIERS[c.resultTier].name} 💰${c.cost}`}</button>
       </div>`;
     }
 
@@ -846,6 +848,75 @@ export class UI {
     card.className = `modal-card lv${Math.max(1, Math.min(D.MAX_MATH_LV, lv || 1))}`;
   }
 
+  /* ---------- 세로셈 칸 ----------
+   * 문제집의 계산 칸을 그대로 옮긴 것. 자리를 맞춰 쓰지 않으면 받아올림에서 틀리는데,
+   * 화면에서는 종이처럼 자리를 맞출 데가 없어서 큰 수가 나오면 손도 못 댄다.
+   * 처음부터 띄우면 답을 바로 아는 아이에게 방해가 되므로 **몇 초 지나야** 나온다.
+   *
+   * v: { op: '+'|'−'|'×', a, b } — 생성기가 실어 보낸다(없으면 안 그린다). */
+  _buildVert(v) {
+    const el = this.el.mVert;
+    el.textContent = '';
+    if (!v) return false;
+    const A = String(v.a), B = String(v.b);
+    /* 칸 수: 덧셈·뺄셈은 받아올림 한 칸 여유, 곱셈은 부분곱까지 들어갈 만큼 */
+    const cols = v.op === '×' ? A.length + B.length : Math.max(A.length, B.length) + 1;
+    const grid = document.createElement('div');
+    grid.className = 'mv-grid';
+    grid.style.setProperty('--cols', String(cols));
+
+    /* 한 줄 = cols칸. digits를 오른쪽에 붙이고 왼쪽은 빈칸으로 채운다 */
+    const row = (digits, cls = '', sign = '') => {
+      const pad = cols - digits.length;
+      for (let i = 0; i < cols; i++) {
+        const c = document.createElement('div');
+        c.className = `mv-c ${cls}`;
+        if (i === pad - 1 && sign) { c.textContent = sign; c.classList.add('mv-sign'); }
+        else if (i >= pad) c.textContent = digits[i - pad];
+        grid.append(c);
+      }
+    };
+    const rule = () => {
+      const r = document.createElement('div');
+      r.className = 'mv-rule';
+      grid.append(r);
+    };
+    const blanks = (cls = '') => row('', cls);
+
+    if (v.op === '×') {
+      row(A);
+      row(B, '', '×');
+      rule();
+      /* 곱하는 수의 자릿수만큼 부분곱 줄을 비워 둔다 */
+      for (let i = 0; i < B.length; i++) blanks('mv-blank');
+      if (B.length > 1) { rule(); blanks('mv-blank'); }
+    } else {
+      blanks('mv-carry');                 // 받아올림/받아내림 적는 줄
+      row(A);
+      row(B, '', v.op);
+      rule();
+      blanks('mv-blank');
+    }
+    const title = document.createElement('div');
+    title.className = 'mv-title';
+    title.textContent = '✏️ 자리를 맞춰 계산해 보세요';
+    el.append(title, grid);
+    return true;
+  }
+  /* 몇 초 지나야 나온다 — 바로 아는 문제까지 칸으로 덮으면 방해가 된다 */
+  _armVert(v) {
+    clearTimeout(this._vertT);
+    this.el.mVert.classList.add('hidden');
+    if (!this._buildVert(v)) return;
+    this._vertT = setTimeout(() => {
+      if (this._answered) return;
+      this.el.mVert.classList.remove('hidden');
+      this.el.mVert.classList.remove('pop');
+      void this.el.mVert.offsetWidth;
+      this.el.mVert.classList.add('pop');
+    }, D.VERT_DELAY_MS);
+  }
+
   /* 문제·힌트 안의 {a/b} 를 세로 분수로 그린다.
    * "15 ÷ 3/6" 처럼 한 줄로 쓰면 15÷3÷6 으로도 읽혀서 아이가 헷갈린다.
    * (문자열을 그대로 넣지 않고 DOM으로 조립한다 — innerHTML을 쓸 이유가 없다) */
@@ -876,6 +947,10 @@ export class UI {
     el.mDiff.style.background = L.color;
     el.mSteps.textContent = `${o.round} / ${o.rounds}단계`;
     el.mSteps.classList.toggle('hidden', o.rounds < 2);
+    /* 남은 도전 횟수 — 다 쓰면 이 조합은 이번 웨이브엔 못 한다 */
+    el.mTries.textContent = `❤️ 도전 ${o.triesLeft}번`;
+    el.mTries.classList.toggle('hidden', !(o.triesLeft > 0));
+    el.mTries.classList.toggle('last', o.triesLeft === 1);
     el.mStreak.textContent = `🔥 ${o.streak}연승`;
     el.mStreak.classList.toggle('hidden', !o.streak || o.streak < 2);
     this._writeMath(el.mProblem, o.text);
@@ -903,6 +978,10 @@ export class UI {
     };
     bounce(el.mProblem);
     if (o.pop) bounce(el.mDiff);
+    this._armVert(o.vert);
+    /* 포기에 대가가 따르는지에 따라 버튼 문구가 달라진다 — 누르기 전에 알아야 한다 */
+    el.mClose.textContent = o.canGiveUp ? '🏳 포기 (Esc)' : '닫기 (Esc)';
+    el.mClose.classList.toggle('giveup', !!o.canGiveUp);
     setTimeout(() => el.mInput.focus(), 30);
   }
   /* 남은 시간 바 — 매 프레임 호출되므로 바뀔 때만 DOM을 만진다 */
@@ -931,6 +1010,7 @@ export class UI {
   mathFeedback(ok, text, nextLabel) {
     const el = this.el;
     this._answered = true;
+    clearTimeout(this._vertT);              // 답이 나온 뒤에 계산 칸이 뒤늦게 뜨지 않게
     el.mTimer.classList.remove('warn');     // 답을 낸 순간 시계는 멈춘다
     this._timerWarn = false;
     el.mInput.disabled = true;
@@ -944,7 +1024,11 @@ export class UI {
       el.mNext.classList.add('hidden');
     }
   }
-  hideMath() { this.el.mathModal.classList.add('hidden'); }
+  hideMath() {
+    clearTimeout(this._vertT);
+    this.el.mVert.classList.add('hidden');
+    this.el.mathModal.classList.add('hidden');
+  }
   isMathOpen() { return !this.el.mathModal.classList.contains('hidden'); }
   isAnswered() { return !!this._answered; }
   setGradeActive(g) {

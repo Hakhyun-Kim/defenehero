@@ -43,7 +43,7 @@ for (const grade of [3, 4, 5, 6]) {
   }
 }
 
-const fails = { 계산불일치: [], 약분가능: [], 한줄분수: [], 무한소수: [], 난이도미달: [], 정보누락: [] };
+const fails = { 계산불일치: [], 약분가능: [], 한줄분수: [], 무한소수: [], 난이도미달: [], 정보누락: [], 세로셈불일치: [] };
 let checked = 0;
 
 for (const p of problems) {
@@ -72,6 +72,17 @@ for (const p of problems) {
   /* ⑥ 카드에 적을 정보가 다 있는가 (이름·기준 시간이 없으면 고를 수가 없다) */
   if (!p.label || !(p.sec > 0)) {
     fails.정보누락.push(`${p.grade}학년 lv${p.lv}: [${p.type}] label=${p.label} sec=${p.sec}`);
+  }
+  /* ⑦ 세로셈 칸이 문제와 맞는가 — 칸에 적힌 두 수로 실제 답이 나와야 한다.
+   * 어긋나면 아이가 칸대로 계산했는데 오답이 되는, 제일 나쁜 종류의 버그가 된다. */
+  if (p.vert) {
+    const { op, a, b } = p.vert;
+    const got = op === '+' ? a + b : op === '−' ? a - b : a * b;
+    if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0) {
+      fails.세로셈불일치.push(`${p.grade}학년 [${p.type}]: 칸에 쓸 수 없는 수 ${a} ${op} ${b}`);
+    } else if (got !== p.answer) {
+      fails.세로셈불일치.push(`${p.grade}학년 [${p.type}]: 칸은 ${a} ${op} ${b} = ${got} 인데 정답은 ${p.answer}`);
+    }
   }
   /* ① 식을 실제로 풀어 본다 */
   const v = evalText(p.text);
@@ -151,6 +162,14 @@ for (const sec of [18, 40, 62]) {
   if (D.mathTime(sec, 1) < sec * 0.9) gateFail(`sec=${sec}: lv1인데 기준 시간보다 짧다`);
 }
 if (!(D.mathTime(18, 5) < D.mathTime(62, 1))) gateFail('쉬운 유형이 어려운 유형보다 시간을 더 받는다');
+/* 자릿수가 커지면(over↑) 시간이 늘어야 한다 — 같은 유형이라도 468×68은 112×23보다 오래 걸린다 */
+for (const sec of [22, 40, 62]) {
+  if (!(D.mathTime(sec, 3, 1) > D.mathTime(sec, 3, 0))) gateFail(`sec=${sec}: 수가 커져도 시간이 안 는다`);
+  if (D.mathTime(sec, 3, 1) / D.mathTime(sec, 3, 0) > 1.5) gateFail(`sec=${sec}: 크기 보정이 과하다`);
+}
+/* 도전 횟수: 최소 두 번은 줘야 "한 번 실수"로 관문이 닫히지 않는다 */
+if (!(D.MATH_TRIES >= 2 && D.MATH_TRIES <= 5)) gateFail(`MATH_TRIES=${D.MATH_TRIES} 는 범위 밖`);
+if (!(D.VERT_DELAY_MS >= 2000 && D.VERT_DELAY_MS <= 15000)) gateFail(`VERT_DELAY_MS=${D.VERT_DELAY_MS} 는 범위 밖`);
 /* 최고 난이도만 2문제 연속 관문 */
 for (let lv = 1; lv <= 4; lv++) if (D.mathRounds(lv) !== 1) gateFail(`lv${lv}: 2문제 관문이 너무 일찍 나온다`);
 if (D.mathRounds(5) !== 2 || D.mathRounds(6) !== 2) gateFail('최고 난이도가 2문제 관문이 아니다');

@@ -76,7 +76,8 @@ export function placeAll(state, sloppy = 0) {
  * 높은 등급 우선, 동급이면 특수 레시피 우선.
  * 게임(main.js)과 봇이 같은 함수를 봐야 판단이 갈라지지 않는다. */
 export function chooseCombo(state) {
-  const combos = E.listCombos(state).filter(c => c.affordable);
+  /* 잠긴 조합은 후보에서 뺀다 — 안 그러면 봇이 같은 관문을 무한히 다시 연다 */
+  const combos = E.listCombos(state).filter(c => c.affordable && !c.locked);
   if (!combos.length) return null;
   return combos.sort((a, b) =>
     b.resultTier - a.resultTier ||

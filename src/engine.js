@@ -40,6 +40,7 @@ export function createGame(opts = {}) {
     specialsMade: 0, mythicsMade: 0,
     shardsEarned: 0, mathShards: 0,
     mathWindow: [],             // 최근 "한 번에 맞힘" 기록 (적응형 난이도, mathgate.js)
+    mathLocked: new Set(),      // 포기했거나 세 번 틀린 조합 — 이번 준비 단계 동안 잠긴다
     combo: { count: 0, timer: 0 },
     discovered: new Set(),      // 이번 판에 만들어 본 조합 결과 (도감 ✓)
     time: 0,
@@ -212,6 +213,20 @@ export function recipeStatus(state, r, cost) {
   };
 }
 
+/* 조합 하나를 가리키는 열쇠 — 잠금 집합의 키이자 UI/봇이 같은 것을 가리키는 이름.
+ * pending 객체(main.js)와 listCombos 항목 둘 다 이 함수로 같은 문자열이 나와야 한다. */
+export const comboKey = (c) =>
+  (c.kind === 'rankup' ? `rankup:${c.cls}:${Number(c.tier)}` : `recipe:${c.result}`);
+
+/* 포기하거나 세 번 틀린 조합을 잠근다 (mathgate.js 참고).
+ * 웨이브를 한 번 치르면 풀린다 — 영구 박탈이 아니라 "이번엔 못 한다"이다. */
+export function lockCombo(state, key) {
+  if (!state.mathLocked) state.mathLocked = new Set();
+  state.mathLocked.add(key);
+  return state.mathLocked;
+}
+export const isComboLocked = (state, key) => !!(state.mathLocked && state.mathLocked.has(key));
+
 export function listCombos(state) {
   const out = [];
   /* 등급업 — 벤치/필드 통합 집계 (천장 = 전설) */
@@ -222,10 +237,13 @@ export function listCombos(state) {
     seen.add(key);
     if (unitsOf(state, h.cls, h.tier).length >= 2) {
       const cost = D.combineCost(h.tier + 1, false);
-      out.push({
+      const c = {
         kind: 'rankup', cls: h.cls, tier: h.tier, result: h.cls, resultTier: h.tier + 1,
         cost, affordable: state.gold >= cost,
-      });
+      };
+      c.key = comboKey(c);
+      c.locked = isComboLocked(state, c.key);
+      out.push(c);
     }
   }
   /* 레시피 — 신화(4)까지 도달 가능한 유일한 길 */
@@ -233,11 +251,14 @@ export function listCombos(state) {
     const pair = bestRecipePair(state, r);
     if (!pair) continue;
     const cost = D.combineCost(pair.resultTier, true);
-    out.push({
+    const c = {
       kind: 'recipe', result: r.result, a: r.a, b: r.b, gen: r.gen,
       tier: pair.base, ta: pair.ta, tb: pair.tb, resultTier: pair.resultTier,
       cost, affordable: state.gold >= cost,
-    });
+    };
+    c.key = comboKey(c);
+    c.locked = isComboLocked(state, c.key);
+    out.push(c);
   }
   return out;
 }
@@ -872,6 +893,8 @@ function endWave(state, events) {
   state.combo.count = 0;
   state.combo.timer = 0;
   events.push({ type: 'waveEnd', wave: state.wave, bonus });
+  /* 포기·실패로 잠갔던 조합을 푼다 — 벌은 "이번엔 못 한다"까지지 영구 박탈이 아니다 */
+  if (state.mathLocked) state.mathLocked.clear();
   state.wave++;
   state.phase = 'prep';
   state.pendingWave = buildWave(state);
@@ -943,6 +966,7 @@ export function serialize(state) {
     stats,
     discovered: [...state.discovered],
     mathWindow: [...(state.mathWindow || [])],   // 적응형 난이도가 이어하기에서도 이어지게
+    mathLocked: [...(state.mathLocked || [])],   // 저장했다 불러오는 것으로 잠금을 풀 수 없게
     seenStory: state.seenStory ? [...state.seenStory] : [],
     revealed: state.revealed ? [...state.revealed] : [],
   };
@@ -988,6 +1012,8 @@ export function deserialize(data, opts = {}) {
   /* 0/1만 남긴다 — 저장 파일은 사용자가 고칠 수 있는 입력이라 값을 그대로 믿지 않는다 */
   state.mathWindow = (Array.isArray(data.mathWindow) ? data.mathWindow : [])
     .filter(v => v === 0 || v === 1).slice(-D.ADAPT_WINDOW);
+  state.mathLocked = new Set((Array.isArray(data.mathLocked) ? data.mathLocked : [])
+    .filter(v => typeof v === 'string').slice(0, 64));
 
   state.pendingWave = buildWave(state);
   return state;
