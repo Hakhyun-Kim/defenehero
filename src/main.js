@@ -262,6 +262,7 @@ function startProblem(prob, pop = false) {
   modal.prob = prob;
   modal.tries = 0;
   modal.usedHint = false;                // 힌트는 문제마다 새로 산다
+  modal.hintStep = 0;                    // 힌트 단계 (0 → 전략 → 실마리)
   modal.retryArmAt = 0;                  // 새 문제가 나왔으니 재도전 잠금 해제
   /* 제한 시간은 관문 등급이 아니라 문제 유형이 정한다 (mathgate.js 참고) */
   modal.timeMax = D.mathTime(prob.sec, modal.lv, prob.over);
@@ -285,6 +286,7 @@ function startProblem(prob, pop = false) {
       ? { lost: modal.retrySpent || 0 }
       : null,
     freeHint: (modal.fails || 0) >= D.FREE_HINT_AFTER,
+    hintPrice: D.hintCost(modal.lv),
     canGiveUp: modal.mode === 'combine' && !!modal.pending,
     reward: refund
       ? `⏱ 빨리 한 번에 맞힐수록 환급이 커져요! (기본 💰${refund}${bonus.length ? ' · ' + bonus.join(' ') : ''})${shard}`
@@ -1021,31 +1023,39 @@ const handlers = {
       ui.hideTooltip();
     }
   },
+  /* ---------- 힌트 ----------
+   * ★ 두 단계로 판다: ① 전략만 ② 정답 실마리(자릿수·첫 숫자).
+   *   한 덩어리로 주면 사는 순간 문제가 끝나 버려서, 힌트를 사는 게 곧 포기가 된다.
+   *   값은 난이도가 오를수록 내려간다 — 어려운 문제일수록 도움이 싸야 한다.
+   *   두 번 틀리면 남은 단계가 전부 공짜: 막힌 사람에게 포기 말고 다른 출구를 준다. */
   onHint() {
     if (!modal.prob || ui.isAnswered()) return;   // 이미 답이 나온 뒤엔 힌트가 의미가 없다 — 골드만 날아간다
-    /* ★ 두 번 틀리면 힌트가 공짜다 (mathgate.js 참고).
-     * 막힌 사람에게 남은 선택지가 "포기"뿐이면 포기한다 — 그보다 나은 출구를 연다.
-     * 힌트를 보면 환급은 여전히 줄지만, 끝까지 푼 값(refundPersist)은 그대로 받는다. */
-    if ((modal.fails || 0) >= D.FREE_HINT_AFTER) {
-      modal.usedHint = true;
-      SFX.tap();
-      ui.showHint(modal.prob.hint);
-      ui.toast('💡 두 번 틀렸으니 힌트는 공짜예요 — 포기하지 말고 끝까지!', 'good');
-      return;
+    const steps = modal.prob.hintSteps || [modal.prob.hint];
+    const step = modal.hintStep || 0;
+    if (step >= steps.length) return;             // 더 줄 게 없다
+    const free = (modal.fails || 0) >= D.FREE_HINT_AFTER;
+    const price = D.hintCost(modal.lv);
+    if (!free) {
+      /* 힌트를 사서 조합 골드가 모자라지면, 정답을 맞히고도 아무것도 못 얻는다.
+       * 문제를 다 풀고 나서야 "골드가 부족해요"를 보는 건 제일 나쁜 결말이라 미리 막는다. */
+      const need = modal.info ? modal.info.cost : 0;
+      if (need && state.gold - price < need) {
+        ui.toast(`힌트(💰${price})를 사면 조합 골드가 모자라요 — 조합에 💰${need} 필요 (지금 💰${state.gold})`, 'bad');
+        return;
+      }
+      const r = E.useHint(state, price);
+      if (!r.ok) { ui.toast(`힌트에는 💰${r.cost}이 필요해요!`, 'bad'); return; }
     }
-    /* 힌트를 사서 조합 골드가 모자라지면, 정답을 맞히고도 아무것도 못 얻는다.
-     * 문제를 다 풀고 나서야 "골드가 부족해요"를 보는 건 제일 나쁜 결말이라 미리 막는다. */
-    const need = modal.info ? modal.info.cost : 0;
-    if (need && state.gold - D.HINT_GOLD < need) {
-      ui.toast(`힌트(💰${D.HINT_GOLD})를 사면 조합 골드가 모자라요 — 조합에 💰${need} 필요 (지금 💰${state.gold})`, 'bad');
-      return;
-    }
-    const r = E.useHint(state);
-    if (!r.ok) { ui.toast(`힌트에는 💰${r.cost}이 필요해요!`, 'bad'); return; }
-    modal.usedHint = true;
+    modal.hintStep = step + 1;
+    /* 실마리(2단계)까지 봤을 때만 "한 번에 맞힘" 자격을 잃는다 —
+     * 전략만 보고 스스로 계산해 낸 것은 제 힘으로 푼 것이다. */
+    if (step + 1 >= steps.length) modal.usedHint = true;
     SFX.tap();
-    ui.showHint(modal.prob.hint);
-    ui.toast(`💡 힌트를 봤어요 (💰-${r.cost}) — 환급은 없어요`, 'bad');
+    ui.showHint(steps.slice(0, step + 1),
+      modal.hintStep < steps.length ? { free, price } : null);
+    if (free) ui.toast('💡 두 번 틀렸으니 힌트는 공짜예요 — 포기하지 말고 끝까지!', 'good');
+    else if (step === 0) ui.toast(`💡 풀이 방법을 봤어요 (💰-${price}) — 아직 환급은 살아 있어요!`);
+    else ui.toast(`💡 정답 실마리까지 봤어요 (💰-${price}) — 환급은 없어요`, 'bad');
     refreshAll();
   },
   onRecall() { doRecall(selHero); },

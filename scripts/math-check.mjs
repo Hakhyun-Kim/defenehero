@@ -296,6 +296,12 @@ for (const grade of [3, 4, 5, 6]) {
        * "오크 11마리를 다 놓치면?" 인데 한 마리당 피해가 문장에 없어서 풀 수 없던 적이 있다.
        * 힌트에만 적혀 있으면 힌트를 사야만 풀리는 문제가 된다 — 그건 문제가 아니라 함정이다. */
       if (!p.needs || !p.needs.length) tacFail(`${grade}학년 lv${lv} [${p.type}]: needs가 비어 있다 (검사 불가)`);
+      /* ★ 학년이 감당하는 수인가. 전술 문제의 숫자는 판에서 그대로 읽어 오므로
+       * 웨이브가 깊어지면 커진다 — 3학년에게 "15420 ÷ 172" 가 나간 적이 있다. */
+      if (!T.fitsGrade(grade, p)) {
+        const c = p.calc || {};
+        tacFail(`${grade}학년 lv${lv} [${p.type}]: 학년을 넘는 수 ${c.div ? `${c.div[0]} ÷ ${c.div[1]}` : `${c.mul[0]} × ${c.mul[1]}`}`);
+      }
       for (const nv of (p.needs || [])) {
         if (!new RegExp(`(^|[^0-9])${nv}([^0-9]|$)`).test(p.text)) {
           tacFail(`${grade}학년 lv${lv} [${p.type}]: 풀려면 필요한 수 ${nv} 가 문장에 없다 — "${p.text.replace(/\n/g, ' ')}"`);
@@ -318,6 +324,25 @@ for (const grade of [3, 4, 5, 6]) {
     if (T.gen(3, lv, false, state) !== null) tacFail(`lv${lv}: 낼 수 없는데 문제를 만들어 냈다`);
     const p = M.gen(3, lv, { remember: false, ctx: state, tactical: 1 });
     if (!p || p.kind !== 'arithmetic') tacFail(`lv${lv}: 전술이 불가능한데 산술로 되돌아가지 않았다`);
+  }
+}
+/* ③-b 깊은 웨이브에서도 학년을 안 넘는가 —— 이 버그가 실제로 났던 자리다.
+ * 25웨이브쯤 되면 몬스터 체력이 다섯 자리가 되고, 전설 용사의 한 방은 세 자리가 된다.
+ * 유형만 minGrade로 막으면 3학년 관문에 "15420 ÷ 172" 가 그대로 나간다. */
+for (const wave of [12, 18, 25, 32]) {
+  const { state } = makeCtx(wave);
+  for (const grade of [3, 4, 5, 6]) {
+    for (let lv = 1; lv <= MAXLV; lv++) {
+      for (let i = 0; i < 40; i++) {
+        const p = T.gen(grade, lv, false, state);
+        if (!p) continue;
+        if (!T.fitsGrade(grade, p)) {
+          const c = p.calc || {};
+          tacFail(`w${wave} ${grade}학년 lv${lv} [${p.type}]: 학년을 넘는 수 ` +
+            (c.div ? `${c.div[0]} ÷ ${c.div[1]}` : `${c.mul[0]} × ${c.mul[1]}`));
+        }
+      }
+    }
   }
 }
 /* ④ 배치된 용사가 없어도 (준비 단계 첫 조합) 낼 수 있는 유형이 남아 있는가.

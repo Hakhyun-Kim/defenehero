@@ -1017,8 +1017,11 @@ export class UI {
     el.mHint.classList.add('hidden');
     el.mHint.textContent = '';
     el.mHintBtn.disabled = false;
-    /* 두 번 틀리면 힌트가 공짜 — 막힌 사람의 남은 선택지가 "포기"뿐이면 안 된다 */
-    el.mHintBtn.textContent = o.freeHint ? '💡 힌트 무료! (H)' : `💡 힌트 (💰${D.HINT_GOLD} · H)`;
+    /* 힌트는 두 단계 — 첫 단계는 "풀이 방법", 둘째가 "정답 실마리".
+     * 어려운 문제일수록 값이 싸고, 두 번 틀리면 아예 공짜다 (mathgate.js) */
+    el.mHintBtn.textContent = o.freeHint
+      ? '💡 풀이 방법 보기 (무료! · H)'
+      : `💡 풀이 방법 보기 (💰${o.hintPrice} · H)`;
     el.mHintBtn.classList.toggle('free', !!o.freeHint);
     this.setTimer(o.time, o.time);
     /* 문제가 바뀔 때마다 카드를 한 번 튕겨 준다 — 새 문제가 왔다는 신호.
@@ -1056,11 +1059,22 @@ export class UI {
       el.mTimer.classList.toggle('warn', warn);
     }
   }
-  showHint(text) {
-    this._writeMath(this.el.mHint, `💡 ${text}`);
+  /* 힌트는 단계별로 쌓아서 보여 준다 — 산 것이 사라지면 안 된다.
+   * more: 아직 살 수 있는 단계가 남았는가 */
+  showHint(steps, next) {
+    const list = Array.isArray(steps) ? steps : [steps];
+    this._writeMath(this.el.mHint, list.map((t, i) => `💡 ${list.length > 1 ? `${i + 1}. ` : ''}${t}`).join('\n'));
     this.el.mHint.classList.remove('hidden');
-    this.el.mHintBtn.disabled = true;
-    this.el.mHintBtn.textContent = '💡 힌트 사용함';
+    this.el.mHintBtn.disabled = !next;
+    if (!next) {
+      this.el.mHintBtn.textContent = '💡 힌트 다 봤어요';
+      this.el.mHintBtn.classList.remove('free');
+    } else {
+      /* 다음 단계가 무엇인지 밝힌다 — "정답 실마리"는 환급을 잃는 선택이라 알고 눌러야 한다 */
+      this.el.mHintBtn.textContent = next.free
+        ? '🔎 정답 실마리 (무료! · H)'
+        : `🔎 정답 실마리 (💰${next.price} · H)`;
+    }
     this.el.mInput.focus();
   }
   mathFeedback(ok, text, nextLabel) {

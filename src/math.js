@@ -37,6 +37,26 @@ export const DEFAULT_KIND = 'arithmetic';
  * 용사가 없으면 아예 못 낸다. 가끔 섞일 때 "어, 이건 내 판 얘기잖아"가 산다. */
 export const TACTICAL_CHANCE = 0.35;
 
+/* ---------- 힌트를 두 단계로 쪼갠다 ----------
+ * ★ 예전엔 힌트 하나에 "어떻게 푸는가"와 "정답의 첫 숫자"가 같이 들어 있었다.
+ *   그래서 힌트를 사는 순간 문제가 사실상 끝나 버렸고, 아이 입장에서는
+ *   힌트를 사는 것 = 포기하는 것이었다. 어려운 문제일수록 그 선택만 남는다.
+ *
+ *   이제 두 단계다. ① 전략만 — 어디서부터 손대는지. ② 정답 실마리 — 자릿수와 첫 숫자.
+ *   "조금만 도와줘"가 가능해야 끝까지 붙어 볼 수 있다.
+ *
+ *   생성기들은 전략 끝에 실마리를 붙여 두는 습관이 있어서(digitHint), 그 꼬리를
+ *   여기서 떼어 낸다. 같은 함수로 만든 문자열이라 정확히 일치하고, 없으면 그냥 만든다. */
+function splitHint(prob) {
+  if (!prob) return prob;
+  const tail = arithmetic.answerHint(prob.answer);
+  const full = String(prob.hint || '');
+  const strategy = full.endsWith(tail) ? full.slice(0, -tail.length).trim() : full;
+  prob.hintSteps = [strategy || tail, strategy ? tail : ''].filter(Boolean);
+  prob.hint = prob.hintSteps[0];          // 하위 호환: hint = 첫 단계
+  return prob;
+}
+
 /* opts: { remember = true, ctx = null, kind = null, tactical = TACTICAL_CHANCE } */
 export function gen(grade, lv = 1, opts = {}) {
   const {
@@ -45,12 +65,12 @@ export function gen(grade, lv = 1, opts = {}) {
     kind = null,
     tactical: chance = TACTICAL_CHANCE,
   } = opts;
-  if (kind) return GENERATORS[kind].gen(grade, lv, remember, ctx);
+  if (kind) return splitHint(GENERATORS[kind].gen(grade, lv, remember, ctx));
   if (ctx && chance > 0 && Math.random() < chance) {
     const p = GENERATORS.tactical.gen(grade, lv, remember, ctx);
-    if (p) return p;                       // 낼 수 없으면 조용히 산술로
+    if (p) return splitHint(p);            // 낼 수 없으면 조용히 산술로
   }
-  return GENERATORS.arithmetic.gen(grade, lv, remember);
+  return splitHint(GENERATORS.arithmetic.gen(grade, lv, remember));
 }
 
 /* 문제가 스스로 어느 생성기에서 왔는지 알고 있다 — 호출부가 기억할 필요가 없다 */

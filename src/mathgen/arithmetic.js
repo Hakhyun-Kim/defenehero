@@ -36,6 +36,10 @@ const digitHint = (ans) => {
     ? `정답에 소수점이 있어요. 맨 앞 숫자는 ${firstDigit(ans)}!`
     : `정답은 ${s.length}자리 수예요. 맨 앞 숫자는 ${firstDigit(ans)}!`;
 };
+/* 정답 실마리 — 힌트의 **둘째 단계**로만 나간다 (src/math.js가 떼어 낸다).
+ * 전략과 한 덩어리로 주면 "어떻게 푸는지"만 알고 싶은데 답까지 알게 돼서,
+ * 힌트를 사는 순간 문제가 끝나 버린다. 두 단계로 쪼개면 "조금만 도와줘"가 가능해진다. */
+export const answerHint = (ans) => digitHint(ans);
 
 /* ---------- 게임 테마 문장형 문제 ---------- */
 function wordWrap(op, a, b, ans) {

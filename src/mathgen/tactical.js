@@ -73,6 +73,35 @@ function waveHpTotal(ctx) {
 const dpsOf = (h) => Math.round(heroDps(h));
 const fieldDps = (ctx) => ctx.field.reduce((a, h) => a + dpsOf(h), 0);
 
+/* ---------- 학년이 감당하는 수의 크기 ----------
+ * ★ 전술 문제의 숫자는 판에서 **그대로** 읽어 온다 — 웨이브가 갈수록 커진다.
+ *   유형만 minGrade로 막아 놨더니 3학년에게 "15420 ÷ 172" 가 나갔다.
+ *   3학년 나눗셈은 (세 자리) ÷ (한 자리)까지다. 유형이 아니라 **수**를 막아야 한다.
+ *
+ *   그래서 각 문제가 "무슨 계산이 필요한가"를 스스로 신고한다(calc).
+ *   신고한 수가 학년을 넘으면 그 문제는 버리고 다른 유형을 뽑는다 —
+ *   판에서 읽은 수는 우리가 고를 수 없으니 걸러 내는 것 말고는 방법이 없다.
+ *   calc: { div: [나뉘는 수, 나누는 수], mul: [두 인수] }  (필요한 것만 적는다) */
+const GRADE_LIMITS = {
+  3: { divisor: 9,    dividend: 999,     mulA: 999,    mulB: 9 },
+  4: { divisor: 99,   dividend: 99999,   mulA: 9999,   mulB: 99 },
+  5: { divisor: 999,  dividend: 999999,  mulA: 99999,  mulB: 999 },
+  6: { divisor: 9999, dividend: 9999999, mulA: 999999, mulB: 9999 },
+};
+const gradeLimit = (grade) => GRADE_LIMITS[Math.max(3, Math.min(6, grade))];
+export function fitsGrade(grade, p) {
+  if (!p) return false;
+  const L = gradeLimit(grade);
+  const c = p.calc;
+  if (!c) return true;
+  if (c.div && (c.div[1] > L.divisor || c.div[0] > L.dividend)) return false;
+  if (c.mul) {
+    const a = Math.max(c.mul[0], c.mul[1]), b = Math.min(c.mul[0], c.mul[1]);
+    if (a > L.mulA || b > L.mulB) return false;
+  }
+  return true;
+}
+
 /* =====================================================
  * 문제 유형
  *   min       : 이 난이도부터 등장 (arithmetic.js 와 같은 규칙)
@@ -101,21 +130,38 @@ const TYPES = [
   {
     id: 'hits', min: 1, minGrade: 3, sec: 28, label: '⚔️ 몇 번 때려야 잡을까',
     ready: (ctx) => ctx.field.length > 0 && waveTypes(ctx).length > 0,
-    make: (over, ctx) => {
-      /* 때리는 횟수가 2~25 사이가 되는 조합을 고른다.
-       * 1번에 죽거나 200번 때려야 하면 계산이 아니라 그냥 큰 수 나눗셈이 된다. */
+    make: (over, ctx, grade) => {
       const heroes = ctx.field, types = waveTypes(ctx);
+      /* ★ 3학년에게는 이 질문을 나눗셈으로 물을 수 없다. 용사의 한 방은 두 자리를
+       * 넘는데 3학년 나눗셈은 (세 자리) ÷ (한 자리)까지다. 그래서 **방향을 뒤집는다** —
+       * "몇 번 때려야 잡나"(나눗셈) 대신 "몇 번 때리면 얼마나 아픈가"(곱셈).
+       * 판을 읽는 감각은 그대로 두고 계산만 학년 안으로 들여온다. */
+      if (grade <= 3) {
+        const h = pick(heroes), n = 2 + Math.floor(Math.random() * 8);   // 2~9번
+        return {
+          text: `${heroLabel(h)}의 한 방은 ${h.dmg}이에요.\n${n}번 때리면 피해는 모두 얼마일까요?`,
+          answer: h.dmg * n, needs: [h.dmg, n], calc: { mul: [h.dmg, n] },
+          hint: `${h.dmg} × ${n} 을 계산해요.`,
+        };
+      }
+      /* 때리는 횟수가 2~25 사이가 되는 조합을 고른다.
+       * 1번에 죽거나 200번 때려야 하면 계산이 아니라 그냥 큰 수 나눗셈이 된다.
+       * 나누는 수(한 방)가 학년을 넘는 조합은 아예 후보에서 뺀다. */
+      const L = gradeLimit(grade);
       let best = null;
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 24; i++) {
         const h = pick(heroes), t = pick(types).type;
+        if (h.dmg > L.divisor) continue;
         const hp = enemyHp(ctx, t), n = Math.ceil(hp / h.dmg);
+        if (hp > L.dividend) continue;
         if (n >= 2 && n <= 25) { best = { h, t, hp, n }; break; }
         if (!best) best = { h, t, hp, n };
       }
+      if (!best) return null;                  // 이 학년으로 낼 수 있는 조합이 없다
       const { h, t, hp, n } = best;
       return {
         text: `${label(t)}의 체력은 ${hp}이에요.\n${heroLabel(h)}의 한 방은 ${h.dmg}.\n몇 번 때려야 쓰러질까요?`,
-        answer: n, needs: [hp, h.dmg],
+        answer: n, needs: [hp, h.dmg], calc: { div: [hp, h.dmg] },
         hint: `${hp} ÷ ${h.dmg} 를 계산하고, 딱 안 떨어지면 한 번 더 때려야 하니 「올림」해요.`,
       };
     },
@@ -132,7 +178,7 @@ const TYPES = [
       if (!two) {
         return {
           text: `이번 웨이브에는 ${label(a.type)}이(가) ${a.n}마리 나와요.\n한 마리를 잡으면 골드 ${g}.\n다 잡으면 골드를 얼마나 벌까요?`,
-          answer: a.n * g, needs: [a.n, g],
+          answer: a.n * g, needs: [a.n, g], calc: { mul: [a.n, g] },
           hint: `${a.n} × ${g} 를 계산해요.`,
         };
       }
@@ -140,7 +186,7 @@ const TYPES = [
       const gb = enemyGold(ctx, b.type);
       return {
         text: `이번 웨이브에는 ${label(a.type)} ${a.n}마리(한 마리 ${g}골드)와\n${label(b.type)} ${b.n}마리(한 마리 ${gb}골드)가 나와요.\n둘을 다 잡으면 골드를 얼마나 벌까요?`,
-        answer: a.n * g + b.n * gb, needs: [a.n, g, b.n, gb],
+        answer: a.n * g + b.n * gb, needs: [a.n, g, b.n, gb], calc: { mul: [Math.max(a.n, b.n), Math.max(g, gb)] },
         hint: `① ${a.n} × ${g} = ${a.n * g} ② ${b.n} × ${gb} = ${b.n * gb} ③ 둘을 더해요.`,
       };
     },
@@ -169,7 +215,7 @@ const TYPES = [
       const n = Math.ceil(ctx.castleHp / d);
       return {
         text: `성 체력이 ${ctx.castleHp} 남았어요.\n${label(t)}이(가) 성에 닿으면 ${d}의 피해를 줘요.\n몇 마리가 닿으면 성이 무너질까요?`,
-        answer: n, needs: [ctx.castleHp, d],
+        answer: n, needs: [ctx.castleHp, d], calc: { div: [ctx.castleHp, d] },
         hint: `${ctx.castleHp} ÷ ${d} 를 계산하고 「올림」해요 — 마지막 한 마리가 마무리를 하니까요.`,
       };
     },
@@ -190,7 +236,7 @@ const TYPES = [
          * 힌트를 사지 않으면 풀 수 없는 문제였다 — 규칙 ②(적힌 숫자만으로 풀린다) 위반. */
         text: `성 체력이 ${ctx.castleHp} 남았어요.\n${label(a.type)}은(는) 성에 닿을 때마다 ${d}씩 깎아요.\n${n}마리를 하나도 못 막으면 성 체력이 얼마나 남을까요? (0보다 작아지면 0)`,
         answer: Math.max(0, ctx.castleHp - n * d),
-        needs: [ctx.castleHp, d, n],
+        needs: [ctx.castleHp, d, n], calc: { mul: [n, d] },
         hint: `${n} × ${d} = ${n * d} 를 ${ctx.castleHp}에서 빼요 (음수면 0).`,
       };
     },
@@ -216,7 +262,7 @@ const TYPES = [
        * 조금 다를 수 있다 — 그래서 특정 한 마리의 예언이 아니라 주어진 수의 계산으로 묻는다. */
       return {
         text: `${names[r]}의 길이는 ${len}이에요.\n${label(t)}의 빠르기는 1초에 ${spd}.\n이 빠르기로 포탈에서 성까지 가면 몇 초일까요? (반올림해서 정수로)`,
-        answer: Math.round(exact), needs: [len, spd],
+        answer: Math.round(exact), needs: [len, spd], calc: { div: [len, spd] },
         hint: `${len} ÷ ${spd} 를 계산하고 소수 첫째 자리에서 반올림해요.`,
       };
     },
@@ -229,7 +275,7 @@ const TYPES = [
       const dps = fieldDps(ctx);
       return {
         text: `이번 웨이브 몬스터의 체력을 모두 더하면 ${hp}이에요.\n지금 배치된 용사들의 초당 피해 합은 ${dps}.\n쉬지 않고 때린다면 정리하는 데 몇 초 걸릴까요? (올림)`,
-        answer: Math.ceil(hp / dps), needs: [hp, dps],
+        answer: Math.ceil(hp / dps), needs: [hp, dps], calc: { div: [hp, dps] },
         hint: `${hp} ÷ ${dps} 를 계산하고 「올림」해요. 남은 한 조각도 때려야 끝나니까요.`,
       };
     },
@@ -242,7 +288,7 @@ const TYPES = [
       const t = pick([10, 15, 20, 25, 30, 40]);
       return {
         text: `이번 웨이브 몬스터의 체력을 모두 더하면 ${hp}이에요.\n${t}초 안에 다 정리하려면\n용사들의 초당 피해 합이 「적어도」 얼마여야 할까요? (올림)`,
-        answer: Math.ceil(hp / t), needs: [hp, t],
+        answer: Math.ceil(hp / t), needs: [hp, t], calc: { div: [hp, t] },
         hint: `${hp} ÷ ${t} 를 계산하고 「올림」해요 — 모자라면 시간 안에 못 끝내니까요.`,
       };
     },
@@ -259,7 +305,7 @@ const TYPES = [
        * 하한선을 묻는 것으로 바꾸면 문장도 참이 되고 계산도 그대로 남는다. */
       return {
         text: `지금 골드가 ${ctx.gold}이에요.\n${label(a.type)} ${a.n}마리를 잡으면 한 마리당 ${g}골드,\n웨이브를 깨면 보너스로 ${bonus}골드를 더 받아요.\n웨이브가 끝나면 골드가 「적어도」 얼마가 될까요?`,
-        answer: ctx.gold + a.n * g + bonus, needs: [ctx.gold, a.n, g, bonus],
+        answer: ctx.gold + a.n * g + bonus, needs: [ctx.gold, a.n, g, bonus], calc: { mul: [a.n, g] },
         hint: `① ${a.n} × ${g} = ${a.n * g} ② ${ctx.gold} + ${a.n * g} + ${bonus}`,
       };
     },
@@ -270,7 +316,7 @@ const TYPES = [
     ready: (ctx) => ctx.gold >= D.SUMMON_COST,
     make: (over, ctx) => ({
       text: `지금 골드가 ${ctx.gold}이에요.\n용사 한 명을 소환하는 데 ${D.SUMMON_COST}골드가 들어요.\n최대 몇 명까지 뽑을 수 있을까요?`,
-      answer: Math.floor(ctx.gold / D.SUMMON_COST), needs: [ctx.gold, D.SUMMON_COST],
+      answer: Math.floor(ctx.gold / D.SUMMON_COST), needs: [ctx.gold, D.SUMMON_COST], calc: { div: [ctx.gold, D.SUMMON_COST] },
       hint: `${ctx.gold} ÷ ${D.SUMMON_COST} 를 계산하고, 남는 골드로는 못 뽑으니 「버림」해요.`,
     }),
   },
@@ -316,10 +362,20 @@ export function gen(grade, lv = 1, remember = true, ctx = null) {
   const skip = new Set([lastId, ...recent.slice(-2)]);
   const fresh = pool.filter(t => !skip.has(t.id));
   const use = fresh.length ? fresh : pool;
-  const t = pick(use);
+  /* ★ 학년을 넘는 수가 나오면 그 문제를 버리고 다른 유형을 뽑는다.
+   * 판에서 읽은 수는 우리가 고를 수 없으므로 "만들고 나서 재 보는" 수밖에 없다.
+   * 전부 걸리면 null — 호출부(math.js)가 조용히 산술 문제로 되돌린다. */
+  let t = null, p = null;
+  const left = use.slice();
+  while (left.length) {
+    const i = Math.floor(Math.random() * left.length);
+    const cand = left.splice(i, 1)[0];
+    const made = cand.make(Math.max(0, Math.min(1, L - cand.min)), ctx, grade);
+    if (made && fitsGrade(grade, made)) { t = cand; p = made; break; }
+  }
+  if (!p) return null;
   lastId = t.id;
   const over = Math.max(0, Math.min(1, L - t.min));
-  const p = t.make(over, ctx);
   const prob = {
     text: p.text,
     answer: p.answer,
@@ -328,6 +384,7 @@ export function gen(grade, lv = 1, remember = true, ctx = null) {
     sec: t.sec,
     over,
     needs: p.needs || [],
+    calc: p.calc || null,       // 어떤 계산이 필요한가 (학년 한도 검사용 — math-check.mjs)
     min: t.min,
     lv: L,
     grade,

@@ -482,11 +482,12 @@ export function buyRetry(state, combineCost, fails) {
   return { ok: true, cost };
 }
 
-export function useHint(state) {
-  if (state.gold < D.HINT_GOLD) return { ok: false, reason: 'gold', cost: D.HINT_GOLD };
-  state.gold -= D.HINT_GOLD;
+/* 힌트 한 단계를 산다. 값은 난이도가 정한다(mathgate.hintCost) — 호출부가 넘긴다 */
+export function useHint(state, cost = D.HINT_GOLD) {
+  if (state.gold < cost) return { ok: false, reason: 'gold', cost };
+  state.gold -= cost;
   state.hints++;
-  return { ok: true, cost: D.HINT_GOLD };
+  return { ok: true, cost };
 }
 
 /* ---------- 웨이브 ---------- */
