@@ -863,26 +863,62 @@ export class UI {
    * 화면에서는 종이처럼 자리를 맞출 데가 없어서 큰 수가 나오면 손도 못 댄다.
    * 처음부터 띄우면 답을 바로 아는 아이에게 방해가 되므로 **몇 초 지나야** 나온다.
    *
-   * v: { op: '+'|'−'|'×', a, b } — 생성기가 실어 보낸다(없으면 안 그린다). */
+   * v: { op: '+'|'−'|'×', a, b }            두 항 (기존 형태)
+   *    { terms: [{v}, {v, op}, {v, op}] }   세 항 이상 — 한 판에 모아서 보여 준다
+   *
+   * ▸ 자리 맞추기 규칙 (여기가 이 함수의 전부다)
+   *   ① 부호는 **맨 왼쪽 제 칸**에 놓는다. 예전엔 "숫자 바로 왼쪽"에 놨는데,
+   *      136 × 6 처럼 두 수의 길이가 다르면 ×가 윗줄 3 밑에 박혀서
+   *      6이 십의 자리처럼 보였다 — 자리를 알려 주랬더니 자리를 헷갈리게 했다.
+   *   ② 소수는 **소수점 기준**으로 맞춘다. 오른쪽 끝으로 맞추면 8.41과 2.7의
+   *      소수점이 어긋난다. 정수부·소수부 폭을 따로 재서 점을 한 줄로 세운다.
+   *   ③ 받아올림 줄은 덧셈·뺄셈뿐 아니라 곱셈에도 준다. 곱셈이야말로 받아올림이 많다. */
   _buildVert(v) {
     const el = this.el.mVert;
     el.textContent = '';
     if (!v) return false;
-    const A = String(v.a), B = String(v.b);
-    /* 칸 수: 덧셈·뺄셈은 받아올림 한 칸 여유, 곱셈은 부분곱까지 들어갈 만큼 */
-    const cols = v.op === '×' ? A.length + B.length : Math.max(A.length, B.length) + 1;
+
+    /* 두 형태를 한 모양으로 정규화: [{sign, int, frac}] */
+    const raw = v.terms
+      ? v.terms.map((t, i) => ({ sign: i === 0 ? '' : (t.op || '+'), s: String(t.v) }))
+      : [{ sign: '', s: String(v.a) }, { sign: v.op, s: String(v.b) }];
+    const isMul = !v.terms && v.op === '×';
+    const rows = raw.map(r => {
+      const dot = r.s.indexOf('.');
+      return {
+        sign: r.sign,
+        int: dot < 0 ? r.s : r.s.slice(0, dot),
+        frac: dot < 0 ? '' : r.s.slice(dot + 1),
+      };
+    });
+
+    const intW = Math.max(...rows.map(r => r.int.length));
+    const fracW = Math.max(...rows.map(r => r.frac.length));
+    /* 정수부 폭: 곱셈은 부분곱·답이 자릿수 합만큼 길어진다. 덧셈·뺄셈은 받아올림 한 칸 */
+    const bodyInt = isMul
+      ? rows.reduce((a, r) => a + r.int.length, 0)
+      : intW + 1;
+    const SIGN = 1;                                  // 맨 왼쪽 부호 칸
+    const dotCol = SIGN + bodyInt;                   // 소수점이 놓이는 칸
+    const cols = SIGN + bodyInt + (fracW ? 1 + fracW : 0);
+
     const grid = document.createElement('div');
     grid.className = 'mv-grid';
     grid.style.setProperty('--cols', String(cols));
 
-    /* 한 줄 = cols칸. digits를 오른쪽에 붙이고 왼쪽은 빈칸으로 채운다 */
-    const row = (digits, cls = '', sign = '') => {
-      const pad = cols - digits.length;
+    /* 한 줄 그리기: 정수부는 소수점 왼쪽에 오른쪽 맞춤, 소수부는 오른쪽에 왼쪽 맞춤 */
+    const row = (r, cls = '') => {
+      const start = dotCol - r.int.length;
       for (let i = 0; i < cols; i++) {
         const c = document.createElement('div');
         c.className = `mv-c ${cls}`;
-        if (i === pad - 1 && sign) { c.textContent = sign; c.classList.add('mv-sign'); }
-        else if (i >= pad) c.textContent = digits[i - pad];
+        if (i === 0 && r.sign) { c.textContent = r.sign; c.classList.add('mv-sign'); }
+        else if (fracW && i === dotCol) { if (r.int) { c.textContent = '.'; c.classList.add('mv-dot'); } }
+        else if (i >= start && i < dotCol) c.textContent = r.int[i - start];
+        else if (fracW && i > dotCol) {
+          const k = i - dotCol - 1;
+          if (k < r.frac.length) c.textContent = r.frac[k];
+        }
         grid.append(c);
       }
     };
@@ -891,25 +927,23 @@ export class UI {
       r.className = 'mv-rule';
       grid.append(r);
     };
-    const blanks = (cls = '') => row('', cls);
+    const blanks = (cls) => row({ sign: '', int: '', frac: '' }, cls);
 
-    if (v.op === '×') {
-      row(A);
-      row(B, '', '×');
+    blanks('mv-carry');                    // 받아올림/받아내림 적는 줄 (곱셈에도 준다)
+    for (const r of rows) row(r);
+    rule();
+    if (isMul && rows[1].int.length > 1) {
+      /* 곱하는 수의 자릿수만큼 부분곱 줄, 그 아래 합계 줄 */
+      for (let i = 0; i < rows[1].int.length; i++) blanks('mv-blank');
       rule();
-      /* 곱하는 수의 자릿수만큼 부분곱 줄을 비워 둔다 */
-      for (let i = 0; i < B.length; i++) blanks('mv-blank');
-      if (B.length > 1) { rule(); blanks('mv-blank'); }
-    } else {
-      blanks('mv-carry');                 // 받아올림/받아내림 적는 줄
-      row(A);
-      row(B, '', v.op);
-      rule();
-      blanks('mv-blank');
     }
+    blanks('mv-blank');
+
     const title = document.createElement('div');
     title.className = 'mv-title';
-    title.textContent = '✏️ 자리를 맞춰 계산해 보세요';
+    title.textContent = rows.length > 2
+      ? '✏️ 한 번에 세로로 더하고 빼 보세요'
+      : '✏️ 자리를 맞춰 계산해 보세요';
     el.append(title, grid);
     return true;
   }
@@ -955,12 +989,18 @@ export class UI {
     el.mGrade.textContent = `${o.grade}학년`;
     el.mDiff.textContent = `${L.stars} ${L.name}${o.label ? ` · ${o.label}` : ''}`;
     el.mDiff.style.background = L.color;
-    el.mSteps.textContent = `${o.round} / ${o.rounds}단계`;
-    el.mSteps.classList.toggle('hidden', o.rounds < 2);
-    /* 남은 도전 횟수 — 다 쓰면 이 조합은 이번 웨이브엔 못 한다 */
-    el.mTries.textContent = `❤️ 도전 ${o.triesLeft}번`;
-    el.mTries.classList.toggle('hidden', !(o.triesLeft > 0));
-    el.mTries.classList.toggle('last', o.triesLeft === 1);
+    el.mSteps.classList.add('hidden');       // 한 관문 = 한 문제 (다단계 관문은 없앴다)
+    /* 틀렸을 때 재도전에 얼마가 드는지 — 답을 넣기 전에 알아야 판돈이 된다.
+     * 낼 수 없으면 붉게: "이번 한 번이 마지막"이라는 신호 */
+    if (o.retry) {
+      el.mTries.textContent = o.retry.afford
+        ? `🔁 틀리면 재도전 💰${o.retry.price}`
+        : `⚠ 틀리면 여기까지 (재도전 💰${o.retry.price} 부족)`;
+      el.mTries.classList.remove('hidden');
+      el.mTries.classList.toggle('last', !o.retry.afford);
+    } else {
+      el.mTries.classList.add('hidden');
+    }
     el.mStreak.textContent = `🔥 ${o.streak}연승`;
     el.mStreak.classList.toggle('hidden', !o.streak || o.streak < 2);
     this._writeMath(el.mProblem, o.text);
@@ -977,7 +1017,9 @@ export class UI {
     el.mHint.classList.add('hidden');
     el.mHint.textContent = '';
     el.mHintBtn.disabled = false;
-    el.mHintBtn.textContent = `💡 힌트 (💰${D.HINT_GOLD} · H)`;
+    /* 두 번 틀리면 힌트가 공짜 — 막힌 사람의 남은 선택지가 "포기"뿐이면 안 된다 */
+    el.mHintBtn.textContent = o.freeHint ? '💡 힌트 무료! (H)' : `💡 힌트 (💰${D.HINT_GOLD} · H)`;
+    el.mHintBtn.classList.toggle('free', !!o.freeHint);
     this.setTimer(o.time, o.time);
     /* 문제가 바뀔 때마다 카드를 한 번 튕겨 준다 — 새 문제가 왔다는 신호.
      * o.pop이 오면 난이도 배지도 같이 튕긴다 = "이번엔 이게 걸렸다"는 뿅. */
@@ -989,8 +1031,12 @@ export class UI {
     bounce(el.mProblem);
     if (o.pop) bounce(el.mDiff);
     this._armVert(o.vert);
-    /* 포기에 대가가 따르는지에 따라 버튼 문구가 달라진다 — 누르기 전에 알아야 한다 */
-    el.mClose.textContent = o.canGiveUp ? '🏳 포기 (Esc)' : '닫기 (Esc)';
+    /* 포기에 대가가 따르는지에 따라 버튼 문구가 달라진다 — 누르기 전에 알아야 한다.
+     * 재도전에 이미 돈을 썼다면 그 액수까지 적는다: 끝까지 풀면 절반이 돌아오는데
+     * 지금 포기하면 전부 사라진다는 걸 버튼 위에서 보여 주는 게 가장 정직하다. */
+    const lost = o.giveUp && o.giveUp.lost;
+    el.mClose.textContent = !o.canGiveUp ? '닫기 (Esc)'
+      : (lost ? `🏳 포기 (💰${lost} 날아감)` : '🏳 포기 (Esc)');
     el.mClose.classList.toggle('giveup', !!o.canGiveUp);
     setTimeout(() => el.mInput.focus(), 30);
   }
@@ -1053,7 +1099,8 @@ export class UI {
       `🌊 도달한 웨이브: <b>${state.wave}웨이브</b> (${D.DIFFICULTIES[state.difficulty].name})<br>
        👾 물리친 몬스터: <b>${state.kills}마리</b>${state.midBossKills ? ` · 👿 중간보스 ${state.midBossKills}` : ''}${state.bossKills ? ` · 🐉 대보스 ${state.bossKills}` : ''}<br>
        🎲 소환 <b>${state.summons}</b> · ⚗️ 조합 <b>${state.combos}</b> · ✨ 특수 <b>${state.specialsMade}</b> · 🌌 신화 <b>${state.mythicsMade}</b><br>
-       🧮 수학 문제: <b>${state.solved}문제 중 ${state.correct}개 정답 (${rate}%)</b>${state.hints ? ` · 💡 힌트 ${state.hints}회` : ''}<br>
+       🧮 수학 문제: <b>${state.solved}문제 중 ${state.correct}개 정답 (${rate}%)</b>${state.hints ? ` · 💡 힌트 ${state.hints}회` : ''}${state.retries ? ` · 🔁 재도전 ${state.retries}회 (💰${state.retryGold})` : ''}<br>
+       ${state.persisted ? `💪 포기하지 않고 끝내 푼 문제: <b>${state.persisted}개</b><br>` : ''}
        🔥 최고 연승: <b>${state.bestStreak || 0}연속</b> (한 번에 맞히기)${state.timeOuts ? ` · ⏰ 시간 초과 ${state.timeOuts}회` : ''}${state.mathShards ? `<br>🔴 센 문제를 뚫고 번 별조각: <b>✨${state.mathShards}</b>` : ''}`;
     this.el.overShards.textContent = `✨ 별조각 +${state.shardsEarned} 획득!`;
     this.el.overModal.classList.remove('hidden');

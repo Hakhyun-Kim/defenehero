@@ -38,20 +38,20 @@ function prepActions(state, P) {
     const ci = D.cardRoll(base, state.rng);      // 고르지 않는다 — 룰렛이 정한다
     const lv = lvs[ci];
     const acc = Math.max(0.05, P.acc - ACC_PER_LV * (lv - base));
-    const rounds = D.mathRounds(lv);
-    /* 조합 관문: MATH_TRIES 번까지 도전. 최고 난이도는 연속 정답이라야 통과.
-     * 다 쓰면 그 조합이 잠기고 다음 후보로 넘어간다 (게임과 같은 규칙) */
-    let passed = false, tries = 0;
-    for (; tries < D.MATH_TRIES; tries++) {
-      let streakOk = true;
-      for (let s = 0; s < rounds; s++) {
-        const ok = state.rng() < acc;
-        E.applyMathResult(state, ok);
-        /* 봇은 힌트를 안 사고 재도전마다 새 문제를 받으므로 "한 번에 맞힘" = 정답 여부 */
-        E.recordMathOutcome(state, ok);
-        if (!ok) { streakOk = false; break; }
-      }
-      if (streakOk) { passed = true; break; }
+    /* 조합 관문: 한 관문 = 한 문제. 틀리면 **골드로 재도전을 산다**(게임과 같은 규칙).
+     * 조합 비용을 떼어 놓고도 낼 수 있을 때만 사고, 못 사면 그 조합이 잠긴다.
+     * 봇이 공짜로 재도전하면 시뮬은 통과하는데 사람은 골드가 말라 붙는 판이 된다. */
+    let passed = false, tries = 0, spent = 0;
+    for (;;) {
+      const ok = state.rng() < acc;
+      E.applyMathResult(state, ok);
+      /* 봇은 힌트를 안 사고 재도전마다 새 문제를 받으므로 "한 번에 맞힘" = 정답 여부 */
+      E.recordMathOutcome(state, ok);
+      if (ok) { passed = true; break; }
+      tries++;
+      const r = E.buyRetry(state, pick.cost, tries);
+      if (!r.ok) break;
+      spent += r.cost;
     }
     if (!passed) { E.lockCombo(state, E.comboKey(pick)); continue; }   // 잠기고 다음 후보로
     const r = pick.kind === 'recipe'
@@ -63,6 +63,11 @@ function prepActions(state, P) {
       /* 빠른 풀이 보너스 — 봇은 시계를 안 보므로 "실력만큼 빨리 푼다"로 근사한다.
        * 안 태우면 사람은 세지는데 시뮬은 안 세져서 기준선이 실제와 갈라진다. */
       E.empowerHero(r.hero, D.speedPower(P.acc * 0.6));
+    } else if (r.ok) {
+      /* 늦게 맞힌 경우 — 작은 환급 + 재도전 골드 절반 반환 (mathgate.js).
+       * 이걸 안 태우면 시뮬 쪽만 골드가 마른다 */
+      E.refundPersist(state, r.cost, P.grade, D.cardRefundMul(lv, base), spent);
+      E.empowerHero(r.hero, D.speedPower(P.acc * 0.6) * D.PERSIST_POWER);
     }
   }
   /* 3) 배치 */

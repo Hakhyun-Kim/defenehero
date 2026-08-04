@@ -76,12 +76,27 @@ for (const p of problems) {
   /* ⑦ 세로셈 칸이 문제와 맞는가 — 칸에 적힌 두 수로 실제 답이 나와야 한다.
    * 어긋나면 아이가 칸대로 계산했는데 오답이 되는, 제일 나쁜 종류의 버그가 된다. */
   if (p.vert) {
-    const { op, a, b } = p.vert;
-    const got = op === '+' ? a + b : op === '−' ? a - b : a * b;
-    if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0) {
-      fails.세로셈불일치.push(`${p.grade}학년 [${p.type}]: 칸에 쓸 수 없는 수 ${a} ${op} ${b}`);
-    } else if (got !== p.answer) {
-      fails.세로셈불일치.push(`${p.grade}학년 [${p.type}]: 칸은 ${a} ${op} ${b} = ${got} 인데 정답은 ${p.answer}`);
+    /* 칸은 두 형태다: {op,a,b} 두 항 · {terms:[{v,op}]} 여러 항.
+     * 여러 항은 부호를 따라 누적하면 되고, 소수는 소수점 셋째 자리까지 비교한다. */
+    const v = p.vert;
+    const terms = v.terms || [{ v: v.a }, { v: v.b, op: v.op }];
+    let got = 0, bad = null;
+    for (let i = 0; i < terms.length; i++) {
+      const n = terms[i].v;
+      if (!(typeof n === 'number') || !Number.isFinite(n) || n < 0) { bad = n; break; }
+      if (i === 0) got = n;
+      else if (terms[i].op === '−') got -= n;
+      else if (terms[i].op === '×') got *= n;
+      else got += n;
+    }
+    /* 칸에 곱셈이 섞이면 왼쪽부터 순서대로 계산한 값이라 우선순위와 어긋날 수 있다.
+     * 지금은 {op,a,b} 곱셈만 그러며 두 항이라 문제가 없다. */
+    const want = v.value != null ? v.value : p.answer;
+    const shown = terms.map((t, i) => (i ? `${t.op || '+'} ${t.v}` : `${t.v}`)).join(' ');
+    if (bad !== null) {
+      fails.세로셈불일치.push(`${p.grade}학년 [${p.type}]: 칸에 쓸 수 없는 수 ${bad}`);
+    } else if (Math.abs(got - want) > 1e-9) {
+      fails.세로셈불일치.push(`${p.grade}학년 [${p.type}]: 칸은 ${shown} = ${got} 인데 ${v.value != null ? '적어 둔 값' : '정답'}은 ${want}`);
     }
   }
   /* ① 식을 실제로 풀어 본다 */
@@ -140,9 +155,6 @@ for (let base = 1; base <= 5; base++) {
       gateFail(`base=${base}: ${i}번 장 실제 ${(n / 60000 * 100).toFixed(1)}% ≠ 규정 ${(odds[i] * 100).toFixed(0)}%`);
     }
   });
-  /* 2문제 연속 관문(lv5+)이 걸리는 빈도는 낮게 유지한다 — 매번 걸리면 벌칙이 된다 */
-  const hardShare = [lo, mid, hi].reduce((a, lv, i) => a + (D.mathRounds(lv) > 1 ? odds[i] : 0), 0);
-  if (hardShare > 0.7) gateFail(`base=${base}: 2문제 관문이 ${Math.round(hardShare * 100)}%로 너무 자주 걸린다`);
 }
 /* 룰렛은 게임 난수를 쓰지 않는다(기본값이 Math.random). 주입한 난수만 쓰는지 확인 */
 {
@@ -167,12 +179,26 @@ for (const sec of [22, 40, 62]) {
   if (!(D.mathTime(sec, 3, 1) > D.mathTime(sec, 3, 0))) gateFail(`sec=${sec}: 수가 커져도 시간이 안 는다`);
   if (D.mathTime(sec, 3, 1) / D.mathTime(sec, 3, 0) > 1.5) gateFail(`sec=${sec}: 크기 보정이 과하다`);
 }
-/* 도전 횟수: 최소 두 번은 줘야 "한 번 실수"로 관문이 닫히지 않는다 */
-if (!(D.MATH_TRIES >= 2 && D.MATH_TRIES <= 5)) gateFail(`MATH_TRIES=${D.MATH_TRIES} 는 범위 밖`);
 if (!(D.VERT_DELAY_MS >= 2000 && D.VERT_DELAY_MS <= 15000)) gateFail(`VERT_DELAY_MS=${D.VERT_DELAY_MS} 는 범위 밖`);
-/* 최고 난이도만 2문제 연속 관문 */
-for (let lv = 1; lv <= 4; lv++) if (D.mathRounds(lv) !== 1) gateFail(`lv${lv}: 2문제 관문이 너무 일찍 나온다`);
-if (D.mathRounds(5) !== 2 || D.mathRounds(6) !== 2) gateFail('최고 난이도가 2문제 관문이 아니다');
+/* 한 관문 = 한 문제 (다단계 관문은 없앴다 — 통과의 왕복이 길어지면 피로가 된다) */
+for (let lv = 1; lv <= D.MAX_MATH_LV; lv++) if (D.mathRounds(lv) !== 1) gateFail(`lv${lv}: 관문이 한 문제가 아니다`);
+
+/* ---------- 재도전 값 ----------
+ * 틀리면 골드로 다시 산다. 세 가지가 지켜져야 한다:
+ *  ① 비싼 조합일수록 비싸다 (조합에 비례)
+ *  ② 틀릴수록 비싸진다 (계속 밀어붙이는 게 가장 비싸야 한다)
+ *  ③ 재도전을 사고도 조합 비용이 남는다 — 안 그러면 정답을 맞히고도 못 만든다 */
+for (const [a, b] of [[60, 300], [300, 1200], [1200, 2800]]) {
+  if (!(D.retryCost(a, 1) <= D.retryCost(b, 1))) gateFail(`재도전 값이 조합 비용을 안 따라간다 (${a} vs ${b})`);
+}
+for (const cost of [60, 300, 1200, 2800]) {
+  if (!(D.retryCost(cost, 1) < D.retryCost(cost, 2))) gateFail(`cost=${cost}: 두 번째 재도전이 안 비싸진다`);
+  if (D.retryCost(cost, 1) > cost * 0.5) gateFail(`cost=${cost}: 첫 재도전이 조합값의 절반을 넘는다`);
+  /* 조합 비용 + 재도전 값을 다 가진 사람만 살 수 있어야 한다 */
+  if (D.canRetry(cost, cost, 1)) gateFail(`cost=${cost}: 조합 골드만 있는데 재도전이 팔린다`);
+  if (!D.canRetry(cost + D.retryCost(cost, 1), cost, 1)) gateFail(`cost=${cost}: 값을 다 가졌는데 재도전을 못 산다`);
+}
+if (D.retryCost(0, 1) < D.RETRY_COST_MIN) gateFail('재도전 최소값이 지켜지지 않는다');
 
 console.log('\n--- 관문 규칙 (문제 룰렛 · 적응형) ---');
 if (gate.length) {

@@ -77,6 +77,17 @@ function maybeWord(op, a, b, ans, plain, plainHint) {
  * 여기서는 "어떤 두 수를 어떤 연산으로 세로로 쓰면 되는가"만 실어 보낸다 —
  * 문장제로 포장돼도 계산은 같으므로 문장형/식형 모두에 붙는다. */
 const vert = (p, op, a, b) => { p.vert = { op, a, b }; return p; };
+/* 항이 셋 이상인 덧셈·뺄셈은 **한 판에 모아서** 세로로 쓴다.
+ * 345 + 128 − 96 을 두 번에 나눠 쓰면 중간값을 옮겨 적다가 틀린다 —
+ * 종이에서도 이런 건 한 번에 세워 놓고 위에서 아래로 훑는다.
+ * terms: [{v: 345}, {v: 128, op: '+'}, {v: 96, op: '−'}] */
+const vertN = (p, terms, value) => {
+  /* value: 칸이 실제로 만들어 내는 값. 보통은 정답과 같지만, 평균처럼 칸이
+   * "첫 단계(합)"만 담당하는 경우가 있어 그때는 그 중간값을 적어 둔다.
+   * (math-check.mjs가 이 값으로 칸과 문제가 어긋나지 않는지 검산한다) */
+  p.vert = value == null ? { terms } : { terms, value };
+  return p;
+};
 
 /* =====================================================
  * 문제 유형 표
@@ -143,19 +154,20 @@ const G3 = [
   {
     id: 'triple', min: 4, sec: 38, label: '덧셈·뺄셈 섞기', make: (o) => {
       const a = ri(120, at(o, 320, 480)), b = ri(110, at(o, 260, 390)), c = ri(60, a);
-      return {
+      return vertN({
         text: `${a} + ${b} − ${c} = ?`, answer: a + b - c,
         hint: `앞에서부터 차례대로! 먼저 ${a} + ${b} = ${a + b}, 거기서 ${c}를 빼요.`,
-      };
+      }, [{ v: a }, { v: b, op: '+' }, { v: c, op: '−' }]);
     },
   },
   {
     id: 'missing', min: 4, sec: 32, label: '□ 안의 수 (덧셈)', make: (o) => {
       const a = ri(125, at(o, 320, 480)), x = ri(115, at(o, 300, 460));
-      return {
+      /* 실제로 손으로 하는 계산은 "합 − 아는 수"다 — 칸도 그 모양으로 준다 */
+      return vert({
         text: `${a} + ⬜ = ${a + x}\n⬜ 에 들어갈 수는?`, answer: x,
         hint: `덧셈의 반대는 뺄셈! ${a + x} − ${a} 를 계산해요. ${digitHint(x)}`,
-      };
+      }, '−', a + x, a);
     },
   },
   {
@@ -270,10 +282,10 @@ const G4 = [
   {
     id: 'bigTriple', min: 5, sec: 46, label: '큰 수 덧셈·뺄셈', make: (o) => {
       const a = ri(2400, at(o, 5200, 6800)), b = ri(1200, at(o, 2200, 3000)), c = ri(800, at(o, 1800, 2600));
-      return {
+      return vertN({
         text: `${a} + ${b} − ${c} = ?`, answer: a + b - c,
         hint: `앞에서부터! ${a} + ${b} = ${a + b}, 거기서 ${c}를 빼요.`,
-      };
+      }, [{ v: a }, { v: b, op: '+' }, { v: c, op: '−' }]);
     },
   },
 ];
@@ -292,17 +304,18 @@ const G5 = [
   {
     id: 'dec1', min: 1, sec: 32, label: '소수 덧셈·뺄셈', make: (o) => {
       const A = ri(105, at(o, 560, 899)), B = ri(101, at(o, 540, 880));
+      /* 소수는 소수점을 세로로 세워 주는 게 전부다 — 칸이 그 일을 대신한다 */
       if (Math.random() < 0.5) {
-        return {
+        return vert({
           text: `${A / 100} + ${B / 100} = ?`, answer: r2((A + B) / 100),
           hint: `소수점 자리를 맞춰 세로로 더해요. ${digitHint(r2((A + B) / 100))}`,
-        };
+        }, '+', A / 100, B / 100);
       }
       const big = Math.max(A, B), small = Math.min(A, B) - 1;
-      return {
+      return vert({
         text: `${big / 100} − ${small / 100} = ?`, answer: r2((big - small) / 100),
         hint: `소수점 자리를 맞춰 세로로 빼요. ${digitHint(r2((big - small) / 100))}`,
-      };
+      }, '−', big / 100, small / 100);
     },
   },
   {
@@ -333,13 +346,17 @@ const G5 = [
   {
     id: 'avg', min: 2, sec: 40, label: '평균 구하기', make: (o) => {
       const m = ri(12, at(o, 36, 60));
-      const s = at(o, 5, 8);
+      /* 넷째 수는 m - (d1+d2+d3) 라서, 흔들 폭이 크면 **음수**가 나온다.
+       * (m=12, s=8이면 12-24=-12) 평균을 배우는 학년에 음수를 내밀 수 없고,
+       * 세로셈 칸에도 못 쓴다. 그래서 폭 자체를 m이 감당할 만큼으로 줄인다. */
+      const s = Math.max(1, Math.min(at(o, 5, 8), Math.floor((m - 1) / 3)));
       const d1 = ri(-s, s), d2 = ri(-s, s), d3 = ri(-s, s);
       const nums = [m + d1, m + d2, m + d3, m - d1 - d2 - d3];
-      return {
+      /* 평균의 첫 단추는 "네 수를 한 번에 더하기"다 — 그 판을 그대로 깔아 준다 */
+      return vertN({
         text: `네 수 ${nums.join(', ')} 의 평균은?`, answer: m,
         hint: `평균 = (모두 더한 값) ÷ 4. 합은 ${nums.reduce((a, b) => a + b, 0)} 이에요.`,
-      };
+      }, nums.map((v, i) => (i ? { v, op: '+' } : { v })), nums.reduce((x, y) => x + y, 0));
     },
   },
   {

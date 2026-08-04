@@ -37,6 +37,7 @@ export function createGame(opts = {}) {
 
     kills: 0, bossKills: 0, midBossKills: 0, summons: 0, combos: 0,
     solved: 0, correct: 0, goldEarned: 0, hints: 0, firstTryWins: 0, bestStreak: 0, timeOuts: 0,
+    retries: 0, retryGold: 0, persisted: 0,
     specialsMade: 0, mythicsMade: 0,
     shardsEarned: 0, mathShards: 0,
     mathWindow: [],             // 최근 "한 번에 맞힘" 기록 (적응형 난이도, mathgate.js)
@@ -453,6 +454,32 @@ export function refundFirstTry(state, cost, grade, mul = 1) {
   state.goldEarned += back;
   state.firstTryWins++;
   return back;
+}
+
+/* 틀렸다가 **끝내** 맞힌 경우 — 첫 시도만큼은 아니어도 0은 아니다 (mathgate.js 참고).
+ * 여기에 재도전에 쓴 골드의 절반을 얹어 돌려준다: 이미 낸 돈이 매몰비용이 아니라
+ * "끝까지 풀면 돌아오는 보증금"이 되어야 포기 버튼 앞에서 한 번 더 붙어 본다. */
+export function refundPersist(state, cost, grade, mul = 1, retrySpent = 0) {
+  const back = Math.round(cost * D.refundRatio(grade) * state.mathMul * mul * D.PERSIST_REFUND);
+  const give = Math.round(retrySpent * D.RETRY_BACK);
+  state.gold += back + give;
+  state.goldEarned += back + give;
+  state.persisted = (state.persisted || 0) + 1;
+  return { back, give };
+}
+
+/* 오답 뒤 재도전을 산다 — 값은 그 조합의 비용과 틀린 횟수가 정한다(mathgate.js).
+ * 조합 비용을 떼어 놓고도 낼 수 있을 때만 팔린다: 재도전을 사느라 조합을 못 하게 되면
+ * "정답을 맞혔는데 골드가 모자라요"라는 최악의 결말이 생긴다. */
+export function buyRetry(state, combineCost, fails) {
+  const cost = D.retryCost(combineCost, fails);
+  if (!D.canRetry(state.gold, combineCost, fails)) {
+    return { ok: false, reason: 'gold', cost };
+  }
+  state.gold -= cost;
+  state.retries = (state.retries || 0) + 1;
+  state.retryGold = (state.retryGold || 0) + cost;
+  return { ok: true, cost };
 }
 
 export function useHint(state) {
@@ -965,7 +992,7 @@ export const remainingEnemies = (state) => state.spawnQueue.length + state.enemi
 export const SAVE_VERSION = 1;
 const SAVE_STATS = [
   'kills', 'bossKills', 'midBossKills', 'summons', 'combos', 'solved', 'correct',
-  'goldEarned', 'hints', 'firstTryWins', 'bestStreak', 'timeOuts',
+  'goldEarned', 'hints', 'firstTryWins', 'bestStreak', 'timeOuts', 'retries', 'retryGold', 'persisted',
   'specialsMade', 'mythicsMade', 'mathShards',
 ];
 

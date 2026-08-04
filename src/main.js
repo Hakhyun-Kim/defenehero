@@ -191,11 +191,10 @@ function openMath(mode, pending = null) {
   modal.card = null;
   modal.prob = null;                     // 카드를 고르기 전엔 "낸 문제"가 없다 (시계·힌트가 돌면 안 된다)
   modal.lv = modal.base;
-  modal.rounds = 1;
-  modal.round = 1;
   modal.allClean = true;                 // 모든 단계를 한 번에 맞혔는가
   modal.minLeft = 1;                     // 단계별 남은 시간 비율의 최솟값
-  modal.fails = 0;                        // 이 관문에서 틀린 횟수 (MATH_TRIES 넘으면 잠긴다)
+  modal.fails = 0;                        // 이 관문에서 틀린 횟수 (재도전 값이 여기에 비례한다)
+  modal.retrySpent = 0;                   // 재도전에 쓴 골드 — 끝내 맞히면 절반 돌아온다
   let title = '✏️ 지혜의 시험!';
   if (mode === 'combine' && pending) {
     if (pending.kind === 'rankup') {
@@ -238,26 +237,22 @@ function rollProblem() {
     i, lv,
     mul: D.cardRefundMul(lv, base),
     shards: D.cardShards(lv, base),
-    rounds: D.mathRounds(lv),
   };
   modal.lv = lv;
-  modal.rounds = modal.card.rounds;
-  modal.round = 1;
   ui.setMathTone(lv);
   SFX.challenge(lv);
   /* 난이도가 저절로 움직였으면 반드시 말해 준다 — 말없이 조용히 조이면
    * "왜 갑자기 어려워졌지?"가 되고, 아이는 자기가 못한다고 생각한다. */
   if (modal.adapt > 0) ui.toast('🔥 요즘 척척 맞히고 있어요 — 문제가 한 칸 올라갔어요!', 'good');
   else if (modal.adapt < 0) ui.toast('🌱 잠깐 숨 고르기 — 문제가 한 칸 쉬워졌어요');
-  if (modal.rounds > 1) ui.toast(`🌌 ${modal.rounds}문제를 연속으로 맞혀야 하는 관문이에요!`, 'bad');
-  else if (modal.card.shards) {
+  if (modal.card.shards) {
     SFX.shard();
     ui.toast(`🔴 센 문제가 나왔어요! 한 번에 맞히면 ✨별조각 +${modal.card.shards}`, 'good');
   }
   newProblem(true);
 }
 
-/* 다음 단계(신화 2문제)·오답 재도전은 뽑힌 난이도 그대로 새 문제를 낸다 —
+/* 오답 재도전은 뽑힌 난이도 그대로 새 문제를 낸다 —
  * 다시 뽑게 하면 틀릴 때마다 쉬운 쪽이 걸리기를 기대하며 버티게 된다. */
 function newProblem(pop = false) {
   startProblem(MathGen.gen(modal.grade, modal.lv, { ctx: state }), pop);
@@ -267,6 +262,7 @@ function startProblem(prob, pop = false) {
   modal.prob = prob;
   modal.tries = 0;
   modal.usedHint = false;                // 힌트는 문제마다 새로 산다
+  modal.retryArmAt = 0;                  // 새 문제가 나왔으니 재도전 잠금 해제
   /* 제한 시간은 관문 등급이 아니라 문제 유형이 정한다 (mathgate.js 참고) */
   modal.timeMax = D.mathTime(prob.sec, modal.lv, prob.over);
   modal.time = modal.timeMax;
@@ -280,10 +276,15 @@ function startProblem(prob, pop = false) {
   const shard = modal.card && modal.card.shards ? ` ✨별조각 +${modal.card.shards}` : '';
   ui.setProblem({
     grade: modal.grade, lv: modal.lv, text: prob.text, label: prob.label,
-    round: modal.round, rounds: modal.rounds,
     time: modal.timeMax, streak, pop,
     vert: prob.vert,
-    triesLeft: Math.max(0, D.MATH_TRIES - (modal.fails || 0)),
+    /* 틀렸을 때 얼마가 드는지 미리 보여 준다 — 답을 넣기 전에 알아야 판돈이 된다 */
+    retry: cost ? retryPlan() : null,
+    /* 지금 포기하면 무엇을 잃는지 버튼에 적는다 — 누르기 전에 알아야 한다 */
+    giveUp: modal.mode === 'combine' && modal.pending
+      ? { lost: modal.retrySpent || 0 }
+      : null,
+    freeHint: (modal.fails || 0) >= D.FREE_HINT_AFTER,
     canGiveUp: modal.mode === 'combine' && !!modal.pending,
     reward: refund
       ? `⏱ 빨리 한 번에 맞힐수록 환급이 커져요! (기본 💰${refund}${bonus.length ? ' · ' + bonus.join(' ') : ''})${shard}`
@@ -291,11 +292,23 @@ function startProblem(prob, pop = false) {
   });
 }
 
+/* ---------- 재도전 값 ----------
+ * 다음에 틀리면 얼마가 드는지, 그리고 낼 수 있는지. 조합 비용을 떼어 놓고 판단한다
+ * (재도전을 사느라 조합을 못 하게 되는 게 제일 나쁜 결말 — mathgate.js 참고). */
+function retryPlan(nextFails = (modal.fails || 0) + 1) {
+  const cost = modal.info ? modal.info.cost : 0;
+  if (!cost) return null;
+  return {
+    price: D.retryCost(cost, nextFails),
+    afford: D.canRetry(state.gold, cost, nextFails),
+  };
+}
+
 /* ---------- 포기 · 실패 ----------
  * ★ 예전에는 문제창을 닫는 데 아무 대가가 없었다. 그래서 껐다 다시 켜면 난이도와 유형이
  *   새로 뽑혔고(공짜 리롤), 틀려도 새 문제가 무한히 나왔다. 결국 아무렇게나 눌러도
  *   언젠간 조합이 됐고, 수학은 있으나 마나였다.
- *   이제 포기하거나 세 번 틀리면 **그 조합이 이번 준비 단계 동안 잠긴다.**
+ *   이제 포기하면 **그 조합이 이번 준비 단계 동안 잠기고**, 재도전은 **골드로 산다.**
  *   조합이 이 게임의 유일한 성장 수단이라 이게 가장 자연스러운 대가다. */
 function lockPending(why) {
   const p = modal.pending;
@@ -317,24 +330,35 @@ function giveUpMath() {
   refreshAll();
 }
 
-/* 오답·시간 초과 공통 뒤처리. 남은 도전이 없으면 관문이 잠긴다 */
+/* 오답·시간 초과 공통 뒤처리.
+ * 재도전은 골드로 산다 — 그러니 **자동으로 넘어가지 않는다.** 돈이 나가는 행동을
+ * 타이머가 대신 눌러 주면 안 된다. 낼 수 없으면 거기서 관문이 끝난다. */
 function afterMiss(msg) {
   streak = 0;
   modal.allClean = false;
   modal.fails = (modal.fails || 0) + 1;
   E.recordMathOutcome(state, false);
-  const left = D.MATH_TRIES - modal.fails;
-  if (left <= 0 && modal.mode === 'combine' && modal.pending) {
-    lockPending(`${D.MATH_TRIES}번 틀렸어요`);
-    ui.mathFeedback(false, `${msg} 여기까지! 이 조합은 이번 웨이브엔 못 해요.`, null);
-    autoNext(RETRY_MS);                  // 결과를 읽을 시간을 준 뒤 알아서 닫힌다
+  const plan = retryPlan(modal.fails);
+  if (modal.mode === 'combine' && modal.pending) {
+    if (!plan || !plan.afford) {
+      const why = plan
+        ? `재도전에 💰${plan.price}이 필요한데 조합 골드(💰${modal.info.cost})까지는 모자라요`
+        : '더 도전할 수 없어요';
+      lockPending(why);
+      ui.mathFeedback(false, `${msg} 여기까지! 이 조합은 이번 웨이브엔 못 해요.`, null);
+      autoNext(RETRY_MS);                // 결과를 읽을 시간을 준 뒤 알아서 닫힌다
+      refreshAll();
+      return;
+    }
+    /* 답을 넣은 Enter가 그대로 흘러 재도전까지 사 버리지 않게 잠깐 잠가 둔다.
+     * 골드가 나가는 버튼은 "손이 미끄러져서" 눌리면 안 된다. */
+    modal.retryArmAt = performance.now() + RETRY_ARM_MS;
+    ui.mathFeedback(false, `${msg} 다시 풀어 볼까요? (💰${plan.price})`,
+      `🔁 다시 도전 (💰${plan.price} · Enter)`);
     refreshAll();
     return;
   }
-  if (modal.rounds > 1) modal.round = 1;
-  const again = modal.rounds > 1 ? ' 1단계부터 다시!' : '';
-  ui.mathFeedback(false, `${msg}${again} (남은 도전 ${left}번)`, '🔁 다시 도전 (Enter)');
-  autoNext(RETRY_MS);
+  ui.mathFeedback(false, msg, '🔁 다시 도전 (Enter)');
   refreshAll();
 }
 
@@ -364,16 +388,6 @@ function submitMath(value) {
       state.bestStreak = Math.max(state.bestStreak, streak);
       if (streak >= 2) SFX.streak(streak);
     } else streak = 0;
-    /* 다단계 관문(신화): 아직 남은 단계가 있으면 다음 문제로 */
-    if (modal.mode === 'combine' && modal.pending && modal.round < modal.rounds) {
-      modal.round++;
-      SFX.stageClear();
-      /* 다음 행동이 하나뿐이니 버튼을 두지 않는다 — 결과만 잠깐 보여 주고 알아서 넘어간다 */
-      ui.mathFeedback(true, `✅ ${modal.round - 1}단계 통과! 마지막 ${modal.rounds}단계로…`, null);
-      autoNext(850);
-      refreshAll();
-      return;
-    }
     SFX.correct();
     if (modal.mode === 'combine' && modal.pending) {
       const p = modal.pending;
@@ -427,6 +441,23 @@ function submitMath(value) {
             SFX.shard();
             msg += ` ✨별조각 +${sh}!`;
           }
+        } else {
+          /* ★ 늦게 맞혔어도 0은 아니다 (mathgate.js 참고).
+           * 예전엔 한 번 틀리는 순간 남는 게 "조합 성공"뿐이라, 어려운 문제 앞에서
+           * 포기가 합리적인 선택이 됐다. 이제 끝까지 푼 값을 작게라도 치른다 —
+           * 그리고 재도전에 쓴 골드의 절반을 돌려줘 "이미 낸 돈"이 발목을 잡지 않게 한다. */
+          const cm = modal.card ? modal.card.mul : 1;
+          const { back, give } = E.refundPersist(
+            state, r.cost, modal.grade, cm, modal.retrySpent || 0);
+          const power = D.speedPower(modal.minLeft) * D.PERSIST_POWER;
+          if (power > 0.005) {
+            E.empowerHero(r.hero, power);
+            msg += ` 공격력 +${Math.round(power * 100)}%`;
+          }
+          msg += ` 💪 포기하지 않았어요! 💰+${back} 환급`;
+          if (give) msg += ` · 🔁재도전 💰+${give} 반환`;
+          SFX.streak(2);
+          ui.toast('💪 끝까지 풀었어요! 포기했으면 하나도 못 받았을 거예요', 'good');
         }
         if (r.hero.tier >= 4) ui.toast(`🌌 신화 등급 [${C.name}] 탄생!! 최강의 용사예요!`, 'good');
         /* 영웅(2) 이상 탄생은 확실한 연출로 */
@@ -482,31 +513,27 @@ function autoNext(delay) {
 }
 const cancelAutoNext = () => { autoNextToken++; autoNextPending = false; };
 
-/* 정답을 맞힌 뒤에는 **묻지 않는다.**
- * 할 게 남았으면 바로 다음 문제, 없으면(재료가 없든 골드가 없든) 알아서 닫힌다.
- * 사람이 눌러야만 빠져나오는 상태를 하나도 남기지 않는 것이 이 함수의 목적이다.
- * 반환값은 화면에 덧붙일 안내 문구. */
-const NEXT_MS = 800;      // 다음 문제로 — 결과를 알아볼 만큼만
-const CLOSE_MS = 1100;    // 닫기 — 마지막 결과는 조금 더 보여 준다
-const RETRY_MS = 2600;    // 오답 재출제 — 정답을 읽을 시간은 주되 화면이 멈춰 있진 않게
+/* 정답을 맞히면 **거기서 끝난다. 한 번에 한 문제.**
+ * ★ 예전에는 만들 수 있는 조합이 남아 있으면 곧장 다음 관문으로 이어졌다.
+ *   의도는 "묻지 않는 흐름"이었는데, 실제로는 그만두려면 창을 닫아야 했고
+ *   닫기는 곧 포기라서 **그 조합이 잠겼다.** 멈추고 싶을 뿐인데 벌을 받는 구조였다.
+ *   이제 관문 하나를 통과하면 조용히 닫힌다. 다음 조합은 목록에서 직접 누르면 된다
+ *   (C키는 그대로 — 가장 좋은 조합을 한 번에 연다). */
+const CLOSE_MS = 1500;    // 닫기 — 결과(환급·별조각·공격력)를 읽을 만큼은 보여 준다
+const RETRY_MS = 2600;    // 실패로 관문이 끝났을 때 — 정답을 읽을 시간
 function afterCorrect(baseMsg) {
+  /* 다음에 뭘 할 수 있는지만 한 줄 덧붙인다 — 자동으로 끌고 가지는 않는다 */
   const next = chooseBestCombo();
-  if (next) {
-    ui.mathFeedback(true, `${baseMsg} — 다음 문제!`, null);
-    autoNext(NEXT_MS);
-  } else {
-    /* 왜 끝나는지 말해 준다. "더 만들 게 없다"와 "골드만 모자라다"는 다음에 할 일이 다르다 */
-    const blocked = E.listCombos(state).find(c => !c.affordable);
-    const tail = blocked
-      ? ` — 골드가 모자라 여기까지! (다음 조합 💰${blocked.cost})`
-      : ' — 더 만들 조합이 없어요';
-    ui.mathFeedback(true, baseMsg + tail, null);
-    const token = ++autoCloseToken;
-    autoNextPending = true;              // 기다리는 중 Enter = "지금 바로 닫기"
-    setTimeout(() => {
-      if (token === autoCloseToken && ui.isMathOpen()) closeMathAll();
-    }, CLOSE_MS);
-  }
+  const blocked = next ? null : E.listCombos(state).find(c => !c.affordable);
+  const tail = next
+    ? ' — 조합을 더 할 수 있어요 (C)'
+    : (blocked ? ` — 골드가 모자라 여기까지! (다음 조합 💰${blocked.cost})` : '');
+  ui.mathFeedback(true, baseMsg + tail, null);
+  const token = ++autoCloseToken;
+  autoNextPending = true;                // 기다리는 중 Enter = "지금 바로 닫기"
+  setTimeout(() => {
+    if (token === autoCloseToken && ui.isMathOpen()) closeMathAll();
+  }, CLOSE_MS);
 }
 function closeMathAll() {
   autoCloseToken++;
@@ -529,17 +556,30 @@ function comboToAction(c) {
     ? { kind: 'rankup', cls: c.cls, tier: String(c.tier) }
     : { kind: 'recipe', result: c.result };
 }
+/* "다시 도전" — 유일하게 사람이 눌러야 하는 버튼이다. 골드가 나가기 때문이다. */
+const RETRY_ARM_MS = 700;   // 오답 직후 이만큼은 재도전 버튼이 안 눌린다 (Enter 흘러듦 방지)
 function advanceMath() {
+  if (modal.retryArmAt && performance.now() < modal.retryArmAt) return;
   autoCloseToken++;
   cancelAutoNext();          // 예약된 자동 진행이 한 번 더 터져 문제를 건너뛰는 일을 막는다
-  if (modal.mode === 'combine') {
-    if (modal.pending) { newProblem(); return; }        // 오답 재도전
-    const next = chooseBestCombo();
-    if (next) openMath('combine', comboToAction(next)); // 연쇄 조합
-    else closeMathAll();
-  } else {
-    newProblem();
+  if (modal.mode !== 'combine') { newProblem(); return; }
+  if (!modal.pending) { closeMathAll(); return; }       // 이미 통과했거나 잠긴 관문
+  const r = E.buyRetry(state, modal.info ? modal.info.cost : 0, modal.fails);
+  if (!r.ok) {
+    /* afterMiss가 미리 막지만, 그 사이 골드가 줄었을 수도 있다 (동시에 성 수리 등) */
+    lockPending(`재도전에 💰${r.cost}이 필요해요`);
+    ui.mathFeedback(false, '골드가 모자라 여기까지! 이 조합은 이번 웨이브엔 못 해요.', null);
+    autoNext(RETRY_MS);
+    refreshAll();
+    return;
   }
+  SFX.coin();
+  modal.retrySpent = (modal.retrySpent || 0) + r.cost;
+  /* 낸 돈이 "날아간 돈"이 아니라 "끝까지 풀면 돌아오는 보증금"임을 그 자리에서 말해 준다 —
+   * 포기 버튼 앞에서 한 번 더 붙어 보게 만드는 건 이 한 줄이다 */
+  ui.toast(`🔁 재도전 (💰-${r.cost}) — 끝내 맞히면 💰${Math.round(r.cost * D.RETRY_BACK)} 돌려받아요!`, 'bad');
+  newProblem();
+  refreshAll();
 }
 
 /* ---------- 막간 이야기 ----------
@@ -983,6 +1023,16 @@ const handlers = {
   },
   onHint() {
     if (!modal.prob || ui.isAnswered()) return;   // 이미 답이 나온 뒤엔 힌트가 의미가 없다 — 골드만 날아간다
+    /* ★ 두 번 틀리면 힌트가 공짜다 (mathgate.js 참고).
+     * 막힌 사람에게 남은 선택지가 "포기"뿐이면 포기한다 — 그보다 나은 출구를 연다.
+     * 힌트를 보면 환급은 여전히 줄지만, 끝까지 푼 값(refundPersist)은 그대로 받는다. */
+    if ((modal.fails || 0) >= D.FREE_HINT_AFTER) {
+      modal.usedHint = true;
+      SFX.tap();
+      ui.showHint(modal.prob.hint);
+      ui.toast('💡 두 번 틀렸으니 힌트는 공짜예요 — 포기하지 말고 끝까지!', 'good');
+      return;
+    }
     /* 힌트를 사서 조합 골드가 모자라지면, 정답을 맞히고도 아무것도 못 얻는다.
      * 문제를 다 풀고 나서야 "골드가 부족해요"를 보는 건 제일 나쁜 결말이라 미리 막는다. */
     const need = modal.info ? modal.info.cost : 0;
