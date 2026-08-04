@@ -526,6 +526,11 @@ export class Renderer3D {
   constructor(container, opts = {}) {
     this.container = container;
     this.quality = opts.quality || 'high';
+    /* 배경 장식(바람 잔디 · 바닷가 · 하늘 밴드 · 반딧불이)을 통째로 끄는 스위치.
+     * 모바일은 이걸 끈다 — 화소당 셰이더 비용이 제일 비싼 것들이기도 하고,
+     * 작은 화면에서는 하늘에 내줬던 19%를 전장에 돌려주는 게 훨씬 이득이다.
+     * 시간대 조명(해 각도·안개·색)은 공짜라서 끄지 않는다. */
+    this.decor = opts.decor !== false;
     this.time = 0;
     this.shake = 0;
 
@@ -549,8 +554,10 @@ export class Renderer3D {
 
     this.scene = new THREE.Scene();
     /* 바다가 생기면서 시야가 훨씬 깊어졌다. 예전 far=44 는 수평선을 통째로
-     * 하얗게 지워 버린다 — 전장(거리 ~35)은 그대로 두고 far 만 밀어낸다. */
-    this.fogNear = 30; this.fogFar = 78;
+     * 하얗게 지워 버린다 — 전장(거리 ~35)은 그대로 두고 far 만 밀어낸다.
+     * 바다가 없는 모드에서는 볼 게 잔디밭뿐이라 예전 값이 오히려 깊이가 산다. */
+    if (this.decor) { this.fogNear = 30; this.fogFar = 78; }
+    else { this.fogNear = 24; this.fogFar = 44; }
     this.scene.fog = new THREE.Fog(0xcfe9ff, this.fogNear, this.fogFar);
     this.scene.background = new THREE.Color(0xcfe9ff);
     /* 시간대(실제 시각) → 조명·안개·물빛. 보스 분위기는 이 위에 덧칠된다. */
@@ -574,11 +581,16 @@ export class Renderer3D {
     /* 화면 위쪽을 하늘에 내준다. 그만큼 게임이 차지할 자리가 줄어드니
      * 시야각을 넓혀(내용이 작아진다) + 시선을 살짝 올려(내용이 내려간다)
      * 성 깃대부터 스폰 포탈까지가 밴드 아래에 들어오게 맞췄다.
-     * 공짜는 없다 — 하늘을 얻는 대신 전장이 조금 작아진다. */
-    this.skyFraction = 0.19;
-    this.camera = new THREE.PerspectiveCamera(54, 16 / 10, 0.1, 120);
-    this.camBase = new THREE.Vector3(0, 13.2, 13.6);
-    this.camLook = new THREE.Vector3(0, 2.4, -0.6);
+     * 공짜는 없다 — 하늘을 얻는 대신 전장이 조금 작아진다.
+     *
+     * 장식을 끄면 그 19%를 도로 전장에 준다: 시야각을 좁히고 시선을 내려
+     * 발판이 화면에서 커진다. 손가락으로 누르는 화면에서는 이게 곧 조작성이다. */
+    this.skyFraction = this.decor ? 0.19 : 0;
+    this.camera = new THREE.PerspectiveCamera(this.decor ? 54 : 46, 16 / 10, 0.1, 120);
+    this.camBase = this.decor ? new THREE.Vector3(0, 13.2, 13.6)
+                              : new THREE.Vector3(0, 13.2, 12.8);
+    this.camLook = this.decor ? new THREE.Vector3(0, 2.4, -0.6)
+                              : new THREE.Vector3(0, 0, -0.6);
     this.camera.position.copy(this.camBase);
     this.camera.lookAt(this.camLook);
 
@@ -604,15 +616,18 @@ export class Renderer3D {
     this._buildParticles();
     this._buildDamageNumbers();
 
-    /* 자연 배경 — 잔디 물결 · 성 뒤편 바다 · 밤 반딧불이 */
-    this.grass = new WindGrass(this.scene, this.quality, wx, wz);
-    this.sea = new Sea(this.scene, this.quality);
-    this.fireflies = new Fireflies(this.scene, this.quality);
-
-    /* 하늘 밴드 — 카메라 자식이라 카메라가 씬에 들어가 있어야 그려진다 */
-    this.scene.add(this.camera);
-    this.sky = new SkyBand(this.camera, this.skyFraction);
+    /* 자연 배경 — 잔디 물결 · 성 뒤편 바다 · 밤 반딧불이 · 하늘 밴드.
+     * 장식을 끄면 아예 만들지 않는다(감추는 게 아니라). 지오메트리도 셰이더
+     * 컴파일도 없으니 첫 화면이 뜨는 시간까지 같이 짧아진다. */
     this.moonPhase = 0.15;
+    if (this.decor) {
+      this.grass = new WindGrass(this.scene, this.quality, wx, wz);
+      this.sea = new Sea(this.scene, this.quality);
+      this.fireflies = new Fireflies(this.scene, this.quality);
+      /* 하늘 밴드 — 카메라 자식이라 카메라가 씬에 들어가 있어야 그려진다 */
+      this.scene.add(this.camera);
+      this.sky = new SkyBand(this.camera, this.skyFraction);
+    }
 
     this.heroViews = new Map();
     this.enemyViews = new Map();
@@ -677,14 +692,17 @@ export class Renderer3D {
 
   /* ---------- 지형: 잔디 + 세 갈래 길 + 발판 ---------- */
   _buildTerrain() {
-    /* 땅은 물가(SHORE_Z)에서 끝난다 — 그 너머는 바다(nature.js). */
-    const landDepth = 20 - SHORE_Z;
+    /* 땅은 물가(SHORE_Z)에서 끝난다 — 그 너머는 바다(nature.js).
+     * 바다를 안 만드는 모드에서는 땅이 그대로 화면 끝까지 이어져야 한다.
+     * 안 그러면 성 뒤에 배경색이 뚫린 구멍이 생긴다. */
+    const farZ = this.decor ? SHORE_Z : -20;
+    const landDepth = 20 - farZ;
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(74, landDepth),
       new THREE.MeshLambertMaterial({ map: grassTexture(), color: 0xd2e3c2 })
     );
     ground.rotation.x = -Math.PI / 2;
-    ground.position.set(0, -0.08, SHORE_Z + landDepth / 2);
+    ground.position.set(0, -0.08, farZ + landDepth / 2);
     ground.receiveShadow = true;
     this.ground = ground;
     this.scene.add(ground);
@@ -1844,10 +1862,12 @@ export class Renderer3D {
     this._updateDaylight(dt, state);    // 먼저 시간대 기준값을 만들고
     this._updateBossMood(dt);           // 그 위에 보스 분위기를 덧칠한다
 
-    this.grass.frame(dt, t, this.palette, this.bossBlend);
-    this.sea.frame(dt, t, this.palette, this.bossBlend);
-    this.fireflies.frame(dt, t, this.palette);
-    this.sky.frame(dt, t, this.palette, this.moonPhase);
+    if (this.decor) {
+      this.grass.frame(dt, t, this.palette, this.bossBlend);
+      this.sea.frame(dt, t, this.palette, this.bossBlend);
+      this.fireflies.frame(dt, t, this.palette);
+      this.sky.frame(dt, t, this.palette, this.moonPhase);
+    }
 
     this.shake = Math.max(0, this.shake - dt * 1.7);
     const s2 = this.shake * this.shake;
@@ -1903,10 +1923,12 @@ export class Renderer3D {
 
   dispose() {
     this.ro.disconnect();
-    this.grass.dispose();
-    this.sea.dispose();
-    this.fireflies.dispose();
-    this.sky.dispose();
+    if (this.decor) {
+      this.grass.dispose();
+      this.sea.dispose();
+      this.fireflies.dispose();
+      this.sky.dispose();
+    }
     this.renderer.dispose();
     this.container.removeChild(this.renderer.domElement);
   }

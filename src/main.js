@@ -22,6 +22,11 @@ const store = {
   best(diff) { return Number(localStorage.getItem(`mathdef_best_${diff}`) || 0); },
   setBest(diff, w) { localStorage.setItem(`mathdef_best_${diff}`, String(w)); },
   get gfx() { return localStorage.getItem('mathdef_gfx'); },
+  /* 배경 장식 끄기 — 너무 느린 기기에서 한 번 켜지면 계속 유지된다.
+   * 장식을 켜고 끄는 건 지형·카메라까지 바뀌는 일이라 실행 중엔 못 바꾼다.
+   * 그래서 "다음에 켤 때부터"로 미룬다. */
+  get decorOff() { return localStorage.getItem('mathdef_decor_off') === '1'; },
+  set decorOff(v) { localStorage.setItem('mathdef_decor_off', v ? '1' : '0'); },
   get storyOff() { return localStorage.getItem('mathdef_story_off') === '1'; },
   set storyOff(v) { localStorage.setItem('mathdef_story_off', v ? '1' : '0'); },
   get deaths() { return Number(localStorage.getItem('mathdef_deaths') || 0); },
@@ -45,9 +50,32 @@ const urlGfx = urlParams.get('gfx');
  * (설정을 저장하지 않으므로 사용자가 평소 쓰던 소리 설정은 그대로 남는다) */
 if (urlParams.has('mute') || urlParams.has('rafshim')) forceMute();
 
+/* ---------- 모바일이면 배경 장식을 끈다 ----------
+ * 잔디 14,000장 · 픽셀마다 도는 파도 셰이더 · 하늘 밴드는 데스크톱 GPU 기준으로
+ * 만든 것들이라 폰에서는 프레임을 그대로 먹는다. 게다가 작은 화면에서는
+ * 하늘에 내줬던 19%가 아깝다 — 끄면 그만큼 전장이 커져 발판을 누르기 쉬워진다.
+ * ?decor=on 으로 폰에서도 켜 볼 수 있고, ?decor=off 로 데스크톱에서 꺼 볼 수 있다. */
+function detectMobile() {
+  /* ?mobile=1 은 폰 없이 이 경로를 확인하려고 둔다. 데스크톱 브라우저는
+   * 창을 줄여도 pointer:coarse 로 안 바뀌어서 그냥은 검증이 안 된다. */
+  const forced = urlParams.get('mobile');
+  if (forced != null) return !/^(0|off|no|false)$/i.test(forced);
+  try {
+    if (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) return true;
+  } catch { /* matchMedia 없는 환경 */ }
+  return /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(navigator.userAgent || '');
+}
+const urlDecor = urlParams.get('decor');
+const isMobile = detectMobile();
+const useDecor = urlDecor != null ? !/^(0|off|no|false)$/i.test(urlDecor)
+                                  : (!isMobile && !store.decorOff);
+
 const renderer = new Renderer3D(ui.el.scene3d, {
-  quality: urlGfx || (store.gfx === 'lite' ? 'lite' : 'high'),
+  /* 폰은 처음부터 lite 로 시작한다. high 로 켰다가 7초 뒤에 떨어뜨리면
+   * 그 7초가 하필 제일 버벅이는 구간(첫인상)이 된다. */
+  quality: urlGfx || (store.gfx === 'lite' || (isMobile && store.gfx == null) ? 'lite' : 'high'),
   preserve: urlParams.has('rafshim') || urlGfx === 'min',
+  decor: useDecor,
 });
 
 let state = null;
@@ -1330,7 +1358,8 @@ let lastT = performance.now();
 let simAcc = 0;
 let bootT = performance.now();
 let frameCount = 0;
-let gfxDecided = store.gfx != null || urlGfx != null;
+/* 폰은 lite 로 이미 결정된 것으로 친다 — 실측해서 high 로 올릴 이유가 없다 */
+let gfxDecided = store.gfx != null || urlGfx != null || isMobile;
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -1351,6 +1380,12 @@ function frame(now) {
         const q = avg < 45 ? 'lite' : 'high';
         store.gfx = q;
         if (q === 'lite') { renderer.setQuality('lite'); ui.toast('⚙️ 부드러운 화면을 위해 그래픽을 조절했어요.'); }
+        /* lite 로 낮춰도 안 되는 기기: 배경 장식까지 접는다.
+         * 지형과 카메라가 같이 바뀌는 일이라 실행 중엔 못 바꾸고 다음 실행부터다. */
+        if (avg < 26 && renderer.decor) {
+          store.decorOff = true;
+          ui.toast('⚙️ 다음에 켤 때는 배경을 더 가볍게 할게요.');
+        }
       }
     }
   }
@@ -1513,6 +1548,7 @@ window.__game = {
   get state() { return state; },
   get modal() { return modal; },
   E, D, renderer, ui, MathGen, SFX, demo,
+  env: { isMobile, decor: useDecor, quality: renderer.quality },
   sfxCore: { getAc, getMaster, isSfxMuted, isMusicMuted },
   refresh: refreshAll,
   selectHero(id) { selHero = id; renderer.setSelectedHero(id); ui.renderHeroPanel(state, id); },
