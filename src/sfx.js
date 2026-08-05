@@ -10,9 +10,20 @@
 let ctx = null;
 let master = null;      // 음악 + 효과음이 함께 들어오는 지점
 let sfxBus = null;      // 효과음 전용 (여기에만 살짝 공간감을 준다)
+let masterFilter = null; // 몰입/위기 상태 Dynamic Lowpass Flow
+
 /* 효과음과 배경음을 따로 끌 수 있다 — 배경음만 끄고 싶은 요구가 가장 흔하다 */
 let sfxMuted = localStorage.getItem('mathdef_mute_sfx') === '1';
 let musicMuted = localStorage.getItem('mathdef_mute_bgm') === '1';
+let duckingFn = null;
+
+export function registerDucker(fn) {
+  duckingFn = fn;
+}
+
+function triggerDuck(amt = 0.35, dur = 0.35) {
+  if (duckingFn) duckingFn(amt, dur);
+}
 
 export function getAc() {
   if (!ctx) {
@@ -33,9 +44,16 @@ export function getAc() {
       tame.frequency.value = 5200;
       tame.gain.value = -5;
 
+      /* Dynamic Lowpass Flow Filter: 게임 위기 상태나 몰입 시 소리 전체 분위기를 변화 */
+      masterFilter = ctx.createBiquadFilter();
+      masterFilter.type = 'lowpass';
+      masterFilter.frequency.value = 20000; // 기본은 전체 통과
+      masterFilter.Q.value = 0.7;
+
       master = ctx.createGain();
       master.gain.value = 0.9;
-      master.connect(tame);
+      master.connect(masterFilter);
+      masterFilter.connect(tame);
       tame.connect(limiter);
       limiter.connect(ctx.destination);
 
@@ -48,6 +66,14 @@ export function getAc() {
   return ctx;
 }
 export const getMaster = () => { getAc(); return master; };
+
+/* 게임 상태(체력 비상 등)에 따른 마스터 오디오 플로우 튜닝 */
+export function updateAudioFlow(hpRatio = 1) {
+  const c = getAc();
+  if (!c || !masterFilter) return;
+  const targetFreq = hpRatio < 0.3 ? 2500 + hpRatio * 15000 : 20000;
+  masterFilter.frequency.setTargetAtTime(targetFreq, c.currentTime, 0.2);
+}
 
 /* 필드 x좌표(0~700)를 좌우 위치로. 패너가 없는 브라우저면 그냥 통과 */
 function panNode(pan) {
@@ -82,6 +108,66 @@ export function tone(freq, start = 0, dur = 0.1, type = 'triangle', vol = 0.1, g
     f.type = 'lowpass'; f.frequency.value = opts.cutoff; f.Q.value = 0.7;
     node.connect(f); node = f;
   }
+  const p = panNode(opts.pan);
+  if (p) { node.connect(p); node = p; }
+  node.connect(sfxBus);
+  o.start(t0); o.stop(t0 + dur + 0.05);
+}
+
+/* flowTone: 미끄러지는 피치(Smooth Pitch Bend Flow) + LFO 바이브라토 + Filter Cutoff Sweep */
+export function flowTone(freqs = [], start = 0, dur = 0.2, type = 'sine', vol = 0.1, opts = {}) {
+  if (sfxMuted || !freqs.length) return;
+  const c = getAc(); if (!c) return;
+  const t0 = c.currentTime + start;
+  const k = wobble(opts.vary);
+
+  const o = c.createOscillator();
+  const g = c.createGain();
+  o.type = type;
+
+  // 피치 플로우 (Smooth Curve Ramp)
+  const stepDur = dur / Math.max(1, freqs.length - 1);
+  o.frequency.setValueAtTime(freqs[0] * k, t0);
+  for (let i = 1; i < freqs.length; i++) {
+    o.frequency.exponentialRampToValueAtTime(Math.max(20, freqs[i] * k), t0 + i * stepDur);
+  }
+
+  // LFO Vibrato Flow (옵션)
+  if (opts.vibratoFreq && opts.vibratoDepth) {
+    const lfo = c.createOscillator();
+    const lfoGain = c.createGain();
+    lfo.frequency.value = opts.vibratoFreq;
+    lfoGain.gain.value = opts.vibratoDepth;
+    lfo.connect(lfoGain);
+    lfoGain.connect(o.frequency);
+    lfo.start(t0);
+    lfo.stop(t0 + dur + 0.05);
+  }
+
+  // Gain Envelope
+  const atk = opts.atk ?? 0.02;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol, t0 + atk);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g);
+
+  let node = g;
+
+  // Filter Sweep Flow (옵션)
+  if (opts.filterSweep) {
+    const filter = c.createBiquadFilter();
+    filter.type = opts.filterType || 'lowpass';
+    filter.Q.value = opts.filterQ || 2.0;
+    filter.frequency.setValueAtTime(opts.filterSweep[0], t0);
+    filter.frequency.exponentialRampToValueAtTime(Math.max(50, opts.filterSweep[1]), t0 + dur);
+    node.connect(filter);
+    node = filter;
+  } else if (opts.cutoff) {
+    const f = c.createBiquadFilter();
+    f.type = 'lowpass'; f.frequency.value = opts.cutoff; f.Q.value = 0.7;
+    node.connect(f); node = f;
+  }
+
   const p = panNode(opts.pan);
   if (p) { node.connect(p); node = p; }
   node.connect(sfxBus);
@@ -152,110 +238,114 @@ function limit(key, ms) {
 
 /* ---------- 효과음 레시피 ---------- */
 export const SFX = {
-  tap()        { tone(660, 0, 0.05, 'sine', 0.06); },
+  tap()        { flowTone([660, 780], 0, 0.05, 'sine', 0.06); },
 
   summon(tier) {
-    tone(330 + tier * 60, 0, 0.1, 'triangle', 0.09, 660 + tier * 120);
-    if (tier >= 2) tone(880, 0.1, 0.14, 'triangle', 0.09, 1320);
-    if (tier >= 3) { /* 전설 팡파레 */
-      [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => tone(f, 0.16 + i * 0.09, 0.22, 'triangle', 0.1));
+    flowTone([330 + tier * 60, 660 + tier * 120], 0, 0.12, 'triangle', 0.09);
+    if (tier >= 2) flowTone([880, 1100, 1320], 0.08, 0.16, 'triangle', 0.09, { filterSweep: [2000, 6000] });
+    if (tier >= 3) { /* 전설 팡파레 Flow */
+      const scale = [523, 659, 784, 1047, 1319, 1568, 2093];
+      flowTone(scale, 0.15, 0.35, 'triangle', 0.11, { vibratoFreq: 12, vibratoDepth: 35, filterSweep: [1500, 8000] });
       noise(0.16, 0.5, 0.05, 5000, 0.4);
     }
   },
   combine() {
-    [440, 554, 659, 880].forEach((f, i) => tone(f, i * 0.08, 0.12, 'triangle', 0.09));
-    noise(0.3, 0.3, 0.04, 4000, 0.5);
+    flowTone([440, 554, 659, 880, 1108], 0, 0.22, 'triangle', 0.09, { filterSweep: [1000, 5000] });
+    noise(0.18, 0.3, 0.04, 4000, 0.5);
   },
-  place()      { tone(220, 0, 0.09, 'sine', 0.1, 110); noise(0, 0.06, 0.07, 700, 0.6); },
-  upgrade()    { tone(392, 0, 0.08, 'square', 0.06); tone(523, 0.08, 0.08, 'square', 0.06); tone(659, 0.16, 0.14, 'square', 0.07); },
+  place()      { flowTone([220, 140, 110], 0, 0.09, 'sine', 0.1); noise(0, 0.06, 0.07, 700, 0.6); },
+  upgrade()    { flowTone([392, 523, 659, 784], 0, 0.2, 'square', 0.07, { filterSweep: [2000, 6000] }); },
 
-  correct() {   /* 상승 아르페지오: 기분 좋게 */
-    [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.09, 0.16, 'square', 0.07));
+  correct() {   /* 메이저 펜타토닉 음계 플로우 */
+    flowTone([523, 659, 784, 1047, 1319], 0, 0.22, 'triangle', 0.08, { filterSweep: [3000, 8000] });
   },
-  wrong() {     /* 하강 2음: 기죽지 않게 부드럽게 */
-    tone(330, 0, 0.18, 'sine', 0.09, 262);
-    tone(262, 0.18, 0.26, 'sine', 0.08, 220);
+  wrong() {     /* 부드러운 하강 멜로디 플로우 */
+    flowTone([330, 293, 262, 220], 0, 0.3, 'sine', 0.08);
   },
 
   /* --- 제한 시간 연출: 긴장은 주되 무섭지는 않게 --- */
-  /* 문제 등장: 난이도가 높을수록 낮고 묵직하게 깔린다 */
   challenge(lv) {
     const f = [0, 660, 620, 560, 480, 400][Math.max(1, Math.min(5, lv))];
-    tone(f, 0, 0.12, 'triangle', 0.07, f * 1.5);
-    if (lv >= 3) tone(f * 1.5, 0.12, 0.16, 'triangle', 0.06);
+    flowTone([f, f * 1.5], 0, 0.14, 'triangle', 0.07);
+    if (lv >= 3) flowTone([f * 1.5, f * 1.8], 0.12, 0.16, 'triangle', 0.06);
     if (lv >= 5) { /* 극한: 심장 쿵 + 종소리 */
-      tone(110, 0, 0.4, 'sine', 0.11, 70);
-      [784, 1047, 1319].forEach((v, i) => tone(v, 0.24 + i * 0.1, 0.3, 'triangle', 0.06));
+      flowTone([140, 90, 60], 0, 0.45, 'sine', 0.12);
+      flowTone([784, 1047, 1319, 1568], 0.2, 0.35, 'triangle', 0.07, { filterSweep: [1500, 6000] });
       noise(0.2, 0.5, 0.04, 3200, 0.4);
     }
   },
   /* 째깍: 마지막 10초부터 1초마다, 3초 남으면 더 날카롭게 */
   tick(urgent) {
-    tone(urgent ? 1500 : 1050, 0, 0.04, 'square', urgent ? 0.055 : 0.03, 0, { cutoff: 5000 });
+    flowTone([urgent ? 1500 : 1050, urgent ? 1800 : 1200], 0, 0.04, 'square', urgent ? 0.055 : 0.03, { cutoff: 5000 });
   },
   timeOut() {
-    tone(240, 0, 0.45, 'sawtooth', 0.1, 90);
+    flowTone([280, 180, 90], 0, 0.45, 'sawtooth', 0.1, { filterSweep: [2000, 400] });
     noise(0, 0.35, 0.07, 420, 0.5);
   },
   /* 단계 통과(신화 관문 1단계) */
   stageClear() {
-    [659, 880].forEach((f, i) => tone(f, i * 0.08, 0.14, 'square', 0.07));
+    flowTone([659, 784, 880, 1047], 0, 0.2, 'square', 0.07, { filterSweep: [2000, 6000] });
   },
-  /* 연승이 쌓일수록 높아지는 축포 */
+  /* 연승이 쌓일수록 높아지는 축포 스케일 플로우 */
   streak(n) {
     const base = 660 * Math.pow(1.12, Math.min(5, n));
-    tone(base, 0, 0.1, 'triangle', 0.06, base * 1.6);
-    tone(base * 1.5, 0.09, 0.14, 'triangle', 0.05);
+    flowTone([base, base * 1.25, base * 1.5, base * 1.8], 0, 0.22, 'triangle', 0.07, { vibratoFreq: 10, vibratoDepth: 20 });
   },
 
   /* --- 전투음: x(필드 좌표)를 받아 좌우로 벌리고, 매번 피치를 살짝 흔든다 --- */
-  shoot(x)     { if (limit('shoot', 55)) return; const p = panOf(x); tone(880, 0, 0.045, 'triangle', 0.032, 440, { pan: p, vary: 55, cutoff: 4200 }); },
-  orb(x)       { if (limit('orb', 80)) return; const p = panOf(x); tone(520, 0, 0.09, 'sine', 0.042, 260, { pan: p, vary: 45 }); },
-  bolt(x)      { if (limit('bolt', 80)) return; const p = panOf(x); tone(1200, 0, 0.07, 'sawtooth', 0.03, 500, { pan: p, vary: 60, cutoff: 3600 }); },
+  shoot(x)     { if (limit('shoot', 55)) return; const p = panOf(x); flowTone([880, 520, 440], 0, 0.05, 'triangle', 0.035, { pan: p, vary: 55, cutoff: 4200 }); },
+  orb(x)       { if (limit('orb', 80)) return; const p = panOf(x); flowTone([520, 390, 260], 0, 0.1, 'sine', 0.045, { pan: p, vary: 45 }); },
+  bolt(x)      { if (limit('bolt', 80)) return; const p = panOf(x); flowTone([1200, 800, 500], 0, 0.08, 'sawtooth', 0.032, { pan: p, vary: 60, cutoff: 3600 }); },
   hit(x)       { if (limit('hit', 45)) return; noise(0, 0.045, 0.06, 1600, 0.7, { pan: panOf(x), vary: 90 }); },
-  /* 치명타: 쨍! 하고 시원하게 */
-  crit(x)      { if (limit('crit', 80)) return; const p = panOf(x);
-                 tone(1320, 0, 0.09, 'square', 0.055, 660, { pan: p, vary: 40, cutoff: 5000 });
-                 noise(0, 0.08, 0.07, 2600, 0.6, { pan: p, vary: 60 }); },
+  /* 치명타: 쨍! 하고 시원하게 미끄러지는 피치 플로우 */
+  crit(x)      { if (limit('crit', 80)) return; const p = panOf(x); triggerDuck(0.2, 0.2);
+                 flowTone([1760, 1320, 880], 0, 0.12, 'square', 0.06, { pan: p, vary: 40, filterSweep: [6000, 2000] });
+                 noise(0, 0.09, 0.07, 2600, 0.6, { pan: p, vary: 60 }); },
   /* 방패 장벽: 금속 쿵 + 지면 울림 */
   block(x)     { if (limit('block', 180)) return; const p = panOf(x);
-                 tone(180, 0, 0.16, 'square', 0.09, 90, { pan: p, vary: 30, cutoff: 1800 });
+                 flowTone([220, 140, 80], 0, 0.18, 'square', 0.09, { pan: p, vary: 30, cutoff: 1800 });
                  noise(0, 0.2, 0.08, 700, 0.5, { pan: p });
                  tone(90, 0.05, 0.25, 'sine', 0.08, 55, { pan: p }); },
   kill(x)      { if (limit('kill', 55)) return; const p = panOf(x);
-                 tone(300, 0, 0.08, 'square', 0.06, 90, { pan: p, vary: 70, cutoff: 2400 });
+                 flowTone([400, 220, 90], 0, 0.09, 'square', 0.065, { pan: p, vary: 70, cutoff: 2400 });
                  noise(0, 0.07, 0.06, 900, 0.6, { pan: p, vary: 70 }); },
-  coin()       { if (limit('coin', 100)) return; tone(988, 0, 0.05, 'square', 0.045, 0, { vary: 35, cutoff: 5200 }); tone(1319, 0.05, 0.08, 'square', 0.045, 0, { vary: 35, cutoff: 5200 }); },
-  combo(mul)   { tone(784 * (mul >= 3 ? 1.5 : 1), 0, 0.1, 'square', 0.07, 1175, { cutoff: 5200 }); },
-  explode(x)   { if (limit('explode', 100)) return; const p = panOf(x);
-                 noise(0, 0.22, 0.1, 400, 0.5, { pan: p, vary: 60 });
-                 tone(140, 0, 0.2, 'sine', 0.09, 60, { pan: p, vary: 50 }); },
-  thorns(x)    { if (limit('thorns', 140)) return; tone(1400, 0, 0.05, 'sawtooth', 0.035, 700, { pan: panOf(x), vary: 80, cutoff: 3800 }); },
+  coin()       { if (limit('coin', 100)) return; flowTone([988, 1319, 1760], 0, 0.1, 'square', 0.048, { vary: 35, cutoff: 5200 }); },
+  combo(mul)   {
+    const root = 784 * (mul >= 3 ? 1.5 : 1);
+    flowTone([root, root * 1.25, root * 1.5], 0, 0.16, 'square', 0.075, { filterSweep: [2000, 6000] });
+  },
+  explode(x)   { if (limit('explode', 100)) return; const p = panOf(x); triggerDuck(0.3, 0.35);
+                 noise(0, 0.25, 0.11, 400, 0.5, { pan: p, vary: 60 });
+                 flowTone([180, 100, 50], 0, 0.24, 'sine', 0.1, { pan: p, vary: 50 }); },
+  thorns(x)    { if (limit('thorns', 140)) return; flowTone([1400, 950, 700], 0, 0.06, 'sawtooth', 0.038, { pan: panOf(x), vary: 80, cutoff: 3800 }); },
 
   heroHurt(x)  { if (limit('hurt', 130)) return; const p = panOf(x);
-                 tone(180, 0, 0.09, 'sine', 0.07, 90, { pan: p, vary: 60 }); noise(0, 0.06, 0.05, 500, 0.7, { pan: p }); },
-  heroDead()   { tone(220, 0, 0.2, 'sine', 0.08, 80); },
-  castleHit()  { tone(90, 0, 0.34, 'sawtooth', 0.13, 45); noise(0, 0.3, 0.11, 250, 0.4); },
-  heartbeat()  { tone(70, 0, 0.1, 'sine', 0.12); tone(60, 0.16, 0.12, 'sine', 0.1); },
+                 flowTone([220, 140, 80], 0, 0.1, 'sine', 0.075, { pan: p, vary: 60 }); noise(0, 0.06, 0.05, 500, 0.7, { pan: p }); },
+  heroDead()   { flowTone([262, 196, 130, 80], 0, 0.35, 'sine', 0.08); },
+  castleHit()  { triggerDuck(0.35, 0.4); flowTone([120, 75, 40], 0, 0.38, 'sawtooth', 0.14, { filterSweep: [1200, 200] }); noise(0, 0.3, 0.11, 250, 0.4); },
+  heartbeat()  { flowTone([80, 55], 0, 0.12, 'sine', 0.13); flowTone([70, 45], 0.16, 0.14, 'sine', 0.11); },
 
-  waveStart()  { tone(392, 0, 0.14, 'sawtooth', 0.07); tone(523, 0.14, 0.2, 'sawtooth', 0.08); },
+  waveStart()  { triggerDuck(0.25, 0.3); flowTone([392, 523, 659, 784], 0, 0.25, 'sawtooth', 0.085, { filterSweep: [1000, 4500] }); },
   waveClear() {
-    [523, 659, 784, 880, 1047].forEach((f, i) => tone(f, i * 0.09, 0.18, 'triangle', 0.09));
+    triggerDuck(0.25, 0.3);
+    flowTone([523, 659, 784, 880, 1047, 1319], 0, 0.35, 'triangle', 0.095, { filterSweep: [2000, 7000] });
   },
-  /* 대보스: 낮게 깔리는 포효 + 굉음 */
+  /* 대보스: 낮게 깔리는 포효 + 굉음 플로우 */
   bossRoar() {
-    tone(80, 0, 0.7, 'sawtooth', 0.14, 50);
-    noise(0, 0.7, 0.09, 200, 0.3);
-    tone(55, 0.25, 0.6, 'sawtooth', 0.12, 40);
-    tone(41, 0.5, 0.8, 'sawtooth', 0.1, 30);
+    triggerDuck(0.5, 0.6);
+    flowTone([120, 70, 45, 30], 0, 0.8, 'sawtooth', 0.15, { filterSweep: [1500, 300] });
+    noise(0, 0.75, 0.1, 200, 0.3);
+    flowTone([65, 45, 30], 0.25, 0.65, 'sawtooth', 0.13);
   },
   /* 중간보스: 짧고 묵직한 으르렁 */
   midBossRoar() {
-    tone(140, 0, 0.34, 'sawtooth', 0.1, 85);
+    triggerDuck(0.35, 0.4);
+    flowTone([160, 100, 60], 0, 0.38, 'sawtooth', 0.11, { filterSweep: [1200, 400] });
     noise(0, 0.35, 0.06, 320, 0.4);
   },
   /* 등장 경고 사이렌 — 음이 위아래로 흔들린다 */
   bossWarn(great) {
+    triggerDuck(great ? 0.45 : 0.3, 0.5);
     const base = great ? 520 : 660;
     for (let i = 0; i < (great ? 3 : 2); i++) {
       tone(base, i * 0.42, 0.2, 'square', great ? 0.075 : 0.055, base * 1.5);

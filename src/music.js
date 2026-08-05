@@ -81,6 +81,7 @@ let musicGain = null;   // 음악 전체 볼륨
 let dryGain = null;
 let wetGain = null;
 let delayA = null;
+let duckGainNode = null;
 
 function ensureGraph() {
   const c = getAc();
@@ -91,9 +92,13 @@ function ensureGraph() {
   musicGain.gain.value = 0.85;
   musicGain.connect(getMaster());
 
+  duckGainNode = c.createGain();
+  duckGainNode.gain.value = 1;
+  duckGainNode.connect(musicGain);
+
   dryGain = c.createGain();
   dryGain.gain.value = 1;
-  dryGain.connect(musicGain);
+  dryGain.connect(duckGainNode);
 
   /* 간단한 리버브: 피드백 딜레이 + 로우패스 (합성음의 건조함을 없애 준다) */
   wetGain = c.createGain();
@@ -109,8 +114,18 @@ function ensureGraph() {
   damp.connect(fb);
   fb.connect(delayA);
   delayA.connect(wetGain);
-  wetGain.connect(musicGain);
+  wetGain.connect(duckGainNode);
   return musicGain;
+}
+
+export function duckBgm(amount = 0.4, dur = 0.4) {
+  const c = getAc();
+  if (!c || !ensureGraph() || !duckGainNode) return;
+  const t = c.currentTime;
+  duckGainNode.gain.cancelScheduledValues(t);
+  duckGainNode.gain.setValueAtTime(duckGainNode.gain.value, t);
+  duckGainNode.gain.linearRampToValueAtTime(1 - amount, t + 0.04);
+  duckGainNode.gain.exponentialRampToValueAtTime(1, t + dur);
 }
 
 /* 악기 하나 = 오실레이터 + 게인 엔벨로프 (dry + reverb 양쪽으로) */
@@ -255,6 +270,7 @@ export const music = {
   },
   /* 웨이브가 오를수록 전투 템포 상승 (최대 +26bpm) */
   setWave(w) { waveBoost = Math.min(26, w * 1.6); },
+  duck(amount = 0.4, dur = 0.4) { duckBgm(amount, dur); },
   sync() {
     const c = getAc();
     if (c && current) nextTime = c.currentTime + 0.08;

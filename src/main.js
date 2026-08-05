@@ -6,10 +6,12 @@ import * as E from './engine.js';
 import * as MathGen from './math.js';
 import { Renderer3D, heroPortrait } from './render3d.js';
 import { UI } from './ui.js';
-import { SFX, toggleSfx, toggleMusic, toggleAll, isSfxMuted, isMusicMuted, forceMute, getAc, getMaster } from './sfx.js';
+import { SFX, toggleSfx, toggleMusic, toggleAll, isSfxMuted, isMusicMuted, forceMute, getAc, getMaster, registerDucker, updateAudioFlow } from './sfx.js';
 import { music } from './music.js';
 import * as Story from './story.js';
 import { demo } from './demo.js';
+
+registerDucker((amt, dur) => music.duck(amt, dur));
 
 /* ---------- 저장 ---------- */
 const store = {
@@ -1475,8 +1477,9 @@ function frame(now) {
       }
       if (isPaused()) { simAcc = 0; break; }
     }
-    /* 저체력 심장박동 */
+    /* 저체력 심장박동 & Audio Lowpass Flow */
     const ratio = state.castleMax ? state.castleHp / state.castleMax : 1;
+    updateAudioFlow(ratio);
     if (ratio < 0.3 && state.phase === 'wave') {
       ui.setLowHp(true);
       heartbeatT -= realDt * speed;
