@@ -84,6 +84,7 @@ const renderer = new Renderer3D(ui.el.scene3d, {
   quality: urlGfx || (store.gfx === 'lite' || (isMobile && store.gfx == null) ? 'lite' : 'high'),
   preserve: urlParams.has('rafshim') || urlGfx === 'min',
   decor: useDecor,
+  touch: isMobile,
 });
 
 let state = null;
@@ -1095,6 +1096,7 @@ const handlers = {
     newGame(d);
     ui.toast(`${D.DIFFICULTIES[d].emoji} ${D.DIFFICULTIES[d].name} 난이도로 시작!`);
   },
+  onCancelPlace() { SFX.tap(); deselectAll(); },
   onBenchSelect(id) {
     SFX.tap();
     if (selBench === id) {
@@ -1359,6 +1361,28 @@ function cycleBench(dir) {
   SFX.tap();
 }
 
+/* ---------- 배치 중 표시 ----------
+ * 선택을 바꾸는 자리가 열 군데가 넘는다(카드 · 발판 · 키보드 · 판매 모드 · 조합 …).
+ * 그 전부에 호출을 심으면 반드시 하나를 빠뜨린다 — 안내 바가 남아 있는 버그가
+ * 제일 흔하다. 그래서 매 프레임 "지금 상태"에서 다시 계산하고, 바뀔 때만 DOM 을
+ * 건드린다. 문자열 비교 한 번이라 비용은 없는 셈. */
+let placeLabelCache = null;
+function syncPlaceBar() {
+  let label = null;
+  if (state && !sellMode) {
+    if (selBench != null) {
+      const h = state.bench.find(x => x.id === selBench);
+      if (h) label = `${D.CLASSES[h.cls].emoji} ${D.TIERS[h.tier].name} ${D.CLASSES[h.cls].name} — 빈 발판을 눌러 배치!`;
+    } else if (selHero != null && state.field.some(x => x.id === selHero)) {
+      const h = state.field.find(x => x.id === selHero);
+      if (h) label = `${D.CLASSES[h.cls].emoji} ${D.CLASSES[h.cls].name} — 갈 곳을 누르세요 (용사를 누르면 자리 교환)`;
+    }
+  }
+  if (label === placeLabelCache) return;
+  placeLabelCache = label;
+  ui.setPlacing(label, label || '');
+}
+
 function deselectAll() {
   selBench = null;
   selHero = null;
@@ -1599,6 +1623,7 @@ function frame(now) {
   const realDt = Math.min((now - lastT) / 1000, 0.5);
   lastT = now;
   frameCount++;
+  syncPlaceBar();
 
   /* 그래픽 자동 품질: 시작 4초 후부터 3초간 실측 fps */
   if (!gfxDecided) {

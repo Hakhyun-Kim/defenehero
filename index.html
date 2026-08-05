@@ -80,6 +80,12 @@
       <div id="toasts"></div>
     </div>
 
+    <!-- 배치 중 안내 — 전장 "아래"에 둔다. 전장 위에 얹으면 하필 발판을 가린다. -->
+    <div id="placeBar" class="placebar">
+      <span id="placeBarText">🎲 용사를 소환하고, 카드를 눌러 배치하세요</span>
+      <button id="placeBarCancel">✕ 취소</button>
+    </div>
+
     <div class="under-row">
       <div class="difficulty" id="diffRow">
         <span class="dlabel">난이도</span>
@@ -109,7 +115,7 @@
   <!-- ===== 오른쪽: 용사/수학/성 관리 ===== -->
   <aside class="right">
 
-    <section class="card fixed">
+    <section class="card fixed" id="statCard">
       <div class="statrow">
         <div class="stat">💰 <b id="gold">150</b></div>
         <div class="stat">🌊 <b id="waveNo">1</b>웨이브</div>
@@ -134,7 +140,7 @@
       </div>
     </section>
 
-    <section class="card fixed">
+    <section class="card fixed" id="benchCard">
       <button id="summonBtn" class="big amber">🎲 용사 소환 (💰 50 · S)</button>
       <div id="benchHint" class="benchhint hidden">🟩 빈 발판 = 배치 · 🟦 찬 발판 = 자리 교환 · ←→ 고르고 Enter</div>
       <div id="bench" class="bench"></div>

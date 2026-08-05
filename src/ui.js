@@ -93,6 +93,7 @@ export class UI {
       'scene3d', 'hitFlash', 'lowHpVignette', 'bossBanner', 'comboChip', 'waveInfo', 'remainN',
       'waveBtn', 'coachChip', 'toasts', 'gold', 'waveNo', 'speedBtn', 
       'grades', 'summonBtn', 'benchHint', 'bench', 'combineRows', 'sfxBtn', 'bgmBtn',
+      'placeBar', 'placeBarText', 'placeBarCancel',
       'castleRows', 'heroPanel', 'hpTitle', 'hpInfo', 'recallBtn', 'sellBtn', 'moveHint',
       'diffRow', 'mathModal', 'mTitle', 'mGrade', 'mProblem', 'mInput', 'mSubmit', 'mFeedback', 'mNext', 'mClose',
       'storyModal', 'storyIcon', 'storyTitle', 'storyLines', 'storyNext', 'storyOff',
@@ -130,6 +131,24 @@ export class UI {
     if (name === 'hero') this.el.heroDot.classList.add('hidden');
     if (name === 'combine') this.el.combineDot.classList.add('hidden');
   }
+  /* ---------- 배치 중 안내 ----------
+   * 전장 위 UI(웨이브 버튼 · 별지기 칩)가 하필 아래쪽 발판을 덮고 있어서,
+   * 배치하는 동안에는 .placing 으로 비켜 준다. 안내 바는 전장 아래에 둔다 —
+   * 위에 얹으면 또 발판을 가리니 안내가 방해가 된다.
+   * hero 가 null 이면 배치 중이 아니다. */
+  setPlacing(hero, label) {
+    const on = !!hero;
+    const stage = this.el.scene3d.parentElement;
+    if (stage) stage.classList.toggle('placing', on);
+    /* 바는 나타났다 사라지지 않는다 — 늘 같은 자리를 차지하고 문구만 바뀐다.
+     * 배치할 때만 띄웠더니, 카드를 누르는 순간 벤치가 70px 아래로 밀려
+     * 방금 누른 카드가 손가락 밑에서 도망갔다. 고치려던 문제를 새로 만든 셈. */
+    this.el.placeBar.classList.toggle('on', on);
+    this.el.placeBarText.textContent = on
+      ? label
+      : '🎲 용사를 소환하고, 카드를 눌러 배치하세요';
+  }
+
   /* 용사를 고르면 잠깐 용사 탭으로 넘어갔다가, 선택을 풀면 원래 보던 탭으로 돌아온다 */
   showHeroTab() {
     if (this._tab === 'hero') return;
@@ -147,6 +166,7 @@ export class UI {
     const el = this.el;
     el.waveBtn.addEventListener('click', h.onWaveStart);
     el.summonBtn.addEventListener('click', h.onSummon);
+    el.placeBarCancel.addEventListener('click', h.onCancelPlace);
     el.speedBtn.addEventListener('click', h.onSpeed);
     el.sfxBtn.addEventListener('click', h.onToggleSfx);
     el.bgmBtn.addEventListener('click', h.onToggleBgm);

@@ -687,6 +687,8 @@ export class Renderer3D {
      * 작은 화면에서는 하늘에 내줬던 19%를 전장에 돌려주는 게 훨씬 이득이다.
      * 시간대 조명(해 각도·안개·색)은 공짜라서 끄지 않는다. */
     this.decor = opts.decor !== false;
+    /* 발판 클릭 허용 반경(PAD_RADIUS 배수). 터치는 넉넉하게. */
+    this.padSlop = opts.touch ? 2.4 : 1.5;
     this.time = 0;
     this.shake = 0;
 
@@ -2519,7 +2521,9 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
       const d = Math.hypot(D.PADS[i].x - p.x, D.PADS[i].y - p.y);
       if (d < bd) { bd = d; best = i; }
     }
-    return bd <= D.PAD_RADIUS * 1.5 ? best : null;
+    /* 손가락은 마우스보다 훨씬 뭉툭하다. 폰에서는 발판이 화면상 20px 남짓이라
+     * 1.5배 반경으로는 자꾸 빗나간다 — 터치 기기에서만 넉넉하게 잡는다. */
+    return bd <= D.PAD_RADIUS * this.padSlop ? best : null;
   }
 
   setHover(padIndex) {
