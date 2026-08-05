@@ -108,6 +108,9 @@ export class UI {
       'metaModal', 'metaShards', 'metaRows', 'metaClose', 'tooltip',
       'revealCard', 'rarityFlash',
       'tabs', 'heroDot', 'combineDot', 'helpBtn', 'helpBox',
+      'champChip', 'champFace', 'champLv', 'champKoTag', 'champHpFill', 'champXpFill',
+      'spellBtn', 'spellCdFill', 'ultBtn', 'ultFill', 'skillBtn', 'spBadge',
+      'skillModal', 'skillPts', 'skillCols', 'skillClose',
     ].forEach(id => this.el[id] = $(id));
     this._lastKnow = -1;
     this._lastProbSig = '';
@@ -171,6 +174,11 @@ export class UI {
     /* 시작 메뉴 (이어하기 / 처음부터) */
     el.continueBtn.addEventListener('click', () => h.onContinue());
     el.newGameBtn.addEventListener('click', () => h.onStartNew());
+    /* 별지기 */
+    el.spellBtn.addEventListener('click', () => h.onSpell());
+    el.ultBtn.addEventListener('click', () => h.onUlt());
+    el.skillBtn.addEventListener('click', () => h.onSkillOpen());
+    el.skillClose.addEventListener('click', () => this.hideSkills());
     el.mSubmit.addEventListener('click', () => h.onMathSubmit(el.mInput.value));
     el.mNext.addEventListener('click', h.onMathNext);
     el.mClose.addEventListener('click', h.onMathClose);
@@ -764,6 +772,107 @@ export class UI {
   }
   showMeta() { this.el.metaModal.classList.remove('hidden'); }
   hideMeta() { this.el.metaModal.classList.add('hidden'); }
+
+  /* ---------- 별지기 칩 ----------
+   * 매 프레임 불리므로 "값이 바뀔 때만" DOM을 만진다 (comboChip과 같은 규칙). */
+  setChampFace(url) {
+    if (!url) return;                      // 초상 생성 실패 → 이모지 그대로
+    this.el.champFace.innerHTML = `<img src="${url}" alt="별지기 루나">`;
+  }
+  updateChampChip(state) {
+    const c = state.champ;
+    const el = this.el;
+    if (!c) { el.champChip.classList.add('hidden'); return; }
+    const S = E.champStats(state);
+    const wave = state.phase === 'wave';
+
+    if (this._chLv !== c.level) {
+      this._chLv = c.level;
+      el.champLv.textContent = `Lv ${c.level}`;
+      el.champLv.classList.remove('pop');
+      void el.champLv.offsetWidth;
+      el.champLv.classList.add('pop');
+    }
+    if (this._chKo !== c.ko) {
+      this._chKo = c.ko;
+      el.champChip.classList.toggle('ko', c.ko);
+      el.champKoTag.classList.toggle('hidden', !c.ko);
+    }
+    const hpPct = Math.round(c.maxHp ? (c.hp / c.maxHp) * 100 : 0);
+    if (this._chHp !== hpPct) {
+      this._chHp = hpPct;
+      el.champHpFill.style.width = `${hpPct}%`;
+      el.champHpFill.className = hpPct < 30 ? 'low' : hpPct < 60 ? 'mid' : '';
+    }
+    const need = D.champXpNeed(c.level);
+    const xpPct = c.level >= D.CHAMP_XP.maxLevel ? 100 : Math.min(100, Math.round((c.xp / need) * 100));
+    if (this._chXp !== xpPct) {
+      this._chXp = xpPct;
+      el.champXpFill.style.width = `${xpPct}%`;
+    }
+    /* 별똥별 — 쿨다운이 차오르는 게이지 (가득 = 준비 완료) */
+    const cdPct = Math.round(c.spellCd > 0 ? (1 - c.spellCd / S.starCd) * 100 : 100);
+    const spellSig = `${cdPct}|${wave}|${c.ko}`;
+    if (this._chSpell !== spellSig) {
+      this._chSpell = spellSig;
+      el.spellCdFill.style.height = `${100 - cdPct}%`;
+      el.spellBtn.disabled = !wave || c.ko || c.spellCd > 0;
+      el.spellBtn.classList.toggle('ready', wave && !c.ko && c.spellCd <= 0);
+    }
+    const ultPct = Math.round(c.ult * 100);
+    const ultSig = `${ultPct}|${wave}|${c.ko}`;
+    if (this._chUlt !== ultSig) {
+      this._chUlt = ultSig;
+      el.ultFill.style.height = `${ultPct}%`;
+      el.ultBtn.disabled = !wave || c.ko || c.ult < 1;
+      el.ultBtn.classList.toggle('full', c.ult >= 1 && !c.ko);
+      el.ultBtn.title = c.ult >= 1
+        ? '은하수 — 지금이에요! 모든 적을 때리고 얼려요 (E)'
+        : `은하수 — 충전 ${ultPct}% (처치할수록 차요)`;
+    }
+    if (this._chSp !== c.sp) {
+      this._chSp = c.sp;
+      el.spBadge.textContent = c.sp;
+      el.spBadge.classList.toggle('hidden', c.sp <= 0);
+      el.skillBtn.classList.toggle('has-sp', c.sp > 0);
+    }
+  }
+
+  /* ---------- 별자리 (스킬트리) ---------- */
+  renderSkills(state) {
+    const c = state.champ;
+    this.el.skillPts.textContent = c.sp;
+    let html = '';
+    for (const [bk, B] of Object.entries(D.CHAMP_BRANCHES)) {
+      html += `<div class="skill-branch"><h3>${B.emoji} ${B.name}</h3>`;
+      for (const [key, SK] of Object.entries(D.CHAMP_SKILLS)) {
+        if (SK.branch !== bk) continue;
+        const rank = c.skills[key] || 0;
+        const spent = E.branchSpent(c, bk);
+        const locked = spent < SK.need;
+        const maxed = rank >= SK.max;
+        const can = !locked && !maxed && c.sp > 0;
+        const pips = '★'.repeat(rank) + '☆'.repeat(SK.max - rank);
+        html += `<button class="skill-node${maxed ? ' maxed' : ''}${locked ? ' locked' : ''}${can ? ' can' : ''}"
+            data-key="${key}" ${(!can) ? 'disabled' : ''} title="${SK.desc}">
+          <span class="semoji">${SK.emoji}</span>
+          <div class="sinfo">
+            <div class="sname">${SK.name} <span class="spips">${pips}</span></div>
+            <div class="sper">${maxed ? 'MAX! ' : ''}${SK.per}</div>
+            ${locked ? `<div class="slock">🔒 ${B.name}에 ${SK.need}포인트 필요 (지금 ${spent})</div>` : ''}
+          </div>
+        </button>`;
+      }
+      html += `</div>`;
+    }
+    this.el.skillCols.innerHTML = html;
+    this.el.skillCols.querySelectorAll('button[data-key]').forEach(b => {
+      b.addEventListener('click', () => this.h.onSkillPick(b.dataset.key));
+    });
+  }
+  showSkills() { this.el.skillModal.classList.remove('hidden'); }
+  hideSkills() { this.el.skillModal.classList.add('hidden'); }
+  isSkillOpen() { return !this.el.skillModal.classList.contains('hidden'); }
   /* ---------- 데모 ----------
    * 데모 중임을 항상 화면에 밝힌다. 사용자가 자기 조작이 안 먹는다고
    * 오해하지 않게 하고, 나가는 길도 늘 보이게 둔다. */
@@ -1115,7 +1224,8 @@ export class UI {
        🎲 소환 <b>${state.summons}</b> · ⚗️ 조합 <b>${state.combos}</b> · ✨ 특수 <b>${state.specialsMade}</b> · 🌌 신화 <b>${state.mythicsMade}</b><br>
        🧮 수학 문제: <b>${state.solved}문제 중 ${state.correct}개 정답 (${rate}%)</b>${state.hints ? ` · 💡 힌트 ${state.hints}회` : ''}${state.retries ? ` · 🔁 재도전 ${state.retries}회 (💰${state.retryGold})` : ''}<br>
        ${state.persisted ? `💪 포기하지 않고 끝내 푼 문제: <b>${state.persisted}개</b><br>` : ''}
-       🔥 최고 연승: <b>${state.bestStreak || 0}연속</b> (한 번에 맞히기)${state.timeOuts ? ` · ⏰ 시간 초과 ${state.timeOuts}회` : ''}${state.mathShards ? `<br>🔴 센 문제를 뚫고 번 별조각: <b>✨${state.mathShards}</b>` : ''}`;
+       🔥 최고 연승: <b>${state.bestStreak || 0}연속</b> (한 번에 맞히기)${state.timeOuts ? ` · ⏰ 시간 초과 ${state.timeOuts}회` : ''}${state.mathShards ? `<br>🔴 센 문제를 뚫고 번 별조각: <b>✨${state.mathShards}</b>` : ''}
+       ${state.champ ? `<br>🌠 별지기 루나: <b>Lv ${state.champ.level}</b> · 직접 처치 <b>${state.champKills || 0}</b> · ☄️ 별똥별 ${state.starCasts || 0}회${state.ultCasts ? ` · 🌌 은하수 ${state.ultCasts}회` : ''}${state.perfectWaves ? ` · 🛡️ 완벽 방어 ${state.perfectWaves}번` : ''}` : ''}`;
     this.el.overShards.textContent = `✨ 별조각 +${state.shardsEarned} 획득!`;
     this.el.overModal.classList.remove('hidden');
   }

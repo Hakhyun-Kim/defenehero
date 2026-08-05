@@ -25,3 +25,4 @@ export * from './balance/enemies.js';
 export * from './balance/castle.js';
 export * from './balance/economy.js';
 export * from './balance/mathgate.js';
+export * from './balance/champion.js';

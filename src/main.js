@@ -4,7 +4,7 @@
 import * as D from './data.js';
 import * as E from './engine.js';
 import * as MathGen from './math.js';
-import { Renderer3D, heroPortrait } from './render3d.js';
+import { Renderer3D, heroPortrait, champPortrait } from './render3d.js';
 import { UI } from './ui.js';
 import { SFX, toggleSfx, toggleMusic, toggleAll, isSfxMuted, isMusicMuted, forceMute, getAc, getMaster, registerDucker, updateAudioFlow } from './sfx.js';
 import { music } from './music.js';
@@ -112,7 +112,7 @@ function newGame(difficulty, opts = {}) {
   ui.hideOver();
   music.setWave(1);
   /* 이어하기 메뉴를 띄울 때는 프롤로그를 잠시 미룬다 — 메뉴 위에 이야기가 겹치면 안 된다 */
-  if (!opts.holdStory) playStory('prologue');
+  if (!opts.holdStory) playStory('prologue', () => playStory('champIntro'));
 }
 
 /* 판매 모드에 들어가면 배치/이동 선택은 모두 풀어 한 번에 한 가지만 하게 한다 */
@@ -642,6 +642,44 @@ function closeReveal() {
   if (fn) fn();
 }
 
+/* ---------- 별지기 액션 ----------
+ * 마법은 별지기의 것 — 쓰러져 있으면 못 쓴다. 실패 이유는 반드시 말해 준다. */
+function doSpell() {
+  const r = E.castStar(state);
+  if (!r.ok) {
+    if (r.reason === 'phase') ui.toast('☄️ 별똥별은 전투 중에만! 웨이브를 시작해 보세요', 'bad');
+    else if (r.reason === 'ko') ui.toast('😵 루나가 쓰러져 있어요 — 다음 웨이브에 돌아와요', 'bad');
+    else if (r.reason === 'cd') ui.toast(`☄️ 별이 아직 오는 중이에요 (${Math.ceil(r.left)}초)`, 'bad');
+    else if (r.reason === 'none') ui.toast('☄️ 지금은 떨어뜨릴 곳이 없어요 — 몬스터가 오면 눌러요!');
+    return;
+  }
+  SFX.starfall(D.FIELD_W / 2);
+  renderer.onEvents(state, r.events);
+  handleEvents(r.events);
+  refreshAll();
+}
+function doUlt() {
+  const r = E.castUlt(state);
+  if (!r.ok) {
+    if (r.reason === 'phase') ui.toast('🌌 은하수는 전투 중에만 쏟아부을 수 있어요', 'bad');
+    else if (r.reason === 'ko') ui.toast('😵 루나가 쓰러져 있어요 — 다음 웨이브에 돌아와요', 'bad');
+    else if (r.reason === 'charge') ui.toast(`🌌 은하수 충전 ${Math.round((r.ult || 0) * 100)}% — 몬스터를 잡으면 차올라요`, 'bad');
+    else if (r.reason === 'none') ui.toast('🌌 지금은 쏟아부을 곳이 없어요 — 몬스터가 오면 눌러요!');
+    return;
+  }
+  SFX.ultimate();
+  ui.flashScreen('mythic');
+  renderer.onEvents(state, r.events);
+  handleEvents(r.events);
+  refreshAll();
+}
+function openSkills() {
+  if (state.phase === 'over') return;
+  ui.renderSkills(state);
+  ui.showSkills();
+  SFX.tap();
+}
+
 /* ---------- 액션 ---------- */
 function doSummon() {
   const r = E.summon(state);
@@ -900,6 +938,35 @@ function handleEvents(events) {
         }
         break;
       case 'gameOver': onGameOver(); break;
+
+      /* ---------- 별지기 ---------- */
+      case 'champHurt': SFX.heroHurt(ev.x); break;
+      case 'champKo':
+        SFX.heroDead();
+        ui.toast('😵 별지기 루나가 쓰러졌어요! 다음 웨이브 준비 때 다시 일어나요', 'bad');
+        break;
+      case 'champLevel':
+        SFX.levelUp();
+        ui.toast(`🌠 루나 레벨 업! Lv ${ev.level} — 스킬 포인트 +1 (V키로 별자리를 이어요)`, 'good');
+        break;
+      case 'ultReady':
+        SFX.shard();
+        ui.toast('🌌 은하수가 가득 찼어요! E키로 쏟아부어요!', 'good');
+        break;
+      case 'starfall': SFX.starfall(ev.x); break;
+      case 'starAuto':
+        ui.toast('☄️ 루나가 스스로 별똥별을 던졌어요 — A키로 직접 부를 수도 있어요!');
+        break;
+      case 'ultCast': SFX.ultimate(); break;
+      case 'champWave':
+        if (ev.perfect) {
+          store.shards = store.shards + ev.shard;
+          SFX.shard();
+          ui.toast(`🛡️ 완벽 방어! 성이 무피해예요 — ✨별조각 +${ev.shard} · 루나 경험치 +${ev.xp}`, 'good');
+        } else if (ev.revived) {
+          ui.toast('🌠 루나가 다시 일어났어요! 체력이 가득 찼어요');
+        }
+        break;
     }
   }
 }
@@ -1102,17 +1169,34 @@ const handlers = {
   },
   onSave: saveGame,
   onLoad: loadGame,
+  /* --- 별지기 --- */
+  onSpell: doSpell,
+  onUlt: doUlt,
+  onSkillOpen: openSkills,
+  onSkillPick(key) {
+    const r = E.takeSkill(state, key);
+    if (!r.ok) {
+      if (r.reason === 'sp') ui.toast('스킬 포인트가 없어요 — 레벨 업으로 얻어요! (몬스터 처치·웨이브 클리어)', 'bad');
+      else if (r.reason === 'need') ui.toast(`🔒 이 별자리에 먼저 ${r.need}포인트를 써야 열려요 (지금 ${r.spent})`, 'bad');
+      return;
+    }
+    SFX.upgrade();
+    const SK = r.skill;
+    ui.toast(`✨ [${SK.name}] ${r.rank}단계! ${SK.per}`, 'good');
+    ui.renderSkills(state);
+    ui.updateChampChip(state);
+  },
   /* --- 시작 메뉴 (자동 저장이 있을 때만 뜬다) --- */
   onContinue() {
     ui.hideStart();
     SFX.tap();
     /* 자동 저장이 깨져 있으면 이미 준비된 새 게임을 그대로 진행한다 */
-    if (!loadGame(store.autosave)) playStory('prologue');
+    if (!loadGame(store.autosave)) playStory('prologue', () => playStory('champIntro'));
   },
   onStartNew() {
     ui.hideStart();
     SFX.tap();
-    playStory('prologue');             // 새 게임은 boot에서 이미 만들어져 있다
+    playStory('prologue', () => playStory('champIntro'));   // 새 게임은 boot에서 이미 만들어져 있다
   },
   onCastle(key) {
     const r = E.castleUpgrade(state, key);
@@ -1254,7 +1338,8 @@ document.addEventListener('click', (ev) => {
 });
 
 /* 한글 IME 상태에서도 단축키가 통하도록 매핑 */
-const KO = { 'ㄴ': 's', 'ㅔ': 'p', 'ㅊ': 'c', 'ㅂ': 'q', 'ㄱ': 'r', 'ㅌ': 'x', 'ㅗ': 'h', 'ㅡ': 'm', 'ㄹ': 'f' };
+const KO = { 'ㄴ': 's', 'ㅔ': 'p', 'ㅊ': 'c', 'ㅂ': 'q', 'ㄱ': 'r', 'ㅌ': 'x', 'ㅗ': 'h', 'ㅡ': 'm', 'ㄹ': 'f',
+             'ㅁ': 'a', 'ㄷ': 'e', 'ㅍ': 'v' };
 
 document.addEventListener('keydown', (ev) => {
   let key = ev.key;
@@ -1320,6 +1405,12 @@ document.addEventListener('keydown', (ev) => {
     return;   // 나머지 키는 입력창으로
   }
 
+  /* --- 별자리(스킬트리) 모달 --- */
+  if (ui.isSkillOpen()) {
+    if (key === 'Escape' || key === 'Enter' || lower === 'v') { ev.preventDefault(); ui.hideSkills(); }
+    return;
+  }
+
   /* --- 별의 축복 모달 --- */
   if (ui.isMetaOpen()) {
     if (key === 'Escape' || key === 'Enter') { ev.preventDefault(); ui.hideMeta(); return; }
@@ -1373,6 +1464,9 @@ document.addEventListener('keydown', (ev) => {
       return;
   }
   switch (lower) {
+    case 'a': doSpell(); return;
+    case 'e': doUlt(); return;
+    case 'v': openSkills(); return;
     case 's': doSummon(); return;
     case 'c': {
       const combo = chooseBestCombo();
@@ -1410,8 +1504,9 @@ document.addEventListener('keydown', (ev) => {
 
 /* ---------- 게임 루프 ---------- */
 function isPaused() {
-  /* 이야기는 준비 단계에만 뜨므로 멈출 게 없지만, 전설 연출은 전투 중에도 뜬다 */
-  return ui.isMathOpen() || ui.isMetaOpen() || ui.isRevealOpen() || state.phase === 'over';
+  /* 이야기는 준비 단계에만 뜨므로 멈출 게 없지만, 전설 연출은 전투 중에도 뜬다.
+   * 별자리(스킬)도 멈춘다 — 전투 중에 열어 고민할 시간을 준다 */
+  return ui.isMathOpen() || ui.isMetaOpen() || ui.isSkillOpen() || ui.isRevealOpen() || state.phase === 'over';
 }
 
 const STEP = 1 / 60;          // 고정 시뮬레이션 타임스텝
@@ -1504,6 +1599,7 @@ function frame(now) {
 
   /* UI 갱신 */
   ui.updateHud(state, store.shards, store.best(state.difficulty));
+  ui.updateChampChip(state);
   ui.setWaveUI(state);
   ui.comboChip(state.combo.count, state.combo.count >= D.COMBO.x3At ? 3 : state.combo.count >= D.COMBO.x2At ? 2 : 1);
   const barBoss = greatBoss || midBoss;
@@ -1535,6 +1631,8 @@ const bootSave = (() => {
 })();
 newGame(store.diff, { holdStory: !!bootSave });
 if (bootSave) ui.showStart(bootSave);
+/* 별지기 초상 — 3D 모델을 한 프레임 구워 칩에 넣는다 (실패하면 이모지 그대로) */
+ui.setChampFace(champPortrait());
 ui.setSoundLabels(isSfxMuted(), isMusicMuted());
 ui.setSpeedLabel(speed);
 ui.coachChip();
@@ -1569,6 +1667,9 @@ demo.attach({
   place(heroId, pad) { selBench = heroId; doPlace(pad); },
   openCombine(action) { openMath('combine', action); },
   castle(key) { handlers.onCastle(key); },
+  spell: doSpell,
+  ult: doUlt,
+  skill(key) { handlers.onSkillPick(key); },
   startWave: tryStartWave,
   newGame: () => newGame(store.diff),
   typeAnswer(v) { ui.el.mInput.value = v; submitMath(v); },

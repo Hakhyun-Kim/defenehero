@@ -12,6 +12,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import * as D from './data.js';
 import { WindGrass, Sea, Fireflies, SHORE_Z, makePalette, daylightPalette, clockPhase, moonPhaseNow } from './nature.js';
 import { SkyBand } from './sky.js';
+import { CHAMP_CHAT } from './story.js';
 
 const S = 1 / 36;
 const wx = (x) => (x - D.FIELD_W / 2) * S;
@@ -517,6 +518,137 @@ function makeHumanHero(cls, tier) {
 
   g.scale.setScalar(1.18 + tier * 0.1);
   return { group: g, refs };
+}
+
+/* =====================================================
+ * 별지기 루나 — 길을 걷는 메인 캐릭터 (걷기용 다리 피벗 포함)
+ * ===================================================== */
+function makeChampion() {
+  const g = new THREE.Group();
+  const refs = {};
+  const tunic = 0x3b4a8f, sleeve = 0x2d3a74, pants = 0x252f5a;
+
+  /* 다리 — 용사와 달리 피벗을 잡는다: 별지기는 걷는 캐릭터다 */
+  refs.legs = [];
+  for (const sx of [-1, 1]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(0.09 * sx, 0.2, 0);
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.2, 0.13), lam(pants));
+    leg.position.y = -0.1;
+    pivot.add(leg);
+    g.add(pivot);
+    refs.legs.push(pivot);
+  }
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.42, 0.3), lam(tunic));
+  body.position.y = 0.41;
+  g.add(body);
+  refs.body = body;
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.06, 0.32), lam(0xd9a93d));
+  belt.position.y = 0.24;
+  g.add(belt);
+  /* 가슴의 별 문장 */
+  const emblem = new THREE.Mesh(new THREE.OctahedronGeometry(0.055), glow(0xffe27a));
+  emblem.position.set(0, 0.47, 0.17);
+  g.add(emblem);
+  refs.emblem = emblem;
+
+  const armL = new THREE.Group();
+  armL.position.set(-0.27, 0.6, 0);
+  const armLmesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.3, 0.1), lam(sleeve));
+  armLmesh.position.y = -0.12;
+  armL.add(armLmesh);
+  g.add(armL);
+  refs.armL = armL;
+
+  const armPivot = new THREE.Group();
+  armPivot.position.set(0.27, 0.6, 0);
+  const armR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.3, 0.1), lam(sleeve));
+  armR.position.y = -0.12;
+  armPivot.add(armR);
+  g.add(armPivot);
+  refs.armPivot = armPivot;
+
+  const head = new THREE.Group();
+  head.position.y = 0.93;
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.21, 14, 12), lam(SKIN));
+  head.add(skull);
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.026, 6, 6), lam(0x232323));
+    eye.position.set(0.075 * sx, 0.02, 0.185);
+    head.add(eye);
+  }
+  /* 은빛 머리카락 + 별 머리핀 */
+  const hair = new THREE.Mesh(
+    new THREE.SphereGeometry(0.225, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), lam(0xe8e4f4));
+  hair.position.y = 0.03;
+  head.add(hair);
+  const pin = new THREE.Mesh(new THREE.OctahedronGeometry(0.05), glow(0xffe27a));
+  pin.position.set(0.14, 0.15, 0.1);
+  head.add(pin);
+  g.add(head);
+  refs.head = head;
+
+  /* 별빛 검 */
+  const sword = makeSword(glow(0xfff0b8));
+  sword.position.set(0, -0.26, 0.06);
+  sword.rotation.x = Math.PI / 5;
+  armPivot.add(sword);
+
+  /* 별하늘 망토 */
+  const cape = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.44, 0.55),
+    new THREE.MeshLambertMaterial({ color: 0x1e2a5e, side: THREE.DoubleSide })
+  );
+  cape.position.set(0, 0.5, -0.19);
+  cape.rotation.x = 0.16;
+  g.add(cape);
+  refs.cape = cape;
+
+  /* 곁을 도는 작은 별 — 별지기의 표식 */
+  const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.085), glow(0xffe27a));
+  star.position.set(0.4, 1.25, 0);
+  g.add(star);
+  refs.star = star;
+
+  g.scale.setScalar(1.26);
+  return { group: g, refs };
+}
+
+/* 별지기 초상 — heroPortrait와 같은 수법 (오프스크린 1프레임 렌더 → PNG) */
+let _champPortraitUrl;
+export function champPortrait(px = 320) {
+  if (_champPortraitUrl !== undefined) return _champPortraitUrl;
+  let url = null;
+  try {
+    if (!_pr) {
+      _pr = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      _pr.setSize(px, px);
+      _pr.outputColorSpace = THREE.SRGBColorSpace;
+      _pr.toneMapping = THREE.ACESFilmicToneMapping;
+      _pr.toneMappingExposure = 1.15;
+    }
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x4a5a6a, 1.5));
+    const key1 = new THREE.DirectionalLight(0xfff2d8, 2.1);
+    key1.position.set(2.2, 3.4, 3.0);
+    scene.add(key1);
+    const rim = new THREE.DirectionalLight(0x9fd4ff, 1.1);
+    rim.position.set(-2.6, 1.6, -2.2);
+    scene.add(rim);
+    const { group } = makeChampion();
+    group.rotation.y = Math.PI * 0.12;
+    scene.add(group);
+    const cam = new THREE.PerspectiveCamera(28, 1, 0.1, 20);
+    cam.position.set(0, 1.28, 3.5);
+    cam.lookAt(0, 0.95, 0);
+    _pr.render(scene, cam);
+    url = _pr.domElement.toDataURL('image/png');
+    scene.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); } });
+  } catch (e) {
+    url = null;
+  }
+  _champPortraitUrl = url;
+  return url;
 }
 
 /* =====================================================
@@ -1146,6 +1278,127 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
     }
   }
 
+  /* ---------- 말풍선 (별지기의 수다) ---------- */
+  _buildBubbles() {
+    this.bubbles = [];
+    for (let i = 0; i < 4; i++) {
+      const c = document.createElement('canvas');
+      c.width = 512; c.height = 128;
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+      spr.scale.set(4.0, 1.0, 1);
+      spr.center.set(0.5, 0);            // 아래가 기준 — 머리 위에 뜬다
+      spr.visible = false;
+      spr.renderOrder = 60;
+      this.scene.add(spr);
+      this.bubbles.push({ spr, tex, c, ttl: 0, life: 1 });
+    }
+  }
+
+  /* lx/ly = 논리 좌표. 같은 위치에 겹치지 않게 슬롯을 돌려 쓴다 */
+  showBubble(lx, ly, text, ttl = 2.4) {
+    if (!this.bubbles) this._buildBubbles();
+    const slot = this.bubbles.find(b => b.ttl <= 0) || this.bubbles[0];
+    const g = slot.c.getContext('2d');
+    g.clearRect(0, 0, 512, 128);
+    g.font = '40px Jua, "Segoe UI", "Segoe UI Emoji", sans-serif';
+    const w = Math.min(494, g.measureText(text).width + 48);
+    const x0 = (512 - w) / 2;
+    /* 둥근 상자 + 꼬리 */
+    const r = 20, y0 = 6, h = 82;
+    g.beginPath();
+    g.moveTo(x0 + r, y0);
+    g.arcTo(x0 + w, y0, x0 + w, y0 + h, r);
+    g.arcTo(x0 + w, y0 + h, x0, y0 + h, r);
+    g.arcTo(x0, y0 + h, x0, y0, r);
+    g.arcTo(x0, y0, x0 + w, y0, r);
+    g.closePath();
+    g.fillStyle = 'rgba(255,255,255,0.95)';
+    g.strokeStyle = 'rgba(70,80,125,0.9)';
+    g.lineWidth = 4;
+    g.fill();
+    g.stroke();
+    g.beginPath();
+    g.moveTo(240, y0 + h - 2);
+    g.lineTo(272, y0 + h - 2);
+    g.lineTo(256, y0 + h + 26);
+    g.closePath();
+    g.fillStyle = 'rgba(255,255,255,0.95)';
+    g.fill();
+    g.fillStyle = '#2c3352';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, 256, y0 + h / 2 + 2, w - 32);
+    slot.tex.needsUpdate = true;
+    slot.spr.position.set(wx(lx), 2.05, wz(ly));
+    slot.ttl = slot.life = ttl;
+    slot.spr.material.opacity = 1;
+    slot.spr.visible = true;
+  }
+
+  _updateBubbles(dt) {
+    if (!this.bubbles) return;
+    for (const b of this.bubbles) {
+      if (b.ttl <= 0) continue;
+      b.ttl -= dt;
+      b.spr.material.opacity = Math.min(1, b.ttl / 0.35);
+      if (b.ttl <= 0) b.spr.visible = false;
+    }
+  }
+
+  /* ---------- 별똥별 (하늘에서 떨어지는 별) ---------- */
+  _starfall(x3, z3, delay = 0) {
+    if (!this.stars) this.stars = [];
+    let s = this.stars.find(v => !v.live);
+    if (!s) {
+      if (this.stars.length >= 48) s = this.stars[0];   // 풀 상한 — 은하수 연타 대비
+      else {
+        const mesh = new THREE.Group();
+        const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.22), new THREE.MeshBasicMaterial({ color: 0xfff3b0 }));
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffd97a, transparent: true, depthWrite: false }));
+        halo.scale.set(1.7, 1.7, 1);
+        mesh.add(core, halo);
+        mesh.visible = false;
+        this.scene.add(mesh);
+        s = { mesh, live: false, t: 0, dur: 0.36, from: new THREE.Vector3(), to: new THREE.Vector3() };
+        this.stars.push(s);
+      }
+    }
+    s.live = true;
+    s.t = -delay;
+    s.dur = 0.32 + Math.random() * 0.1;
+    s.from.set(x3 + 2.6, 10.5, z3 + 1.8);
+    s.to.set(x3, 0.25, z3);
+    s.mesh.visible = false;
+  }
+
+  _updateStars(dt) {
+    if (!this.stars) return;
+    for (const s of this.stars) {
+      if (!s.live) continue;
+      s.t += dt;
+      if (s.t < 0) continue;
+      const k = Math.min(1, s.t / s.dur);
+      const ke = k * k;                        // 가속 낙하
+      s.mesh.visible = true;
+      s.mesh.position.lerpVectors(s.from, s.to, ke);
+      s.mesh.rotation.y += dt * 14;
+      if (Math.random() < dt * 30) {
+        this.burst(s.mesh.position.x, s.mesh.position.y, s.mesh.position.z, 0xffe9a0, 1, 0.4, { grav: 0.5, ttl: 0.3, size: 0.5 });
+      }
+      if (k >= 1) {
+        s.live = false;
+        s.mesh.visible = false;
+        this._shockRing(s.to.x, s.to.z, 1.9, 0xffd97a, 0.5);
+        this._shockRing(s.to.x, s.to.z, 1.1, 0xfff3b0, 0.4);
+        this.burst(s.to.x, 0.7, s.to.z, 0xffd97a, 16, 4.2, { grav: 4 });
+        this.burst(s.to.x, 0.9, s.to.z, 0xffffff, 8, 2.6);
+        this.addShake(0.15);
+      }
+    }
+  }
+
   /* ---------- 뷰 생성 ---------- */
   _makeHeroView(hero) {
     const { group, refs } = makeHumanHero(hero.cls, hero.tier);
@@ -1197,6 +1450,187 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
       attackT: 0, faceY: Math.PI, targetFaceY: Math.PI,
       cls: hero.cls,
     };
+  }
+
+  /* ---------- 별지기 뷰 ---------- */
+  _makeChampView() {
+    const { group, refs } = makeChampion();
+    group.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    const holder = new THREE.Group();
+    holder.add(group);
+
+    const shadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.3, 0.95),
+      new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false })
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = 0.05;
+    holder.add(shadow);
+
+    /* 오각 링 — 별지기의 발밑에는 별이 그려져 있다 */
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.5, 0.62, 5),
+      new THREE.MeshBasicMaterial({ color: 0xffe27a, transparent: true, opacity: 0.8, depthWrite: false })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.07;
+    holder.add(ring);
+
+    const barW = 1.2;
+    const bar = new THREE.Group();
+    const bg = new THREE.Mesh(
+      new THREE.PlaneGeometry(barW, 0.13),
+      new THREE.MeshBasicMaterial({ color: 0x1c2333, transparent: true, opacity: 0.75, depthTest: false })
+    );
+    const fg = new THREE.Mesh(
+      new THREE.PlaneGeometry(barW, 0.1),
+      new THREE.MeshBasicMaterial({ color: 0x7fe08a, depthTest: false })
+    );
+    fg.position.z = 0.001;
+    bg.renderOrder = 40; fg.renderOrder = 41;
+    bar.add(bg, fg);
+    bar.position.y = 2.1;
+    bar.visible = false;
+    holder.add(bar);
+
+    holder.position.set(wx(D.CHAMP_HOME.x), 0, wz(D.CHAMP_HOME.y));
+    this.scene.add(holder);
+    return {
+      holder, model: group, refs, ring, bar, barFg: fg, barW,
+      pos: { x: D.CHAMP_HOME.x, y: D.CHAMP_HOME.y },
+      dest: { x: D.CHAMP_HOME.x, y: D.CHAMP_HOME.y },
+      faceY: Math.PI, targetFaceY: Math.PI,
+      walkPhase: 0, attackT: 0, koT: 0, ko: false, phase: 'prep',
+      wanderT: 1.2, chatWith: null, chatCd: 3, chatSeq: null,
+    };
+  }
+
+  /* 준비 단계의 배회 — 순수 연출. 엔진은 준비 중 별지기를 움직이지 않으므로
+   * 어디를 걷고 누구와 수다를 떠는지는 전부 렌더러의 몫이다. */
+  _champWander(dt, state, v) {
+    if (v.chatSeq) {
+      const s = v.chatSeq;
+      s.t += dt;
+      if (!s.saidQ) { s.saidQ = true; this.showBubble(v.pos.x, v.pos.y, s.q, 2.6); }
+      if (!s.saidA && s.t >= 1.5) {
+        s.saidA = true;
+        const h = state.field.find(x => x.id === s.hero);
+        if (h) this.showBubble(h.x, h.y, s.a, 2.6);
+      }
+      if (s.t >= 3.6) v.chatSeq = null;
+      return;
+    }
+    v.chatCd -= dt;
+    const arrived = Math.hypot(v.pos.x - v.dest.x, v.pos.y - v.dest.y) <= 4;
+    if (!arrived) return;
+    v.wanderT -= dt;
+    if (v.wanderT > 0) {
+      /* 도착해 서 있는 동안 — 곁에 용사가 있으면 말을 걸고, 없으면 혼잣말 */
+      if (v.chatCd <= 0) {
+        const h = v.chatWith != null ? state.field.find(x => x.id === v.chatWith) : null;
+        if (h && Math.hypot(h.x - v.pos.x, h.y - v.pos.y) < 70) {
+          const cls = CHAMP_CHAT.byCls[h.cls];
+          const pool = cls && Math.random() < 0.4 ? cls : CHAMP_CHAT.any;
+          const [q, a] = pool[Math.floor(Math.random() * pool.length)];
+          v.chatSeq = { t: 0, q, a, hero: h.id, saidQ: false, saidA: false };
+        } else {
+          const solo = CHAMP_CHAT.solo;
+          this.showBubble(v.pos.x, v.pos.y, solo[Math.floor(Math.random() * solo.length)], 2.6);
+        }
+        v.chatCd = 9 + Math.random() * 7;
+      }
+      return;
+    }
+    /* 새 목적지: 용사 곁 또는 길가의 아무 곳 */
+    v.wanderT = 1.6 + Math.random() * 2.2;
+    const heroes = state.field;
+    if (heroes.length && Math.random() < 0.6) {
+      const h = heroes[Math.floor(Math.random() * heroes.length)];
+      const a = Math.random() * Math.PI * 2;
+      v.dest = { x: h.x + Math.cos(a) * 34, y: h.y + Math.sin(a) * 24 };
+      v.chatWith = h.id;
+    } else {
+      const r = Math.floor(Math.random() * D.ROUTES.length);
+      const s = 60 + Math.random() * Math.max(40, D.ROUTE_LENS[r] - 140);
+      const p = D.routePoint(r, s);
+      v.dest = { x: p.x + (-p.dy) * 28, y: p.y + p.dx * 28 };
+      v.chatWith = null;
+    }
+    v.dest.x = Math.max(30, Math.min(D.FIELD_W - 30, v.dest.x));
+    v.dest.y = Math.max(30, Math.min(D.FIELD_H - 20, v.dest.y));
+  }
+
+  _champFrame(dt, t, state) {
+    const v = this.champView;
+    if (!v || !state || !state.champ) return;
+    const c = state.champ;
+    const wave = state.phase === 'wave';
+
+    /* 목적지: 전투는 엔진이, 준비는 배회가 정한다 */
+    if (wave || state.phase === 'over' || v.ko) {
+      v.dest.x = c.x; v.dest.y = c.y;
+      v.chatSeq = null;
+    } else {
+      this._champWander(dt, state, v);
+    }
+
+    /* 이동 — 목적지가 멀면 전력 질주로 따라잡는다 (웨이브 시작 때 광장으로 달려간다) */
+    const dx = v.dest.x - v.pos.x, dy = v.dest.y - v.pos.y;
+    const dist = Math.hypot(dx, dy);
+    let moving = false;
+    if (dist > 2.5) {
+      const base = D.CHAMP.moveSpd * (wave ? 1.05 : 0.55);
+      const spd = dist > 60 ? Math.max(base * 2.4, dist * 2.2) : base;
+      const step = Math.min(spd * dt, dist);
+      v.pos.x += (dx / dist) * step;
+      v.pos.y += (dy / dist) * step;
+      v.targetFaceY = Math.atan2(dx, dy);
+      moving = true;
+    }
+    v.holder.position.set(wx(v.pos.x), 0, wz(v.pos.y));
+
+    /* 얼굴 방향 (논리 y = 월드 z 방향과 부호가 같다) */
+    let dyaw = v.targetFaceY - v.faceY;
+    while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+    while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+    v.faceY += dyaw * Math.min(1, dt * 10);
+    v.model.rotation.y = v.faceY;
+
+    /* KO — 쓰러져 눕고, 별이 어깨에 내려앉는다 */
+    v.koT += ((v.ko ? 1 : 0) - v.koT) * Math.min(1, dt * 4);
+    v.model.rotation.x = -1.35 * v.koT;
+    v.model.position.y = 0.14 * v.koT;
+    v.ring.material.opacity = 0.8 * (1 - v.koT * 0.7);
+    if (v.ko && Math.random() < dt * 1.4) {
+      this.burst(v.holder.position.x, 0.5, v.holder.position.z, 0xaab4d4, 1, 0.5, { grav: -0.6, ttl: 0.9, size: 0.5 });
+    }
+
+    /* 걷기 — 다리 스윙 + 반대 위상 팔 스윙 */
+    v.walkPhase += dt * (moving ? 11 : 0);
+    const swing = moving ? Math.sin(v.walkPhase) * 0.55 : 0;
+    const k14 = Math.min(1, dt * 14);
+    v.refs.legs[0].rotation.x += (swing - v.refs.legs[0].rotation.x) * k14;
+    v.refs.legs[1].rotation.x += (-swing - v.refs.legs[1].rotation.x) * k14;
+    if (v.attackT <= 0) v.refs.armL.rotation.x += (swing * -0.5 - v.refs.armL.rotation.x) * k14;
+
+    /* 숨쉬기 · 망토 · 동반 별 */
+    v.refs.body.scale.y = 1 + Math.sin(t * 2.8) * 0.025;
+    v.refs.cape.rotation.x = 0.16 + Math.sin(t * 3.2) * 0.1 + (moving ? 0.28 : 0);
+    const sa = t * 2.2;
+    v.refs.star.position.set(Math.cos(sa) * 0.45, (v.ko ? 0.5 : 1.2) + Math.sin(t * 3.1) * 0.08, Math.sin(sa) * 0.45);
+    v.refs.star.rotation.y = t * 3;
+    v.refs.emblem.rotation.y = t * 2;
+
+    /* 공격 스윙 */
+    if (v.attackT > 0) {
+      v.attackT = Math.max(0, v.attackT - dt * 3.6);
+      const k = Math.sin((1 - v.attackT) * Math.PI);
+      v.refs.armPivot.rotation.x = -1.8 * k;
+    } else {
+      v.refs.armPivot.rotation.x *= 0.8;
+    }
+
+    v.bar.quaternion.copy(this.camera.quaternion);
   }
 
   /* 보스 분위기: 하늘·안개·조명을 어둡게 (0 없음 / 1 중간 / 2 대보스) */
@@ -1357,6 +1791,19 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
       if (!fieldIds.has(id)) { this.scene.remove(v.holder); this.heroViews.delete(id); }
     }
 
+    /* 별지기 — 성장/체력 상태를 뷰에 비춘다 (위치는 _champFrame이 다룬다) */
+    if (state.champ) {
+      if (!this.champView) this.champView = this._makeChampView();
+      const v = this.champView;
+      v.ko = state.champ.ko;
+      v.phase = state.phase;
+      const ratio = state.champ.maxHp ? Math.max(0, state.champ.hp / state.champ.maxHp) : 1;
+      v.bar.visible = state.phase === 'wave' && !v.ko;
+      v.barFg.scale.x = Math.max(0.001, ratio);
+      v.barFg.position.x = -(1 - ratio) * v.barW / 2;
+      v.barFg.material.color.setHex(ratio < 0.3 ? 0xff6b6b : ratio < 0.6 ? 0xffc93d : 0x7fe08a);
+    }
+
     const enemyIds = new Set();
     for (const e of state.enemies) {
       enemyIds.add(e.id);
@@ -1374,6 +1821,7 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
       v.slowed = !!e.slowed;
       v.enraged = !!e.enraged;
       v.stunned = !!e.stunned;
+      v.held = !!e.held;
     }
     for (const [id, v] of this.enemyViews) {
       if (!enemyIds.has(id)) { this.scene.remove(v.group); this.enemyViews.delete(id); }
@@ -1628,6 +2076,58 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
           this.addShake(0.8);
           this.burst(0, 1.5, -4.5, 0xff5533, 60, 6);
           break;
+
+        /* ---------- 별지기 ---------- */
+        case 'champAttack': {
+          const v = this.champView;
+          if (v) {
+            v.attackT = 1;
+            v.targetFaceY = Math.atan2(ev.tx - v.pos.x, ev.ty - v.pos.y);
+          }
+          if (ev.cleave) this.burst(x3, 0.8, z3, 0xfff3b0, 10, 3.6, { grav: 2, ttl: 0.3 });
+          break;
+        }
+        case 'champHurt':
+          /* 매 틱 1씩 깎일 수 있어 다 그리면 숫자가 도배된다 — 가끔만 */
+          if (Math.random() < 0.35) this.showNumber(x3, 2.3, z3, `-${ev.dmg}`, '#ff8a8a', 0.78);
+          break;
+        case 'champKo':
+          this.burst(x3, 0.8, z3, 0xaab4d4, 22, 3.6);
+          this.showBubble(ev.x, ev.y - 6, '으윽… 별이 빙글빙글…', 2.6);
+          this.addShake(0.3);
+          break;
+        case 'champLevel': {
+          const v = this.champView;
+          const px = v ? v.holder.position.x : x3;
+          const pz = v ? v.holder.position.z : z3;
+          this._lightPillar(px, pz, 3);
+          this._shockRing(px, pz, 1.7, 0xffe27a, 0.6);
+          this.burst(px, 1.2, pz, 0xffe27a, 20, 3.6, { grav: 2 });
+          this.showNumber(px, 2.6, pz, `⬆ Lv ${ev.level}!`, '#ffe27a', 1.25);
+          break;
+        }
+        case 'starfall':
+          this._starfall(x3, z3);
+          break;
+        case 'starAuto':
+          if (this.champView) this.showBubble(this.champView.pos.x, this.champView.pos.y, '별똥별은 아껴 두면 녹슬어요!', 2.2);
+          break;
+        case 'ultCast': {
+          const hits = ev.hits || [];
+          hits.forEach((h, i) => this._starfall(wx(h.x), wz(h.y), Math.min(1.2, i * 0.05)));
+          this.bloomPulse = 1;
+          this.addShake(0.55);
+          break;
+        }
+        case 'ultReady':
+          if (this.champView) {
+            const p = this.champView.holder.position;
+            this.burst(p.x, 1.4, p.z, 0xd8b4ff, 14, 2.6, { grav: -0.5, ttl: 0.7 });
+          }
+          break;
+        case 'champWave':
+          if (ev.perfect) this.burst(0, 2.5, -4.3, 0xffe27a, 26, 4, { grav: 2 });
+          break;
       }
     }
   }
@@ -1828,12 +2328,14 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
       if (v.enraged && Math.random() < dt * 9) {
         this.burst(v.group.position.x, 0.8, v.group.position.z, 0xff3311, 1, 1.4, { grav: -2, ttl: 0.5, size: 0.8 });
       }
-      /* 정지된 적: 제자리에서 부르르 떨고 파란 기운 */
+      /* 정지된 적: 제자리에서 부르르 떨고 파란 기운. 별지기에게 붙잡힌 적도 떤다 */
       if (v.stunned) {
         v.spr.position.x = Math.sin(t * 40 + id) * 0.05;
         if (Math.random() < dt * 5) {
           this.burst(v.group.position.x, 1.2, v.group.position.z, 0x9fd0ff, 1, 0.8, { grav: -1, ttl: 0.4, size: 0.6 });
         }
+      } else if (v.held) {
+        v.spr.position.x = Math.sin(t * 34 + id) * 0.04;
       } else {
         v.spr.position.x = 0;
       }
@@ -1894,10 +2396,18 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
     const q = this.camera.quaternion;
     for (const [, v] of this.enemyViews) v.bar.quaternion.copy(q);
 
+    this._champFrame(dt, t, state);
     this._updateParticles(dt);
     this._updateNumbers(dt);
     this._updateWaves(dt);
     this._updatePillars(dt);
+    this._updateBubbles(dt);
+    this._updateStars(dt);
+    /* 은하수 — 순간적으로 블룸이 차오른다 */
+    if (this.bloomPulse > 0) {
+      this.bloomPulse = Math.max(0, this.bloomPulse - dt * 1.3);
+      if (this.bloom) this.bloom.strength = 0.5 + this.bloomPulse * 0.9;
+    }
     this._updateDaylight(dt, state);    // 먼저 시간대 기준값을 만들고
     this._updateBossMood(dt);           // 그 위에 보스 분위기를 덧칠한다
 

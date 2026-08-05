@@ -10,7 +10,7 @@ import * as D from '../src/data.js';
 import * as E from '../src/engine.js';
 /* 판단 로직은 src/bot.js 하나뿐이다 — 브라우저 데모(src/demo.js)와 같은 것을 쓴다.
  * 여기서 다시 구현하면 "봇은 통과하는데 화면에선 다르게 노는" 상황이 생긴다. */
-import { PROFILES, mulberry32, placeAll, chooseCombo, castlePlan, wantsSummon } from '../src/bot.js';
+import { PROFILES, mulberry32, placeAll, chooseCombo, castlePlan, wantsSummon, nextSkill, wantsStar, wantsUlt } from '../src/bot.js';
 
 /* 어려운 문제가 걸리면 정답률이 떨어진다 — 이걸 모델링하지 않으면 센 문제가 공짜 돈이 된다.
  * (게임에서도 실제로 그렇다: 한 칸 위 문제는 수가 크고 단계가 하나 더 많다) */
@@ -21,6 +21,10 @@ const ACC_PER_LV = 0.08;
  * 봇은 한 번에 다 해치운다. 데모는 같은 정책을 하나씩 스트림으로 먹는다
  * (src/bot.js 의 nextPrepAction). 정책 자체는 한 곳에만 있다. */
 function prepActions(state, P) {
+  /* 0) 별지기 스킬 — 공짜 성장이라 제일 먼저 (데모와 같은 순서, bot.js SKILL_PLAN) */
+  for (let k = nextSkill(state); k; k = nextSkill(state)) {
+    if (!E.takeSkill(state, k).ok) break;
+  }
   /* 1) 소환 */
   while (wantsSummon(state, P)) {
     if (!E.summon(state).ok) break;
@@ -99,9 +103,12 @@ function playRun(profileName, difficulty, seed, waveCap = 40) {
         console.warn(`  ⚠ 교착 감지: seed=${seed} wave=${state.wave} 적=${state.enemies.length} 용사=${state.field.length}`);
         break;
       }
-      if (P.midWave && midTimer >= 2) {
+      if (midTimer >= 2) {
         midTimer = 0;
-        if (state.gold >= D.SUMMON_COST && state.bench.length < D.BENCH_MAX) {
+        /* 별지기 마법 — 사람이 누르는 걸 봇도 눌러야 기준선이 실제 플레이와 같다 (판단은 bot.js) */
+        if (wantsUlt(state, P)) E.castUlt(state);
+        else if (wantsStar(state, P)) E.castStar(state);
+        if (P.midWave && state.gold >= D.SUMMON_COST && state.bench.length < D.BENCH_MAX) {
           if (E.summon(state).ok) placeAll(state, P.sloppy || 0);
         }
       }

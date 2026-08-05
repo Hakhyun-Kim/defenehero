@@ -12,7 +12,9 @@ const pickFor = (rng) => (arr) => arr[Math.floor(rng() * arr.length)];
 /* ---------- 생성 ---------- */
 export function createGame(opts = {}) {
   const rng = opts.rng || Math.random;
-  const meta = Object.assign({ startGold: 0, castleHp: 0, heroDmg: 0, mathBonus: 0 }, opts.metaLevels);
+  const meta = Object.assign(
+    { startGold: 0, castleHp: 0, heroDmg: 0, mathBonus: 0, champHp: 0, champDmg: 0, champUlt: 0 },
+    opts.metaLevels);
   const diff = D.DIFFICULTIES[opts.difficulty] || D.DIFFICULTIES.normal;
   const castleMax = D.META_UPGRADES.castleHp.apply(meta.castleHp);
   const state = {
@@ -39,6 +41,7 @@ export function createGame(opts = {}) {
     solved: 0, correct: 0, goldEarned: 0, hints: 0, firstTryWins: 0, bestStreak: 0, timeOuts: 0,
     retries: 0, retryGold: 0, persisted: 0,
     specialsMade: 0, mythicsMade: 0,
+    champKills: 0, starCasts: 0, ultCasts: 0, perfectWaves: 0,
     shardsEarned: 0, mathShards: 0,
     mathWindow: [],             // 최근 "한 번에 맞힘" 기록 (적응형 난이도, mathgate.js)
     mathLocked: new Set(),      // 포기했거나 세 번 틀린 조합 — 이번 준비 단계 동안 잠긴다
@@ -47,8 +50,96 @@ export function createGame(opts = {}) {
     discovered: new Set(),      // 이번 판에 만들어 본 조합 결과 (도감 ✓)
     time: 0,
   };
+  /* 별지기 — 길을 순찰하는 메인 캐릭터. 은하수 충전 배율은 메타에서만 오므로 한 번만 계산 */
+  state.champUltMul = D.champUltMul(meta.champUlt);
+  state.champ = {
+    level: 1, xp: 0, sp: 0, skills: {},
+    x: D.CHAMP_HOME.x, y: D.CHAMP_HOME.y,
+    hp: 1, maxHp: 1,
+    ko: false, cd: 0, spellCd: 0, spellReadyT: 0, ult: 0,
+    targetId: null, holdT: 0, hurtAcc: 0, moving: false,
+    dirX: 0, dirY: 1,
+  };
+  state.champ.maxHp = champStats(state).maxHp;
+  state.champ.hp = state.champ.maxHp;
   state.pendingWave = buildWave(state);
   return state;
+}
+
+/* ---------- 별지기: 능력치 / 성장 / 스킬 ---------- */
+/* 레벨 + 스킬 + 별의 축복을 합친 실효 능력치. 값싼 곱셈 몇 개라 매 틱 불러도 된다 */
+export function champStats(state) {
+  const c = state.champ;
+  const sk = c.skills;
+  const dmg = Math.round(
+    (D.CHAMP.baseDmg + D.CHAMP.dmgPerLv * (c.level - 1))
+    * (1 + 0.25 * (sk.blade1 || 0)) * D.champDmgMul(state.meta.champDmg));
+  const maxHp = Math.round(
+    (D.CHAMP.baseHp + D.CHAMP.hpPerLv * (c.level - 1))
+    * (1 + 0.3 * (sk.guard1 || 0)) * D.champHpMul(state.meta.champHp));
+  return {
+    dmg, maxHp,
+    spd: D.CHAMP.spd * (1 + 0.18 * (sk.blade2 || 0)),
+    range: D.CHAMP.range, moveSpd: D.CHAMP.moveSpd, crit: D.CHAMP.crit,
+    cleave: (sk.blade3 || 0) > 0,
+    starDmg: Math.round((D.STAR.base + dmg * D.STAR.dmgMul) * (1 + 0.35 * (sk.star1 || 0))),
+    starCd: D.STAR.cd * Math.max(0.5, 1 - 0.2 * (sk.star2 || 0)),
+    starCount: (sk.star3 || 0) > 0 ? 3 : 1,
+    healOnKill: sk.guard2 || 0,
+    aura: (sk.guard3 || 0) > 0 ? D.CHAMP_AURA : null,
+  };
+}
+
+const champKillXp = (e) =>
+  e.boss ? D.CHAMP_XP.boss : e.midBoss ? D.CHAMP_XP.midBoss : e.elite ? D.CHAMP_XP.elite : D.CHAMP_XP.kill;
+
+export function gainChampXp(state, amount, events = []) {
+  const c = state.champ;
+  if (!c || !(amount > 0) || c.level >= D.CHAMP_XP.maxLevel) return;
+  c.xp += amount;
+  let need = D.champXpNeed(c.level);
+  while (c.xp >= need && c.level < D.CHAMP_XP.maxLevel) {
+    c.xp -= need;
+    c.level++;
+    c.sp++;
+    const grown = champStats(state).maxHp;
+    /* 레벨 업은 오른 만큼 + 최대치의 1/4을 회복한다 — 전투 중의 레벨 업이 "한숨 돌리기"가 되게 */
+    if (!c.ko) c.hp = Math.min(grown, c.hp + (grown - c.maxHp) + Math.round(grown * 0.25));
+    c.maxHp = grown;
+    events.push({ type: 'champLevel', level: c.level, x: c.x, y: c.y });
+    need = D.champXpNeed(c.level);
+  }
+}
+
+function chargeUlt(state, amount, events) {
+  const c = state.champ;
+  if (!c || c.ult >= 1) return;
+  c.ult = Math.min(1, c.ult + amount * (state.champUltMul || 1));
+  if (c.ult >= 1) events.push({ type: 'ultReady' });
+}
+
+/* 같은 별자리에 이미 쓴 포인트 수 — 스킬 선행 조건의 재료 */
+export const branchSpent = (c, branch) =>
+  Object.entries(c.skills).reduce((s, [k, v]) =>
+    s + (D.CHAMP_SKILLS[k] && D.CHAMP_SKILLS[k].branch === branch ? v : 0), 0);
+
+export function takeSkill(state, key) {
+  const c = state.champ;
+  const SK = D.CHAMP_SKILLS[key];
+  if (!c || !SK) return { ok: false };
+  const cur = c.skills[key] || 0;
+  if (cur >= SK.max) return { ok: false, reason: 'max' };
+  if (c.sp < 1) return { ok: false, reason: 'sp' };
+  const spent = branchSpent(c, SK.branch);
+  if (spent < SK.need) return { ok: false, reason: 'need', need: SK.need, spent };
+  c.sp--;
+  c.skills[key] = cur + 1;
+  /* 체력 스킬은 그 자리에서 오른 만큼 회복 — 찍었는데 빈 체력만 늘면 서운하다 */
+  const S = champStats(state);
+  if (S.maxHp > c.maxHp && !c.ko) c.hp += S.maxHp - c.maxHp;
+  c.maxHp = S.maxHp;
+  c.hp = Math.min(c.hp, c.maxHp);
+  return { ok: true, rank: cur + 1, skill: SK };
 }
 
 export function makeHero(state, cls, tier) {
@@ -570,6 +661,14 @@ export function startWave(state) {
   state.mythicPress = mythicCount(state);
   state.spawnQueue = [...(state.pendingWave || buildWave(state))];
   state.waveT = 0;
+  state.waveDmgTaken = 0;                  // 완벽 방어 판정 재료 (수리로 되돌려도 완벽은 아니다)
+  if (state.champ) {                       // 별지기는 성문 앞에서 웨이브를 맞는다
+    state.champ.x = D.CHAMP_HOME.x;
+    state.champ.y = D.CHAMP_HOME.y;
+    state.champ.targetId = null;
+    state.champ.holdT = 0;
+    state.champ.spellReadyT = 0;
+  }
   return { ok: true, boss: D.isBossWave(state.wave) };
 }
 
@@ -636,6 +735,12 @@ function damageEnemy(state, e, dmg, events, kind = 'hit', healOnKill = 0) {
     if (healOnKill > 0 && state.castleHp < state.castleMax) {
       state.castleHp = Math.min(state.castleMax, state.castleHp + healOnKill);
       events.push({ type: 'castleHeal', amount: healOnKill, x: e.x, y: e.y });
+    }
+    /* 별지기 — 모든 처치가 경험치와 은하수 충전이 된다 (직접 처치 보너스는 champStrike가 얹는다) */
+    if (state.champ) {
+      gainChampXp(state, champKillXp(e), events);
+      chargeUlt(state,
+        e.boss ? D.ULT.boss : e.midBoss ? D.ULT.mid : e.elite ? D.ULT.elite : D.ULT.kill, events);
     }
   }
 }
@@ -750,6 +855,199 @@ function updateHeroes(state, dt, events) {
   }
 }
 
+/* ---------- 별지기 전투 ---------- */
+function champStrike(state, e, dmg, crit, S, events) {
+  damageEnemy(state, e, dmg, events, crit ? 'crit' : 'hit', 0);
+  if (e.dead) {
+    state.champKills++;
+    /* 직접 처치 보너스 — damageEnemy가 이미 기본 경험치를 줬으니 차액만 */
+    gainChampXp(state, champKillXp(e) * (D.CHAMP_XP.ownKillMul - 1), events);
+    if (S.healOnKill > 0 && state.castleHp < state.castleMax) {
+      state.castleHp = Math.min(state.castleMax, state.castleHp + S.healOnKill);
+      events.push({ type: 'castleHeal', amount: S.healOnKill, x: e.x, y: e.y });
+    }
+  }
+}
+
+const enemyProg = (e) => e.s / D.ROUTE_LENS[e.route];
+
+function updateChampion(state, dt, events) {
+  const c = state.champ;
+  if (!c) return;
+  /* 붙잡기는 매 틱 다시 계산한다 — 별지기가 쓰러지든 자리를 뜨든 남은 held가 적을 영원히 세워 두면 안 된다 */
+  for (const e of state.enemies) e.held = false;
+  if (c.ko) return;
+  const S = champStats(state);
+  c.maxHp = S.maxHp;
+  if (c.hp > c.maxHp) c.hp = c.maxHp;
+  c.cd -= dt;
+  if (c.spellCd > 0) { c.spellCd = Math.max(0, c.spellCd - dt); c.spellReadyT = 0; }
+
+  /* 목표: 성문에 가장 가까운(진행률 최고) **일반** 몬스터.
+   * 보스는 다른 적이 없을 때만 맞붙는다 — 보스에게 달려들면 반격에 순삭당해
+   * 정작 마법이 필요한 보스전에 마법이 잠긴다. 보스전은 별똥별·은하수의 몫이고,
+   * 별지기의 일은 그 동안 잡졸이 성문에 닿지 않게 막는 것이다.
+   * 자주 갈아타면 지그재그만 하다 끝나므로 "확실히 더 앞선" 적이 나타날 때만 바꾼다. */
+  let cur = c.targetId != null ? state.enemies.find(e => e.id === c.targetId && !e.dead) : null;
+  let bestN = null, bpN = -1, bestB = null, bpB = -1;
+  for (const e of state.enemies) {
+    if (e.dead) continue;
+    const p = enemyProg(e);
+    if (e.boss || e.midBoss) { if (p > bpB) { bpB = p; bestB = e; } }
+    else if (p > bpN) { bpN = p; bestN = e; }
+  }
+  const best = bestN || bestB;
+  const bp = bestN ? bpN : bpB;
+  if (!cur) cur = best;
+  else if ((cur.boss || cur.midBoss) && bestN) cur = bestN;   // 잡졸이 나타나면 보스에게서 물러난다
+  else if (best && best !== cur && bp > enemyProg(cur) + 0.12) cur = best;
+  c.targetId = cur ? cur.id : null;
+
+  if (!cur) {
+    /* 적이 없으면 광장으로 돌아간다 */
+    c.holdT = 0;
+    const hx = D.CHAMP_HOME.x - c.x, hy = D.CHAMP_HOME.y - c.y;
+    const hd = Math.hypot(hx, hy);
+    c.moving = hd > 6;
+    if (c.moving) {
+      const step = Math.min(S.moveSpd * dt, hd);
+      c.x += (hx / hd) * step; c.y += (hy / hd) * step;
+      c.dirX = hx / hd; c.dirY = hy / hd;
+    }
+    return;
+  }
+
+  const dx = cur.x - c.x, dy = cur.y - c.y;
+  const dist = Math.hypot(dx, dy);
+  const reach = S.range + cur.size * 0.35;
+  if (dist > reach) {
+    const step = Math.min(S.moveSpd * dt, dist);
+    c.x += (dx / dist) * step; c.y += (dy / dist) * step;
+    c.dirX = dx / dist; c.dirY = dy / dist;
+    c.moving = true;
+    c.holdT = 0;
+    return;
+  }
+  c.moving = false;
+  c.dirX = dist > 0.01 ? dx / dist : c.dirX;
+  c.dirY = dist > 0.01 ? dy / dist : c.dirY;
+
+  /* 붙잡기 — 일반 몬스터는 별지기와 싸우는 동안 멈춘다 (보스는 밀고 지나간다) */
+  if (!cur.boss && !cur.midBoss && (cur.holdImmuneT || 0) <= 0) {
+    cur.held = true;
+    c.holdT += dt;
+    if (c.holdT >= D.CHAMP_HOLD.max) {
+      cur.holdImmuneT = D.CHAMP_HOLD.immune;   // 너무 오래는 못 잡는다 — 교착 방지
+      c.holdT = 0;
+    }
+  }
+
+  /* 공격 */
+  if (c.cd <= 0) {
+    c.cd = 1 / S.spd;
+    const crit = S.crit && state.rng() < S.crit.chance;
+    const dmg = crit ? Math.round(S.dmg * S.crit.mul) : S.dmg;
+    if (S.cleave) {
+      for (const e of [...state.enemies]) {
+        if (e.dead) continue;
+        if (Math.hypot(e.x - c.x, e.y - c.y) <= S.range + e.size * 0.35) champStrike(state, e, dmg, crit, S, events);
+      }
+    } else {
+      champStrike(state, cur, dmg, crit, S, events);
+    }
+    events.push({ type: 'champAttack', x: c.x, y: c.y, tx: cur.x, ty: cur.y, cleave: S.cleave, crit });
+  }
+
+  /* 반격 — 맞붙은 상대가 별지기를 때린다. 후반 몬스터일수록(성 피해 곡선) 아프다 */
+  if (!cur.dead) {
+    const retal = cur.castleDmg * D.castleDmgScale(state.wave) * D.CHAMP.contactRatio
+      * ((cur.boss || cur.midBoss) ? D.CHAMP.bossContactMul : 1);
+    c.hurtAcc += retal * dt;
+    const whole = Math.floor(c.hurtAcc);
+    if (whole >= 1) {
+      c.hurtAcc -= whole;
+      c.hp -= whole;
+      events.push({ type: 'champHurt', dmg: whole, x: c.x, y: c.y });
+      if (c.hp <= 0) {
+        c.hp = 0;
+        c.ko = true;
+        c.targetId = null;
+        c.holdT = 0;
+        for (const e of state.enemies) e.held = false;
+        events.push({ type: 'champKo', x: c.x, y: c.y });
+      }
+    }
+  }
+}
+
+/* 별똥별 준비 완료 후 한참 안 쓰면 별지기가 알아서 던진다 — 버튼을 잊어도 별은 떨어진다 */
+function champAutoCast(state, dt, events) {
+  const c = state.champ;
+  if (!c || c.ko || c.spellCd > 0) return;
+  if (!state.enemies.some(e => !e.dead)) { c.spellReadyT = 0; return; }
+  c.spellReadyT += dt;
+  if (c.spellReadyT >= D.STAR.autoAfter) {
+    c.spellReadyT = 0;
+    const r = castStar(state);
+    if (r.ok) {
+      events.push({ type: 'starAuto' });
+      for (const ev of r.events) events.push(ev);
+    }
+  }
+}
+
+/* ---------- 별지기 마법 (사람이 누른다) ---------- */
+export function castStar(state) {
+  const c = state.champ;
+  if (!c || state.phase !== 'wave') return { ok: false, reason: 'phase' };
+  if (c.ko) return { ok: false, reason: 'ko' };
+  if (c.spellCd > 0) return { ok: false, reason: 'cd', left: c.spellCd };
+  const alive = state.enemies.filter(e => !e.dead);
+  if (!alive.length) return { ok: false, reason: 'none' };
+  const S = champStats(state);
+  /* 보스 > 중간보스 > 성문에 가장 가까운 적 순서로 떨어진다 */
+  const targets = alive.slice().sort((a, b) =>
+    ((b.boss ? 1 : 0) - (a.boss ? 1 : 0)) ||
+    ((b.midBoss ? 1 : 0) - (a.midBoss ? 1 : 0)) ||
+    (enemyProg(b) - enemyProg(a))
+  ).slice(0, S.starCount);
+  c.spellCd = S.starCd;
+  c.spellReadyT = 0;
+  state.starCasts++;
+  const events = [];
+  for (const t of targets) {
+    const dmg = S.starDmg + Math.round(t.maxHp * D.STAR.pctHp);
+    events.push({ type: 'starfall', x: t.x, y: t.y, radius: D.STAR.splash });
+    damageEnemy(state, t, dmg, events, 'star');
+    for (const e of alive) {
+      if (e.dead || e === t) continue;
+      if (Math.hypot(e.x - t.x, e.y - t.y) <= D.STAR.splash) {
+        damageEnemy(state, e, Math.round(dmg * D.STAR.splashRatio), events, 'star');
+      }
+    }
+  }
+  return { ok: true, events, targets: targets.length };
+}
+
+export function castUlt(state) {
+  const c = state.champ;
+  if (!c || state.phase !== 'wave') return { ok: false, reason: 'phase' };
+  if (c.ko) return { ok: false, reason: 'ko' };
+  if (c.ult < 1) return { ok: false, reason: 'charge', ult: c.ult };
+  const alive = state.enemies.filter(e => !e.dead);
+  if (!alive.length) return { ok: false, reason: 'none' };
+  const S = champStats(state);
+  c.ult = 0;
+  state.ultCasts++;
+  const events = [{ type: 'ultCast', hits: alive.map(e => ({ x: e.x, y: e.y })) }];
+  for (const e of alive) {
+    const dmg = Math.round(S.dmg * D.ULT.dmgMul + e.maxHp * D.ULT.pctHp);
+    damageEnemy(state, e, dmg, events, 'star');
+    if (!e.dead) applySlow(e, D.ULT.slow);
+  }
+  return { ok: true, events };
+}
+
 function updateTower(state, dt, events) {
   const lv = state.castle.tower;
   if (lv <= 0) return;
@@ -779,6 +1077,16 @@ function updateEnemies(state, dt, events) {
     for (const e of state.enemies) {
       if (e.dead) continue;
       if (Math.hypot(e.x - g.h.x, e.y - g.h.y) <= g.range) e.auraMul = Math.min(e.auraMul, g.aura);
+    }
+  }
+  /* 별의 결계 (별지기 수호 스킬) — 별지기 곁의 적이 느려진다 */
+  const champ = state.champ;
+  if (champ && !champ.ko && (champ.skills.guard3 || 0) > 0) {
+    for (const e of state.enemies) {
+      if (e.dead) continue;
+      if (Math.hypot(e.x - champ.x, e.y - champ.y) <= D.CHAMP_AURA.range) {
+        e.auraMul = Math.min(e.auraMul, D.CHAMP_AURA.mul);
+      }
     }
   }
 
@@ -828,6 +1136,7 @@ function updateEnemies(state, dt, events) {
     e.slowed = mul < 1;
 
     if (e.stunImmuneT > 0) e.stunImmuneT -= dt;
+    if (e.holdImmuneT > 0) e.holdImmuneT -= dt;
     /* 정지(방패 장벽)에 걸리면 아예 못 움직인다 */
     if (e.stunT > 0) {
       e.stunT -= dt;
@@ -835,6 +1144,8 @@ function updateEnemies(state, dt, events) {
       continue;
     }
     e.stunned = false;
+    /* 별지기에게 붙잡혔다 — 그 자리에서 맞붙는다 (updateChampion이 매 틱 다시 정한다) */
+    if (e.held) continue;
 
     e.s += e.spd * mul * dt;
     const routeLen = D.ROUTE_LENS[e.route];
@@ -842,6 +1153,7 @@ function updateEnemies(state, dt, events) {
       e.dead = true;
       const dmg = Math.round(e.castleDmg * D.castleDmgScale(state.wave));
       state.castleHp = Math.max(0, state.castleHp - dmg);
+      state.waveDmgTaken = (state.waveDmgTaken || 0) + dmg;
       events.push({ type: 'castleHit', dmg, x: e.x, y: e.y });
       if (state.castleHp <= 0) {
         gameOver(state, events);
@@ -942,6 +1254,27 @@ function endWave(state, events) {
   state.combo.count = 0;
   state.combo.timer = 0;
   events.push({ type: 'waveEnd', wave: state.wave, bonus });
+  /* 별지기 — 쓰러졌어도 다음 준비 단계엔 다시 일어난다.
+   * 클리어 보너스 경험치, 성이 무피해였으면(완벽 방어) 더 크게 + 별조각 1. */
+  const c = state.champ;
+  if (c) {
+    const revived = c.ko;
+    c.ko = false;
+    c.targetId = null;
+    c.holdT = 0;
+    c.hurtAcc = 0;
+    const perfect = (state.waveDmgTaken || 0) === 0;
+    let xp = D.CHAMP_XP.clear(state.wave);
+    if (perfect) {
+      xp = Math.round(xp * D.CHAMP_XP.perfectMul);
+      state.perfectWaves++;
+    }
+    gainChampXp(state, xp, events);
+    chargeUlt(state, D.ULT.wave, events);
+    c.maxHp = champStats(state).maxHp;
+    c.hp = c.maxHp;
+    events.push({ type: 'champWave', xp, perfect, revived, shard: perfect ? 1 : 0 });
+  }
   /* 포기·실패로 잠갔던 조합을 푼다 — 벌은 "이번엔 못 한다"까지지 영구 박탈이 아니다 */
   if (state.mathLocked) state.mathLocked.clear();
   state.wave++;
@@ -971,6 +1304,8 @@ export function tick(state, dt) {
   }
 
   updateHeroes(state, dt, events);
+  updateChampion(state, dt, events);
+  champAutoCast(state, dt, events);
   updateTower(state, dt, events);
   updateEnemies(state, dt, events);
   if (state.phase !== 'wave') return events;
@@ -995,6 +1330,7 @@ const SAVE_STATS = [
   'kills', 'bossKills', 'midBossKills', 'summons', 'combos', 'solved', 'correct',
   'goldEarned', 'hints', 'firstTryWins', 'bestStreak', 'timeOuts', 'retries', 'retryGold', 'persisted',
   'specialsMade', 'mythicsMade', 'mathShards',
+  'champKills', 'starCasts', 'ultCasts', 'perfectWaves',
 ];
 
 export function serialize(state) {
@@ -1013,6 +1349,12 @@ export function serialize(state) {
     castle: { ...state.castle },
     bench: state.bench.map(hero),
     field: state.field.map(hero),
+    /* 별지기 — 위치·체력은 준비 단계마다 리셋되니 성장만 담는다 */
+    champ: state.champ ? {
+      level: state.champ.level, xp: Math.round(state.champ.xp), sp: state.champ.sp,
+      skills: { ...state.champ.skills },
+      ult: Math.round(state.champ.ult * 100) / 100,
+    } : null,
     stats,
     discovered: [...state.discovered],
     mathWindow: [...(state.mathWindow || [])],   // 적응형 난이도가 이어하기에서도 이어지게
@@ -1053,6 +1395,28 @@ export function deserialize(data, opts = {}) {
   };
   for (const rec of data.field.slice(0, D.PADS.length)) revive(rec, rec && rec.pad);
   for (const rec of data.bench.slice(0, D.BENCH_MAX)) revive(rec, null);
+
+  /* 별지기 — 값 하나하나 의심한다. 모르는 스킬은 버리고, 랭크는 상한으로 자른다 */
+  const cd = data.champ;
+  if (cd && typeof cd === 'object' && state.champ) {
+    const c = state.champ;
+    c.level = clamp(cd.level, 1, D.CHAMP_XP.maxLevel, 1);
+    c.xp = clamp(cd.xp, 0, 1e6, 0);
+    c.sp = clamp(cd.sp, 0, 99, 0);
+    c.skills = {};
+    if (cd.skills && typeof cd.skills === 'object') {
+      for (const [k, v] of Object.entries(cd.skills)) {
+        const SK = D.CHAMP_SKILLS[k];
+        if (SK) {
+          const rank = clamp(v, 0, SK.max, 0);
+          if (rank > 0) c.skills[k] = rank;
+        }
+      }
+    }
+    c.ult = Number.isFinite(cd.ult) ? Math.min(1, Math.max(0, cd.ult)) : 0;
+    c.maxHp = champStats(state).maxHp;
+    c.hp = c.maxHp;
+  }
 
   const strings = (arr) => (Array.isArray(arr) ? arr.filter(v => typeof v === 'string') : []);
   for (const k of strings(data.discovered)) if (D.CLASSES[k]) state.discovered.add(k);

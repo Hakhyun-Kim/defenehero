@@ -34,9 +34,9 @@ export function mulberry32(a) {
  * 문제 난이도는 프로필에 없다 — 이제 룰렛이 정한다(balance/mathgate.js의 cardRoll).
  */
 export const PROFILES = {
-  '초보': { acc: 0.45, grade: 3, combineChance: 0.15, reserve: 0,   useCastle: false,        midWave: false, sloppy: 0.5 },
-  '보통': { acc: 0.70, grade: 4, combineChance: 0.70, reserve: 50,  useCastle: 'repairOnly', midWave: false, sloppy: 0.3 },
-  '고수': { acc: 0.90, grade: 6, combineChance: 1.00, reserve: 100, useCastle: true,         midWave: true,  sloppy: 0 },
+  '초보': { acc: 0.45, grade: 3, combineChance: 0.15, reserve: 0,   useCastle: false,        midWave: false, sloppy: 0.5, spellUse: 0.3 },
+  '보통': { acc: 0.70, grade: 4, combineChance: 0.70, reserve: 50,  useCastle: 'repairOnly', midWave: false, sloppy: 0.3, spellUse: 0.6 },
+  '고수': { acc: 0.90, grade: 6, combineChance: 1.00, reserve: 100, useCastle: true,         midWave: true,  sloppy: 0,   spellUse: 0.95 },
 };
 
 /* ---------- 배치 정책 ----------
@@ -108,6 +108,34 @@ export function castlePlan(state, P) {
 export const wantsSummon = (state, P) =>
   state.gold >= D.SUMMON_COST + P.reserve && state.bench.length < D.BENCH_MAX;
 
+/* ---------- 별지기 ----------
+ * 스킬은 정해진 순서(SKILL_PLAN)로 찍는다 — 사람마다 다르지만 봇은 무난한 한 길이면 된다. */
+export function nextSkill(state) {
+  const c = state.champ;
+  if (!c || c.sp < 1) return null;
+  for (const key of D.SKILL_PLAN) {
+    const SK = D.CHAMP_SKILLS[key];
+    if ((c.skills[key] || 0) >= SK.max) continue;
+    if (E.branchSpent(c, SK.branch) < SK.need) continue;
+    return key;
+  }
+  return null;
+}
+
+/* 전투 중 마법 판단: 별똥별은 적이 몇이라도 몰리면, 은하수는 보스나 대부대가 있을 때 */
+export function wantsStar(state, P) {
+  const c = state.champ;
+  if (!c || c.ko || c.spellCd > 0) return false;
+  return state.enemies.filter(e => !e.dead).length >= 3 && state.rng() < P.spellUse;
+}
+export function wantsUlt(state, P) {
+  const c = state.champ;
+  if (!c || c.ko || c.ult < 1) return false;
+  const boss = state.enemies.some(e => (e.boss || e.midBoss) && !e.dead);
+  const horde = state.enemies.filter(e => !e.dead).length >= 10;
+  return (boss || horde) && state.rng() < P.spellUse;
+}
+
 /* ---------- 수학 ----------
  * 봇은 문제를 만들지도 풀지도 않고 동전을 던진다(state.rng() < acc).
  * 데모는 진짜 문제창이 뜨므로 "무엇을 입력할지"가 필요하다.
@@ -123,6 +151,10 @@ export function answerFor(prob, P, rng = Math.random) {
  * 소환→조합→배치가 사람이 하는 것처럼 순서대로 화면에 보인다.
  * null이면 준비 완료 = 웨이브를 시작해도 된다. */
 export function nextPrepAction(state, P, rng = Math.random) {
+  /* ⓪ 별지기 스킬 — 공짜 성장이라 제일 먼저 */
+  const sk = nextSkill(state);
+  if (sk) return { type: 'skill', key: sk, skill: D.CHAMP_SKILLS[sk] };
+
   /* ① 소환 — 벤치를 채운다 */
   if (wantsSummon(state, P)) return { type: 'summon' };
 

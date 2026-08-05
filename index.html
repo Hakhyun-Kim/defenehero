@@ -50,6 +50,26 @@
         <div class="bossbar-track"><div id="bossBarFill"></div></div>
       </div>
       <div id="comboChip" class="hidden"></div>
+      <!-- 별지기 칩: 초상 · 레벨 · 체력/경험치 · 마법 버튼 -->
+      <div id="champChip">
+        <div id="champFace" title="별지기 루나">🌠</div>
+        <div class="champ-mid">
+          <div class="champ-name"><b>루나</b> <span id="champLv" class="champ-lv">Lv 1</span><span id="champKoTag" class="champ-ko hidden">😵 쓰러짐</span></div>
+          <div class="champ-hp"><div id="champHpFill"></div></div>
+          <div class="champ-xp" title="경험치"><div id="champXpFill"></div></div>
+        </div>
+        <div class="champ-btns">
+          <button id="spellBtn" title="별똥별 — 성문에 가까운 적에게 별이 떨어져요 (A)">
+            <span class="cdfill" id="spellCdFill"></span><span class="bicon">☄️</span><span class="bkey">A</span>
+          </button>
+          <button id="ultBtn" title="은하수 — 화면의 모든 적을 때리고 얼려요! 처치로 충전 (E)">
+            <span class="cdfill ult" id="ultFill"></span><span class="bicon">🌌</span><span class="bkey">E</span>
+          </button>
+          <button id="skillBtn" title="별자리 (스킬트리) — 레벨 업으로 얻은 포인트를 써요 (V)">
+            <span class="bicon">✨</span><span id="spBadge" class="spbadge hidden">1</span><span class="bkey">V</span>
+          </button>
+        </div>
+      </div>
       <div id="waveInfo" class="hidden">👾 <span id="remainN"></span></div>
       <div id="wavePreview" class="hidden"></div>
       <button id="waveBtn" class="wave-btn">▶ 1웨이브 시작!</button>
@@ -76,6 +96,9 @@
       <p>⌨️ <b>Space</b> 웨이브 · <b>S</b> 소환 · <b>C</b> 조합 · <b>Tab</b> 벤치 · <b>F</b> 배치된 용사 ·
         <b>←→</b> 발판 · <b>Enter</b> 배치/이동/교환 · <b>R</b> 회수 · <b>X</b> 판매 ·
         <b>3~6</b> 학년 · <b>7~9</b> 성 · <b>M</b> 음소거 · <b>Esc</b> 취소</p>
+      <p>🌠 <b>별지기 루나</b> — 길을 지키는 기사예요. <b>A</b> 별똥별(무료·쿨다운) · <b>E</b> 은하수(처치로 충전) ·
+        <b>V</b> 별자리(스킬). 쓰러지면 그 웨이브엔 마법을 못 쓰고, 다음 준비 때 다시 일어나요.
+        성이 무피해로 버티면(완벽 방어) ✨별조각 +1!</p>
       <p>💾 <b>저장</b> 웨이브가 끝날 때마다 <b>자동 저장</b>돼요 — 다시 열면 이어하기 메뉴가 떠요 ·
         💾 버튼으로 파일 저장(준비 중에만), 📂로 불러오기 ·
         <b>여러 명 판매</b>는 벤치 아래 💰 버튼!</p>
@@ -225,6 +248,17 @@
     <p class="meta-desc">게임에서 모은 <b>별조각 ✨<span id="metaShards">0</span>개</b>로 영구 축복을 받아요.<br>축복은 다음 게임부터 적용돼요!</p>
     <div id="metaRows"></div>
     <button id="metaClose" class="big blue">닫기</button>
+  </div>
+</div>
+
+<!-- ===== 별지기 별자리 (스킬트리) ===== -->
+<div id="skillModal" class="modal hidden">
+  <div class="modal-card skill">
+    <h2>✨ 루나의 별자리</h2>
+    <p class="skill-desc">레벨 업으로 얻은 <b>스킬 포인트 <span id="skillPts">0</span>개</b>로 별을 잇습니다.<br>
+      같은 별자리의 별을 먼저 밝혀야 다음 별이 열려요!</p>
+    <div id="skillCols"></div>
+    <button id="skillClose" class="big blue">닫기 (Esc)</button>
   </div>
 </div>
 

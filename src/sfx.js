@@ -370,4 +370,16 @@ export const SFX = {
     [392, 330, 262, 196].forEach((f, i) => tone(f, i * 0.3, 0.4, 'sawtooth', 0.08));
   },
   shard()      { tone(1568, 0, 0.1, 'sine', 0.06); tone(2093, 0.09, 0.16, 'sine', 0.05); },
+
+  /* --- 별지기 --- */
+  starfall(x)  { if (limit('star', 120)) return; const p = panOf(x);
+    flowTone([2400, 900, 320], 0, 0.42, 'sine', 0.085, { pan: p, filterSweep: [7000, 500] });     // 떨어지는 휘파람
+    noise(0.34, 0.22, 0.1, 800, 0.5, { pan: p });                                                  // 착탄
+    flowTone([523, 784, 1047], 0.36, 0.18, 'triangle', 0.05, { pan: p }); },
+  ultimate()   { triggerDuck(0.45, 0.8);
+    flowTone([160, 220, 330, 440], 0, 0.9, 'sawtooth', 0.12, { filterSweep: [400, 5200] });        // 차오르는 굉음
+    flowTone([1319, 1568, 2093, 2637], 0.2, 0.75, 'sine', 0.07);                                   // 별의 합창
+    noise(0.1, 0.75, 0.08, 420, 0.4); },
+  levelUp()    { flowTone([523, 659, 784, 1047], 0, 0.35, 'triangle', 0.1, { filterSweep: [2600, 7000] });
+    tone(2093, 0.3, 0.2, 'sine', 0.05); },
 };

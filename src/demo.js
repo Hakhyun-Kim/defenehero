@@ -125,10 +125,21 @@ export const demo = {
       return;
     }
 
-    /* ⑥ 전투 중 — 여유 골드로 소환·배치 (고수 프로필만) */
+    /* ⑥ 전투 중 — 별지기 마법 + 여유 골드로 소환·배치 */
     this.midT -= dt;
     if (this.midT <= 0) {
       this.midT = 2;
+      /* 별지기 마법 — 봇과 같은 판단 (bot.js) */
+      if (Bot.wantsUlt(state, P)) {
+        this.say('🌌 은하수! 하늘의 별을 전부 쏟아붓습니다');
+        A.ult();
+        return;
+      }
+      if (Bot.wantsStar(state, P)) {
+        this.say('☄️ 별똥별로 지원 사격!');
+        A.spell();
+        return;
+      }
       const act = Bot.midWaveAction(state, P);
       if (act) this.doAction(act, state);
       else {
@@ -161,6 +172,10 @@ export const demo = {
       case 'castle':
         this.say(`🏰 성을 강화합니다 (${act.key})`);
         A.castle(act.key);
+        break;
+      case 'skill':
+        this.say(`✨ 루나의 별자리를 잇습니다 — [${act.skill.name}]`);
+        A.skill(act.key);
         break;
     }
   },

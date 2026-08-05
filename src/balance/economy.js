@@ -6,6 +6,7 @@
  * ===================================================== */
 
 import { CASTLE_HP } from './castle.js';
+import { champHpMul, champDmgMul, champUltMul } from './champion.js';
 
 /* ---------- 경제 ----------
  * 판매는 확실히 손해: 소환가 50 대비 일반 12(-76%).
@@ -35,4 +36,8 @@ export const META_UPGRADES = {
   castleHp:  { name: '성 체력',     emoji: '🏰', max: 5,  cost: (lv) => 8 + lv * 6,  per: '+20',  apply: (lv) => CASTLE_HP + lv * 20 },
   heroDmg:   { name: '용사 공격력', emoji: '⚔️', max: 10, cost: (lv) => 10 + lv * 8, per: '+5%',  apply: (lv) => 1 + lv * 0.05 },
   mathBonus: { name: '수학 보상',   emoji: '🧮', max: 5,  cost: (lv) => 6 + lv * 5,  per: '+20%', apply: (lv) => 1 + lv * 0.2 },
+  /* 별지기 축복 — 완벽 방어가 별조각을 주니, 별조각은 다시 별지기를 키운다 (순환) */
+  champHp:   { name: '별지기 체력',   emoji: '💖', max: 5, cost: (lv) => 7 + lv * 5, per: '+12%', apply: champHpMul },
+  champDmg:  { name: '별지기 공격력', emoji: '🌠', max: 5, cost: (lv) => 7 + lv * 5, per: '+10%', apply: champDmgMul },
+  champUlt:  { name: '은하수 충전',   emoji: '🌌', max: 3, cost: (lv) => 8 + lv * 6, per: '+12%', apply: champUltMul },
 };

@@ -252,5 +252,82 @@ function padIndexSane(st, label) {
   padIndexSane(b2, '망가진 파일 복원 후');
 }
 
+/* ---------- ⑥ 별지기: 성장 · 스킬 선행 · 부활 · 마법 · 저장 왕복 ---------- */
+{
+  const st = fresh();
+  ok('별지기 초기 상태', st.champ && st.champ.level === 1 && st.champ.hp === st.champ.maxHp && !st.champ.ko);
+
+  E.gainChampXp(st, 10000, []);
+  ok('별지기 레벨업과 포인트', st.champ.level > 1 && st.champ.sp >= st.champ.level - 1);
+
+  const locked = E.takeSkill(st, 'blade3');                 // 선행 3포인트 없이 → 거부
+  ok('스킬 선행 조건이 막는다', !locked.ok && locked.reason === 'need');
+  E.takeSkill(st, 'blade1'); E.takeSkill(st, 'blade1'); E.takeSkill(st, 'blade1');
+  ok('선행을 채우면 열린다', E.takeSkill(st, 'blade3').ok);
+  ok('랭크 상한', !E.takeSkill(st, 'blade3').ok);           // max 1
+
+  const spBefore = st.champ.sp;
+  const data = E.serialize(st);
+  const back = E.deserialize(JSON.parse(JSON.stringify(data)));
+  ok('별지기 저장 왕복', back.champ.level === st.champ.level
+    && (back.champ.skills.blade1 || 0) === 3 && (back.champ.skills.blade3 || 0) === 1
+    && back.champ.sp === spBefore && back.champ.hp === back.champ.maxHp);
+
+  /* 손으로 고친 파일: 모르는 스킬은 버리고 랭크는 상한으로 */
+  const evil = JSON.parse(JSON.stringify(data));
+  evil.champ.skills.hack = 99;
+  evil.champ.skills.blade1 = 99;
+  evil.champ.level = 9999;
+  const b2 = E.deserialize(evil);
+  ok('별지기 파일 방어', !('hack' in b2.champ.skills)
+    && b2.champ.skills.blade1 === D.CHAMP_SKILLS.blade1.max
+    && b2.champ.level <= D.CHAMP_XP.maxLevel);
+}
+{
+  /* KO → 웨이브가 끝나면 부활 + 붙잡힌 적이 남지 않는다 */
+  const st = fresh();
+  E.startWave(st);
+  st.champ.hp = 0;
+  st.champ.ko = true;
+  st.spawnQueue = [];
+  st.enemies = [];
+  E.tick(st, 0.05);                                         // endWave 유도
+  ok('별지기 부활', st.phase === 'prep' && !st.champ.ko && st.champ.hp === st.champ.maxHp);
+}
+{
+  /* 별똥별: 시전 → 쿨다운 → 재시전 거부, 피해가 실제로 들어간다 */
+  const st = fresh();
+  E.startWave(st);
+  let guard = 0;
+  while (!st.enemies.length && guard++ < 4000) E.tick(st, 0.05);
+  ok('(전제) 적이 스폰된다', st.enemies.length > 0);
+  const total = () => st.enemies.reduce((s, e) => s + e.hp, 0);
+  const before = total();
+  const r = E.castStar(st);
+  ok('별똥별 시전', r.ok && st.champ.spellCd > 0 && st.starCasts === 1);
+  ok('별똥별 피해', total() < before || st.enemies.some(e => e.dead));
+  const r2 = E.castStar(st);
+  ok('별똥별 쿨다운이 막는다', !r2.ok && r2.reason === 'cd');
+  /* 은하수: 충전 없이는 거부, 채우면 전 화면 타격.
+   * 별똥별이 첫 분대를 전멸시켰을 수 있으니 산 적이 다시 나올 때까지 돌린다 */
+  st.champ.ult = 0;
+  ok('은하수 충전 부족 거부', !E.castUlt(st).ok);
+  guard = 0;
+  while (st.phase === 'wave' && !st.enemies.some(e => !e.dead) && guard++ < 4000) E.tick(st, 0.05);
+  ok('(전제) 적이 다시 있다', st.phase === 'wave' && st.enemies.some(e => !e.dead));
+  st.champ.ult = 1;
+  const b4 = total();
+  const u = E.castUlt(st);
+  /* 시전하면 0에서 다시 시작한다 — 단, 은하수가 잡은 적들이 곧바로 조금 재충전한다 */
+  ok('은하수 시전', u.ok && st.champ.ult < 0.5 && st.ultCasts === 1);
+  ok('은하수 전체 타격', total() < b4 || st.enemies.some(e => e.dead));
+}
+{
+  /* 준비 단계에는 마법이 잠긴다 (마법은 전투의 손이다) */
+  const st = fresh();
+  const r = E.castStar(st);
+  ok('준비 단계 마법 잠금', !r.ok && r.reason === 'phase');
+}
+
 console.log(failed ? `\n❌ 불변식 ${failed}건 실패` : '\n✅ 엔진 불변식 모두 통과');
 process.exit(failed ? 1 : 0);
