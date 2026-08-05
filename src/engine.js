@@ -42,6 +42,7 @@ export function createGame(opts = {}) {
     retries: 0, retryGold: 0, persisted: 0,
     specialsMade: 0, mythicsMade: 0,
     champKills: 0, starCasts: 0, ultCasts: 0, perfectWaves: 0,
+    feasts: 0, feastWave: 0,
     shardsEarned: 0, mathShards: 0,
     mathWindow: [],             // 최근 "한 번에 맞힘" 기록 (적응형 난이도, mathgate.js)
     mathLocked: new Set(),      // 포기했거나 세 번 틀린 조합 — 이번 준비 단계 동안 잠긴다
@@ -332,7 +333,7 @@ export const isComboLocked = (state, key) => !!(state.mathLocked && state.mathLo
 
 export function listCombos(state) {
   const out = [];
-  /* 등급업 — 벤치/필드 통합 집계 (천장 = 전설) */
+  /* 등급업 — 벤치/필드 통합 집계 (천장 = 신화, 모든 직업 공통) */
   const seen = new Set();
   for (const h of [...state.bench, ...state.field]) {
     const key = `${h.cls}:${h.tier}`;
@@ -349,7 +350,7 @@ export function listCombos(state) {
       out.push(c);
     }
   }
-  /* 레시피 — 신화(4)까지 도달 가능한 유일한 길 */
+  /* 레시피 — 새 직업이 태어나는 길 (같은 등급 2명, 결과는 그 등급 +1) */
   for (const r of D.RECIPES) {
     const pair = bestRecipePair(state, r);
     if (!pair) continue;
@@ -496,6 +497,44 @@ export function sellHero(state, heroId) {
   const price = D.SELL_PRICE[h.tier];
   state.gold += price;
   return { ok: true, price };
+}
+
+/* ---------- 잔치 ----------
+ * 준비 단계에 한 번, 골드로 잔치를 벌이면 승급 가능한 용사 중 하나가 랜덤으로 등급 UP.
+ * 별지기도 얻어먹고 경험치를 챙긴다. 배치된 용사는 그 자리에서 그대로 승급한다. */
+export function holdFeast(state) {
+  if (state.phase !== 'prep') return { ok: false, reason: 'phase' };
+  if (state.feastWave === state.wave) return { ok: false, reason: 'done' };
+  const cost = D.feastCost(state.wave);
+  if (state.gold < cost) return { ok: false, reason: 'gold', cost };
+  const cands = [...state.bench, ...state.field].filter(h => h.tier < D.maxTierOf(h.cls));
+  if (!cands.length) return { ok: false, reason: 'none', cost };   // 전원 신화 — 승급할 사람이 없다
+  state.gold -= cost;
+  state.feastWave = state.wave;
+  state.feasts++;
+
+  /* 낮은 등급일수록 잘 뽑힌다 — 게임 난수(state.rng)를 쓴다: 저장/불러오기로 리롤 못 한다 */
+  let total = 0;
+  for (const h of cands) total += D.feastTierWeight(h.tier);
+  let r = state.rng() * total;
+  let hero = cands[cands.length - 1];
+  for (const h of cands) {
+    r -= D.feastTierWeight(h.tier);
+    if (r < 0) { hero = h; break; }
+  }
+  const from = hero.tier;
+  hero.tier++;
+  /* 공격력은 등급표에서 다시 계산하고, 빠른 풀이 보너스(spark)는 그 위에 다시 얹는다 */
+  hero.dmg = Math.round(D.heroStats(hero.cls, hero.tier).dmg * state.dmgMul);
+  if (hero.spark > 0) hero.dmg = Math.round(hero.dmg * (1 + hero.spark));
+
+  const events = [];
+  gainChampXp(state, D.feastChampXp(state.wave), events);
+  events.push({
+    type: 'feast', heroId: hero.id, cls: hero.cls, from, to: hero.tier,
+    pad: hero.padIndex, x: hero.x, y: hero.y, cost,
+  });
+  return { ok: true, hero, from, cost, events };
 }
 
 /* ---------- 성 업그레이드 ---------- */
@@ -1330,7 +1369,7 @@ const SAVE_STATS = [
   'kills', 'bossKills', 'midBossKills', 'summons', 'combos', 'solved', 'correct',
   'goldEarned', 'hints', 'firstTryWins', 'bestStreak', 'timeOuts', 'retries', 'retryGold', 'persisted',
   'specialsMade', 'mythicsMade', 'mathShards',
-  'champKills', 'starCasts', 'ultCasts', 'perfectWaves',
+  'champKills', 'starCasts', 'ultCasts', 'perfectWaves', 'feasts',
 ];
 
 export function serialize(state) {
@@ -1344,6 +1383,7 @@ export function serialize(state) {
     meta: { ...state.meta },
     wave: state.wave,
     gold: state.gold,
+    feastWave: state.feastWave,          // 이번 준비에 잔치를 했는가 — 불러와도 다시 못 연다
     castleHp: state.castleHp,
     castleMax: state.castleMax,
     castle: { ...state.castle },
@@ -1378,6 +1418,7 @@ export function deserialize(data, opts = {}) {
 
   state.wave = clamp(data.wave, 1, 999, 1);
   state.gold = clamp(data.gold, 0, 1e9, state.gold);
+  state.feastWave = clamp(data.feastWave, 0, 999, 0);
   state.castle.fortify = clamp(data.castle && data.castle.fortify, 0, D.CASTLE_UPGRADES.fortify.max, 0);
   state.castle.tower = clamp(data.castle && data.castle.tower, 0, D.CASTLE_UPGRADES.tower.max, 0);
   state.castleMax = clamp(data.castleMax, 1, 1e6, state.castleMax);

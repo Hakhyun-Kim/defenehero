@@ -108,9 +108,10 @@ export class UI {
       'metaModal', 'metaShards', 'metaRows', 'metaClose', 'tooltip',
       'revealCard', 'rarityFlash',
       'tabs', 'heroDot', 'combineDot', 'helpBtn', 'helpBox',
-      'champChip', 'champFace', 'champLv', 'champKoTag', 'champHpFill', 'champXpFill',
+      'champChip', 'champFace', 'champName', 'champLv', 'champKoTag', 'champHpFill', 'champXpFill',
       'spellBtn', 'spellCdFill', 'ultBtn', 'ultFill', 'skillBtn', 'spBadge',
-      'skillModal', 'skillPts', 'skillCols', 'skillClose',
+      'skillModal', 'skillTitle', 'skillPts', 'skillCols', 'skillClose',
+      'closetModal', 'closetPreview', 'closetName', 'closetRows', 'closetSave', 'closetClose',
     ].forEach(id => this.el[id] = $(id));
     this._lastKnow = -1;
     this._lastProbSig = '';
@@ -179,6 +180,15 @@ export class UI {
     el.ultBtn.addEventListener('click', () => h.onUlt());
     el.skillBtn.addEventListener('click', () => h.onSkillOpen());
     el.skillClose.addEventListener('click', () => this.hideSkills());
+    /* 옷장 — 초상을 누르면 열린다 */
+    el.champFace.addEventListener('click', () => h.onClosetOpen());
+    el.closetSave.addEventListener('click', () => h.onClosetSave());
+    el.closetClose.addEventListener('click', () => h.onClosetClose());
+    /* 이름 입력창의 키는 게임 단축키로 새면 안 된다 (Esc만 통과시킨다) */
+    el.closetName.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Escape') ev.stopPropagation();
+      if (ev.key === 'Enter') h.onClosetSave();
+    });
     el.mSubmit.addEventListener('click', () => h.onMathSubmit(el.mInput.value));
     el.mNext.addEventListener('click', h.onMathNext);
     el.mClose.addEventListener('click', h.onMathClose);
@@ -459,7 +469,7 @@ export class UI {
     /* 규칙을 화면에 못 박아 둔다 — 헷갈리면 조합을 안 하게 된다 */
     html += `<div class="combine-rule">
       <b>규칙</b> 조합은 <b>같은 등급 2명</b>끼리만! ① 같은 직업 = 등급 UP ② 다른 직업 = 새 직업(등급 UP)<br>
-      기본·특수 용사는 <b>전설</b>이 최고 · <b>신화</b> 등급은 <b>신화 용사</b>만 (⚡😇🌌)<br>
+      <b>모든 직업이 신화까지</b> 올라요 — 전설 2명이면 신화! 그중에서도 ⚡😇🌌 신화 용사가 최강<br>
       <b>⭐ 표시</b> = 그 조합에서 나올 <b>수학 문제 난이도</b>. 센 용사일수록 문제도 세요!<br>
       문제 난이도는 관문마다 <b>조금씩 흔들려요</b> (🟢순한 · 🔵보통 · 🔴센) — 센 문제가 나올수록 환급이 커요
     </div>`;
@@ -620,9 +630,24 @@ export class UI {
         <button data-key="${key}" class="${broke ? 'lack' : ''}" ${disabled ? 'disabled' : ''}>${maxed ? 'MAX' : full ? '가득' : `💰${cost}`}</button>
       </div>`;
     }
+    /* 잔치 — 돈을 태워 랜덤 승급. 준비 단계에 한 번뿐이라 "이번엔 끝"을 분명히 보여 준다 */
+    const fCost = D.feastCost(state.wave);
+    const fDone = state.feastWave === state.wave;
+    const fCands = [...state.bench, ...state.field].some(h => h.tier < D.maxTierOf(h.cls));
+    const fBroke = !fDone && fCands && state.gold < fCost;
+    const fDisabled = fDone || !fCands || fBroke || state.phase !== 'prep';
+    html += `<div class="combine-row feast${fBroke ? ' broke' : ''}">
+      <span>🎉</span> 잔치 벌이기
+      <span class="cdesc">${fDone ? '이번 준비엔 벌써 즐겼어요 — 다음 웨이브에 또!'
+        : !fCands ? '전원 신화라 승급할 용사가 없어요!'
+        : '병사들과 한바탕! 용사 하나가 <b>랜덤 승급</b>해요 (준비마다 1번)'}</span>
+      ${fBroke ? `<span class="gshort" title="골드가 💰${fCost - state.gold} 모자라요">💰${fCost - state.gold} 부족</span>` : ''}
+      <button data-key="feast" class="${fBroke ? 'lack' : ''}" ${fDisabled ? 'disabled' : ''}>${fDone ? '🎉 완료' : `💰${fCost}`}</button>
+    </div>`;
     this.el.castleRows.innerHTML = html;
     this.el.castleRows.querySelectorAll('button').forEach(b => {
-      b.addEventListener('click', () => this.h.onCastle(b.dataset.key));
+      b.addEventListener('click', () =>
+        b.dataset.key === 'feast' ? this.h.onFeast() : this.h.onCastle(b.dataset.key));
     });
   }
 
@@ -873,6 +898,38 @@ export class UI {
   showSkills() { this.el.skillModal.classList.remove('hidden'); }
   hideSkills() { this.el.skillModal.classList.add('hidden'); }
   isSkillOpen() { return !this.el.skillModal.classList.contains('hidden'); }
+
+  /* ---------- 별지기의 옷장 ---------- */
+  setChampName(name) {
+    this.el.champName.textContent = name;
+    this.el.skillTitle.textContent = `✨ ${name}의 별자리`;
+  }
+  renderCloset(look, name) {
+    this.el.closetName.value = name;
+    let html = '';
+    for (const [axis, A] of Object.entries(D.CHAMP_WARDROBE)) {
+      html += `<div class="closet-axis"><span class="claxis">${A.emoji} ${A.name}</span><div class="clopts">`;
+      for (const [key, O] of Object.entries(A.options)) {
+        const sw = O.color != null
+          ? `<span class="clswatch" style="background:#${O.color.toString(16).padStart(6, '0')}"></span>` : '';
+        html += `<button class="clopt${look[axis] === key ? ' on' : ''}" data-axis="${axis}" data-key="${key}">${sw}${O.name}</button>`;
+      }
+      html += `</div></div>`;
+    }
+    this.el.closetRows.innerHTML = html;
+    this.el.closetRows.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => this.h.onClosetPick(b.dataset.axis, b.dataset.key));
+    });
+  }
+  setClosetPreview(url) {
+    this.el.closetPreview.innerHTML = url
+      ? `<img src="${url}" alt="미리보기">`
+      : '<span class="closet-emoji">🌠</span>';
+  }
+  readClosetName() { return this.el.closetName.value; }
+  showCloset() { this.el.closetModal.classList.remove('hidden'); }
+  hideCloset() { this.el.closetModal.classList.add('hidden'); }
+  isClosetOpen() { return !this.el.closetModal.classList.contains('hidden'); }
   /* ---------- 데모 ----------
    * 데모 중임을 항상 화면에 밝힌다. 사용자가 자기 조작이 안 먹는다고
    * 오해하지 않게 하고, 나가는 길도 늘 보이게 둔다. */
@@ -1225,7 +1282,7 @@ export class UI {
        🧮 수학 문제: <b>${state.solved}문제 중 ${state.correct}개 정답 (${rate}%)</b>${state.hints ? ` · 💡 힌트 ${state.hints}회` : ''}${state.retries ? ` · 🔁 재도전 ${state.retries}회 (💰${state.retryGold})` : ''}<br>
        ${state.persisted ? `💪 포기하지 않고 끝내 푼 문제: <b>${state.persisted}개</b><br>` : ''}
        🔥 최고 연승: <b>${state.bestStreak || 0}연속</b> (한 번에 맞히기)${state.timeOuts ? ` · ⏰ 시간 초과 ${state.timeOuts}회` : ''}${state.mathShards ? `<br>🔴 센 문제를 뚫고 번 별조각: <b>✨${state.mathShards}</b>` : ''}
-       ${state.champ ? `<br>🌠 별지기 루나: <b>Lv ${state.champ.level}</b> · 직접 처치 <b>${state.champKills || 0}</b> · ☄️ 별똥별 ${state.starCasts || 0}회${state.ultCasts ? ` · 🌌 은하수 ${state.ultCasts}회` : ''}${state.perfectWaves ? ` · 🛡️ 완벽 방어 ${state.perfectWaves}번` : ''}` : ''}`;
+       ${state.champ ? `<br>🌠 별지기: <b>Lv ${state.champ.level}</b> · 직접 처치 <b>${state.champKills || 0}</b> · ☄️ 별똥별 ${state.starCasts || 0}회${state.ultCasts ? ` · 🌌 은하수 ${state.ultCasts}회` : ''}${state.perfectWaves ? ` · 🛡️ 완벽 방어 ${state.perfectWaves}번` : ''}${state.feasts ? ` · 🎉 잔치 ${state.feasts}번` : ''}` : ''}`;
     this.el.overShards.textContent = `✨ 별조각 +${state.shardsEarned} 획득!`;
     this.el.overModal.classList.remove('hidden');
   }

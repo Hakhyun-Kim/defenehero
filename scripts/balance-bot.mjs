@@ -10,7 +10,7 @@ import * as D from '../src/data.js';
 import * as E from '../src/engine.js';
 /* 판단 로직은 src/bot.js 하나뿐이다 — 브라우저 데모(src/demo.js)와 같은 것을 쓴다.
  * 여기서 다시 구현하면 "봇은 통과하는데 화면에선 다르게 노는" 상황이 생긴다. */
-import { PROFILES, mulberry32, placeAll, chooseCombo, castlePlan, wantsSummon, nextSkill, wantsStar, wantsUlt } from '../src/bot.js';
+import { PROFILES, mulberry32, placeAll, chooseCombo, castlePlan, wantsSummon, nextSkill, wantsStar, wantsUlt, wantsFeast } from '../src/bot.js';
 
 /* 어려운 문제가 걸리면 정답률이 떨어진다 — 이걸 모델링하지 않으면 센 문제가 공짜 돈이 된다.
  * (게임에서도 실제로 그렇다: 한 칸 위 문제는 수가 크고 단계가 하나 더 많다) */
@@ -78,6 +78,8 @@ function prepActions(state, P) {
   placeAll(state, P.sloppy || 0);
   /* 4) 성 관리 */
   for (const key of castlePlan(state, P)) E.castleUpgrade(state, key);
+  /* 5) 잔치 — 남는 골드를 태운다 (판단은 bot.js) */
+  if (wantsFeast(state, P)) E.holdFeast(state);
 }
 
 /* ---------- 한 판 실행 ---------- */

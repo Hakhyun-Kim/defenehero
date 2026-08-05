@@ -40,7 +40,13 @@ const store = {
     if (v == null) localStorage.removeItem('mathdef_autosave');
     else localStorage.setItem('mathdef_autosave', JSON.stringify(v));
   },
+  /* 별지기 꾸미기(이름·옷장) — 판이 아니라 기기에 속한다. 판이 끝나도 "내 캐릭터"는 남는다 */
+  get champCfg() { try { return JSON.parse(localStorage.getItem('mathdef_champ') || '{}'); } catch { return {}; } },
+  set champCfg(v) { localStorage.setItem('mathdef_champ', JSON.stringify(v)); },
 };
+
+/* 별지기의 지금 이름 — 토스트·이야기가 전부 이걸 부른다 */
+const heroName = () => D.champNameOf(store.champCfg.name);
 
 /* ---------- 초기화 ---------- */
 const ui = new UI();
@@ -596,7 +602,9 @@ function playStory(key, onDone = null) {
   if (state.seenStory.has(key)) { if (onDone) onDone(); return false; }
   state.seenStory.add(key);
   storyResume = onDone;
-  ui.showStory(Story.BEATS[key]);
+  /* {name} = 옷장에서 지은 별지기 이름 — 이야기가 그 이름을 부른다 */
+  const beat = Story.BEATS[key];
+  ui.showStory({ ...beat, lines: beat.lines.map(l => l.replace(/\{name\}/g, heroName())) });
   SFX.tap();
   return true;
 }
@@ -648,7 +656,7 @@ function doSpell() {
   const r = E.castStar(state);
   if (!r.ok) {
     if (r.reason === 'phase') ui.toast('☄️ 별똥별은 전투 중에만! 웨이브를 시작해 보세요', 'bad');
-    else if (r.reason === 'ko') ui.toast('😵 루나가 쓰러져 있어요 — 다음 웨이브에 돌아와요', 'bad');
+    else if (r.reason === 'ko') ui.toast(`😵 ${heroName()}가 쓰러져 있어요 — 다음 웨이브에 돌아와요`, 'bad');
     else if (r.reason === 'cd') ui.toast(`☄️ 별이 아직 오는 중이에요 (${Math.ceil(r.left)}초)`, 'bad');
     else if (r.reason === 'none') ui.toast('☄️ 지금은 떨어뜨릴 곳이 없어요 — 몬스터가 오면 눌러요!');
     return;
@@ -662,7 +670,7 @@ function doUlt() {
   const r = E.castUlt(state);
   if (!r.ok) {
     if (r.reason === 'phase') ui.toast('🌌 은하수는 전투 중에만 쏟아부을 수 있어요', 'bad');
-    else if (r.reason === 'ko') ui.toast('😵 루나가 쓰러져 있어요 — 다음 웨이브에 돌아와요', 'bad');
+    else if (r.reason === 'ko') ui.toast(`😵 ${heroName()}가 쓰러져 있어요 — 다음 웨이브에 돌아와요`, 'bad');
     else if (r.reason === 'charge') ui.toast(`🌌 은하수 충전 ${Math.round((r.ult || 0) * 100)}% — 몬스터를 잡으면 차올라요`, 'bad');
     else if (r.reason === 'none') ui.toast('🌌 지금은 쏟아부을 곳이 없어요 — 몬스터가 오면 눌러요!');
     return;
@@ -678,6 +686,61 @@ function openSkills() {
   ui.renderSkills(state);
   ui.showSkills();
   SFX.tap();
+}
+
+/* ---------- 별지기의 옷장 ----------
+ * 미리보기는 초상 렌더러가 실시간으로 굽는다 — 고르는 즉시 갈아입은 모습이 보인다.
+ * 저장을 눌러야 진짜로 입는다: 닫으면 원래대로. */
+let closetDraft = null;
+function openCloset() {
+  const cfg = store.champCfg;
+  closetDraft = { look: D.champLookOf(cfg.look) };
+  ui.renderCloset(closetDraft.look, D.champNameOf(cfg.name));
+  ui.setClosetPreview(champPortrait(closetDraft.look));
+  ui.showCloset();
+  SFX.tap();
+}
+function pickCloset(axis, key) {
+  if (!closetDraft || !D.CHAMP_WARDROBE[axis] || !D.CHAMP_WARDROBE[axis].options[key]) return;
+  closetDraft.look = { ...closetDraft.look, [axis]: key };
+  ui.renderCloset(closetDraft.look, ui.readClosetName());
+  ui.setClosetPreview(champPortrait(closetDraft.look));
+  SFX.tap();
+}
+function saveCloset() {
+  if (!closetDraft) return;
+  const name = D.champNameOf(ui.readClosetName());
+  store.champCfg = { name, look: closetDraft.look };
+  renderer.setChampLook(closetDraft.look);
+  ui.setChampFace(champPortrait(closetDraft.look));
+  ui.setChampName(name);
+  ui.hideCloset();
+  closetDraft = null;
+  SFX.upgrade();
+  ui.toast(`🪞 ${name}, 새 모습으로 변신! 길에서 확인해 보세요`, 'good');
+}
+function closeCloset() {
+  ui.hideCloset();
+  closetDraft = null;
+}
+
+/* ---------- 잔치 ---------- */
+function doFeast() {
+  const r = E.holdFeast(state);
+  if (!r.ok) {
+    if (r.reason === 'phase') ui.toast('🎉 잔치는 준비 단계에만! 전투가 끝나면 벌여요', 'bad');
+    else if (r.reason === 'done') ui.toast('🎉 이번 준비엔 벌써 즐겼어요 — 다음 웨이브에 또!', 'bad');
+    else if (r.reason === 'gold') ui.toast(`잔치에는 💰${r.cost}이 필요해요 — 몬스터를 잡아 모아요 ⚔️`, 'bad');
+    else if (r.reason === 'none') ui.toast('전원 신화! 승급할 용사가 없어요 — 최강 군단이에요 🌌', 'good');
+    return;
+  }
+  SFX.feast();
+  const C = D.CLASSES[r.hero.cls];
+  ui.toast(`🎉 잔치! ${C.emoji} ${C.name}가 신나게 먹고 ${D.TIERS[r.hero.tier].name}(으)로 승급! (💰-${r.cost})`, 'good');
+  if (r.hero.tier >= 3) ui.flashCombine(r.hero.tier);
+  renderer.onEvents(state, r.events);
+  handleEvents(r.events);
+  refreshAll();
 }
 
 /* ---------- 액션 ---------- */
@@ -943,11 +1006,11 @@ function handleEvents(events) {
       case 'champHurt': SFX.heroHurt(ev.x); break;
       case 'champKo':
         SFX.heroDead();
-        ui.toast('😵 별지기 루나가 쓰러졌어요! 다음 웨이브 준비 때 다시 일어나요', 'bad');
+        ui.toast(`😵 별지기 ${heroName()}가 쓰러졌어요! 다음 웨이브 준비 때 다시 일어나요`, 'bad');
         break;
       case 'champLevel':
         SFX.levelUp();
-        ui.toast(`🌠 루나 레벨 업! Lv ${ev.level} — 스킬 포인트 +1 (V키로 별자리를 이어요)`, 'good');
+        ui.toast(`🌠 ${heroName()} 레벨 업! Lv ${ev.level} — 스킬 포인트 +1 (V키로 별자리를 이어요)`, 'good');
         break;
       case 'ultReady':
         SFX.shard();
@@ -962,9 +1025,9 @@ function handleEvents(events) {
         if (ev.perfect) {
           store.shards = store.shards + ev.shard;
           SFX.shard();
-          ui.toast(`🛡️ 완벽 방어! 성이 무피해예요 — ✨별조각 +${ev.shard} · 루나 경험치 +${ev.xp}`, 'good');
+          ui.toast(`🛡️ 완벽 방어! 성이 무피해예요 — ✨별조각 +${ev.shard} · ${heroName()} 경험치 +${ev.xp}`, 'good');
         } else if (ev.revived) {
-          ui.toast('🌠 루나가 다시 일어났어요! 체력이 가득 찼어요');
+          ui.toast(`🌠 ${heroName()}가 다시 일어났어요! 체력이 가득 찼어요`);
         }
         break;
     }
@@ -1173,6 +1236,11 @@ const handlers = {
   onSpell: doSpell,
   onUlt: doUlt,
   onSkillOpen: openSkills,
+  onClosetOpen: openCloset,
+  onClosetPick: pickCloset,
+  onClosetSave: saveCloset,
+  onClosetClose: closeCloset,
+  onFeast: doFeast,
   onSkillPick(key) {
     const r = E.takeSkill(state, key);
     if (!r.ok) {
@@ -1405,6 +1473,13 @@ document.addEventListener('keydown', (ev) => {
     return;   // 나머지 키는 입력창으로
   }
 
+  /* --- 옷장 모달 (이름 입력창의 키는 여기까지 안 온다 — Esc만 온다) --- */
+  if (ui.isClosetOpen()) {
+    if (key === 'Escape') { ev.preventDefault(); closeCloset(); }
+    else if (key === 'Enter') { ev.preventDefault(); saveCloset(); }
+    return;
+  }
+
   /* --- 별자리(스킬트리) 모달 --- */
   if (ui.isSkillOpen()) {
     if (key === 'Escape' || key === 'Enter' || lower === 'v') { ev.preventDefault(); ui.hideSkills(); }
@@ -1505,8 +1580,9 @@ document.addEventListener('keydown', (ev) => {
 /* ---------- 게임 루프 ---------- */
 function isPaused() {
   /* 이야기는 준비 단계에만 뜨므로 멈출 게 없지만, 전설 연출은 전투 중에도 뜬다.
-   * 별자리(스킬)도 멈춘다 — 전투 중에 열어 고민할 시간을 준다 */
-  return ui.isMathOpen() || ui.isMetaOpen() || ui.isSkillOpen() || ui.isRevealOpen() || state.phase === 'over';
+   * 별자리(스킬)·옷장도 멈춘다 — 열어 놓고 고민할 시간을 준다 */
+  return ui.isMathOpen() || ui.isMetaOpen() || ui.isSkillOpen() || ui.isClosetOpen()
+    || ui.isRevealOpen() || state.phase === 'over';
 }
 
 const STEP = 1 / 60;          // 고정 시뮬레이션 타임스텝
@@ -1631,8 +1707,13 @@ const bootSave = (() => {
 })();
 newGame(store.diff, { holdStory: !!bootSave });
 if (bootSave) ui.showStart(bootSave);
-/* 별지기 초상 — 3D 모델을 한 프레임 구워 칩에 넣는다 (실패하면 이모지 그대로) */
-ui.setChampFace(champPortrait());
+/* 별지기 꾸미기 적용 — 옷장에서 고른 모습·이름으로 시작한다 (초상 실패 시 이모지) */
+{
+  const cfg = store.champCfg;
+  renderer.setChampLook(cfg.look);
+  ui.setChampFace(champPortrait(cfg.look));
+  ui.setChampName(D.champNameOf(cfg.name));
+}
 ui.setSoundLabels(isSfxMuted(), isMusicMuted());
 ui.setSpeedLabel(speed);
 ui.coachChip();
@@ -1670,6 +1751,7 @@ demo.attach({
   spell: doSpell,
   ult: doUlt,
   skill(key) { handlers.onSkillPick(key); },
+  feast: doFeast,
   startWave: tryStartWave,
   newGame: () => newGame(store.diff),
   typeAnswer(v) { ui.el.mInput.value = v; submitMath(v); },

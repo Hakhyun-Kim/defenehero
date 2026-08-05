@@ -1869,3 +1869,81 @@ body.demo-on #scene3d { box-shadow: inset 0 0 0 3px rgba(255, 123, 123, 0.55); }
   .champ-btns button { width: 38px; height: 38px; }
   .champ-btns .bkey { display: none; }
 }
+
+/* =====================================================
+ * 별지기의 옷장 — 이름·머리·옷·무기·별빛 꾸미기
+ * ===================================================== */
+#champFace {
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  transition: transform 0.12s;
+}
+#champFace:hover { transform: scale(1.08); box-shadow: 0 0 10px rgba(255, 226, 122, 0.7); }
+
+.modal-card.closet { max-width: 540px; }
+.closet-top { display: flex; gap: 14px; align-items: center; margin-bottom: 10px; }
+#closetPreview {
+  width: 132px;
+  height: 132px;
+  flex: none;
+  border-radius: 16px;
+  background: radial-gradient(circle at 40% 30%, #3b4a8f, #141a33);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 3px solid #ffe27a;
+}
+#closetPreview img { width: 100%; height: 100%; object-fit: cover; }
+#closetPreview .closet-emoji { font-size: 56px; }
+.closet-namebox { flex: 1; }
+.closet-namebox label { font-size: 13px; font-weight: 800; color: #4a5670; }
+.closet-namebox input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 9px 12px;
+  font-family: inherit;
+  font-size: 18px;
+  border: 2px solid #c8d2ea;
+  border-radius: 10px;
+}
+.closet-namebox input:focus { outline: none; border-color: #7f9bf0; }
+.closet-note { font-size: 12px; color: #7a86a0; margin-top: 6px; line-height: 1.5; }
+.closet-axis { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.claxis { flex: none; width: 74px; font-size: 13px; font-weight: 800; color: #2c3352; padding-top: 6px; }
+.clopts { display: flex; flex-wrap: wrap; gap: 6px; }
+.clopt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 2px solid #c8d2ea;
+  background: #fff;
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.clopt:hover { transform: translateY(-1px); border-color: #7f9bf0; }
+.clopt.on {
+  border-color: #f5a93d;
+  background: #fff4d8;
+  font-weight: 800;
+  box-shadow: 0 0 8px rgba(245, 169, 61, 0.4);
+}
+.clswatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  flex: none;
+}
+@media (max-width: 560px) {
+  .closet-top { flex-direction: column; }
+  .claxis { width: 62px; }
+}

@@ -92,3 +92,65 @@ export const SKILL_PLAN = ['blade1', 'guard1', 'star1', 'blade2', 'star2', 'blad
 export const champHpMul  = (lv) => 1 + 0.12 * (lv || 0);
 export const champDmgMul = (lv) => 1 + 0.10 * (lv || 0);
 export const champUltMul = (lv) => 1 + 0.12 * (lv || 0);
+
+/* ---------- 옷장 (꾸미기) ----------
+ * 모델이 코드 생성이라 스킨도 데이터다: 축마다 고른 선택지가 색과 파츠를 정한다.
+ * 능력치와 무관한 순수 치장이고, 이름과 함께 이 기기(localStorage)에 저장돼
+ * 판이 끝나도 유지된다 — "내 캐릭터"는 판보다 오래 산다. */
+export const CHAMP_DEFAULT_NAME = '루나';
+export const CHAMP_WARDROBE = {
+  hair: {
+    name: '머리', emoji: '💇',
+    options: {
+      silver: { name: '은빛', color: 0xe8e4f4 },
+      gold:   { name: '금빛', color: 0xf2d98a },
+      brown:  { name: '밤색', color: 0x7a5230 },
+      pink:   { name: '분홍', color: 0xf5a8c8 },
+      sky:    { name: '하늘', color: 0x9fd0f0 },
+    },
+  },
+  outfit: {
+    name: '옷', emoji: '🧥',
+    options: {
+      night:  { name: '별밤', tunic: 0x3b4a8f, sleeve: 0x2d3a74, pants: 0x252f5a, cape: 0x1e2a5e },
+      rose:   { name: '장미', tunic: 0xb84a6e, sleeve: 0x963a58, pants: 0x5a2438, cape: 0x7a2c48 },
+      forest: { name: '숲',   tunic: 0x3f8f57, sleeve: 0x2f7044, pants: 0x24462e, cape: 0x1e3a28 },
+      sunset: { name: '노을', tunic: 0xd97a3d, sleeve: 0xb85f2c, pants: 0x6e3a1e, cape: 0x8a4426 },
+      snow:   { name: '눈꽃', tunic: 0xe8ecf4, sleeve: 0xc8d2e2, pants: 0x8a94ac, cape: 0xaab6cc },
+    },
+  },
+  weapon: {
+    name: '무기', emoji: '⚔️',
+    options: {
+      sword: { name: '별빛 검' },
+      dual:  { name: '쌍검' },
+      staff: { name: '별 지팡이' },
+    },
+  },
+  star: {
+    name: '별빛', emoji: '✨',
+    options: {
+      gold:   { name: '금빛', color: 0xffe27a },
+      pink:   { name: '분홍', color: 0xff9ecb },
+      sky:    { name: '하늘', color: 0x9fe8ff },
+      violet: { name: '보라', color: 0xd8b4ff },
+      lime:   { name: '연두', color: 0xb6f09a },
+    },
+  },
+};
+export const CHAMP_LOOK_DEFAULT = { hair: 'silver', outfit: 'night', weapon: 'sword', star: 'gold' };
+
+/* 저장값 방어 — 모르는 키·지워진 옵션은 기본값으로 되돌린다 */
+export function champLookOf(raw) {
+  const look = { ...CHAMP_LOOK_DEFAULT };
+  if (raw && typeof raw === 'object') {
+    for (const k of Object.keys(CHAMP_LOOK_DEFAULT)) {
+      if (raw[k] && CHAMP_WARDROBE[k].options[raw[k]]) look[k] = raw[k];
+    }
+  }
+  return look;
+}
+export function champNameOf(raw) {
+  const name = (typeof raw === 'string' ? raw : '').trim().slice(0, 8);
+  return name || CHAMP_DEFAULT_NAME;
+}

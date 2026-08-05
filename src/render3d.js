@@ -521,12 +521,17 @@ function makeHumanHero(cls, tier) {
 }
 
 /* =====================================================
- * 별지기 루나 — 길을 걷는 메인 캐릭터 (걷기용 다리 피벗 포함)
+ * 별지기 — 길을 걷는 메인 캐릭터 (걷기용 다리 피벗 포함)
+ * look(옷장 선택)이 색과 파츠를 정한다 — 스킨은 데이터다.
  * ===================================================== */
-function makeChampion() {
+function makeChampion(look) {
+  const L = D.champLookOf(look);
+  const outfit = D.CHAMP_WARDROBE.outfit.options[L.outfit];
+  const hairColor = D.CHAMP_WARDROBE.hair.options[L.hair].color;
+  const starColor = D.CHAMP_WARDROBE.star.options[L.star].color;
   const g = new THREE.Group();
   const refs = {};
-  const tunic = 0x3b4a8f, sleeve = 0x2d3a74, pants = 0x252f5a;
+  const tunic = outfit.tunic, sleeve = outfit.sleeve, pants = outfit.pants;
 
   /* 다리 — 용사와 달리 피벗을 잡는다: 별지기는 걷는 캐릭터다 */
   refs.legs = [];
@@ -547,7 +552,7 @@ function makeChampion() {
   belt.position.y = 0.24;
   g.add(belt);
   /* 가슴의 별 문장 */
-  const emblem = new THREE.Mesh(new THREE.OctahedronGeometry(0.055), glow(0xffe27a));
+  const emblem = new THREE.Mesh(new THREE.OctahedronGeometry(0.055), glow(starColor));
   emblem.position.set(0, 0.47, 0.17);
   g.add(emblem);
   refs.emblem = emblem;
@@ -577,27 +582,43 @@ function makeChampion() {
     eye.position.set(0.075 * sx, 0.02, 0.185);
     head.add(eye);
   }
-  /* 은빛 머리카락 + 별 머리핀 */
+  /* 머리카락 + 별 머리핀 (색은 옷장이 정한다) */
   const hair = new THREE.Mesh(
-    new THREE.SphereGeometry(0.225, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), lam(0xe8e4f4));
+    new THREE.SphereGeometry(0.225, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), lam(hairColor));
   hair.position.y = 0.03;
   head.add(hair);
-  const pin = new THREE.Mesh(new THREE.OctahedronGeometry(0.05), glow(0xffe27a));
+  const pin = new THREE.Mesh(new THREE.OctahedronGeometry(0.05), glow(starColor));
   pin.position.set(0.14, 0.15, 0.1);
   head.add(pin);
   g.add(head);
   refs.head = head;
 
-  /* 별빛 검 */
-  const sword = makeSword(glow(0xfff0b8));
-  sword.position.set(0, -0.26, 0.06);
-  sword.rotation.x = Math.PI / 5;
-  armPivot.add(sword);
+  /* 무기 — 별빛 검 / 쌍검 / 별 지팡이 */
+  const bladeMat = glow(0xfff0b8);
+  if (L.weapon === 'staff') {
+    const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.1), glow(starColor));
+    const staff = makeStaff(orb);
+    staff.position.set(0, -0.26, 0.06);
+    staff.rotation.x = Math.PI / 6;
+    armPivot.add(staff);
+    refs.staffOrb = orb;
+  } else {
+    const sword = makeSword(bladeMat);
+    sword.position.set(0, -0.26, 0.06);
+    sword.rotation.x = Math.PI / 5;
+    armPivot.add(sword);
+    if (L.weapon === 'dual') {
+      const s2 = makeSword(bladeMat);
+      s2.position.set(0, -0.26, 0.06);
+      s2.rotation.x = Math.PI / 5;
+      armL.add(s2);
+    }
+  }
 
-  /* 별하늘 망토 */
+  /* 망토 */
   const cape = new THREE.Mesh(
     new THREE.PlaneGeometry(0.44, 0.55),
-    new THREE.MeshLambertMaterial({ color: 0x1e2a5e, side: THREE.DoubleSide })
+    new THREE.MeshLambertMaterial({ color: outfit.cape, side: THREE.DoubleSide })
   );
   cape.position.set(0, 0.5, -0.19);
   cape.rotation.x = 0.16;
@@ -605,19 +626,22 @@ function makeChampion() {
   refs.cape = cape;
 
   /* 곁을 도는 작은 별 — 별지기의 표식 */
-  const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.085), glow(0xffe27a));
+  const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.085), glow(starColor));
   star.position.set(0.4, 1.25, 0);
   g.add(star);
   refs.star = star;
+  refs.starColor = starColor;
 
   g.scale.setScalar(1.26);
   return { group: g, refs };
 }
 
-/* 별지기 초상 — heroPortrait와 같은 수법 (오프스크린 1프레임 렌더 → PNG) */
-let _champPortraitUrl;
-export function champPortrait(px = 320) {
-  if (_champPortraitUrl !== undefined) return _champPortraitUrl;
+/* 별지기 초상 — heroPortrait와 같은 수법 (오프스크린 1프레임 렌더 → PNG).
+ * look마다 캐시한다: 옷장에서 옷을 갈아입힐 때마다 미리보기를 새로 굽는다. */
+const _champPortraits = new Map();
+export function champPortrait(look, px = 320) {
+  const key = JSON.stringify(D.champLookOf(look));
+  if (_champPortraits.has(key)) return _champPortraits.get(key);
   let url = null;
   try {
     if (!_pr) {
@@ -635,7 +659,7 @@ export function champPortrait(px = 320) {
     const rim = new THREE.DirectionalLight(0x9fd4ff, 1.1);
     rim.position.set(-2.6, 1.6, -2.2);
     scene.add(rim);
-    const { group } = makeChampion();
+    const { group } = makeChampion(look);
     group.rotation.y = Math.PI * 0.12;
     scene.add(group);
     const cam = new THREE.PerspectiveCamera(28, 1, 0.1, 20);
@@ -647,7 +671,7 @@ export function champPortrait(px = 320) {
   } catch (e) {
     url = null;
   }
-  _champPortraitUrl = url;
+  _champPortraits.set(key, url);
   return url;
 }
 
@@ -1296,17 +1320,19 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
     }
   }
 
-  /* lx/ly = 논리 좌표. 같은 위치에 겹치지 않게 슬롯을 돌려 쓴다 */
+  /* lx/ly = 논리 좌표. 같은 위치에 겹치지 않게 슬롯을 돌려 쓴다.
+   * 밝은 대낮 화면 위에 흰 상자를 띄우면 묻힌다 — 토스트처럼 어두운 바탕 + 흰 글씨로,
+   * 어느 시간대·어느 배경에서도 읽히게 한다. */
   showBubble(lx, ly, text, ttl = 2.4) {
     if (!this.bubbles) this._buildBubbles();
     const slot = this.bubbles.find(b => b.ttl <= 0) || this.bubbles[0];
     const g = slot.c.getContext('2d');
     g.clearRect(0, 0, 512, 128);
-    g.font = '40px Jua, "Segoe UI", "Segoe UI Emoji", sans-serif';
-    const w = Math.min(494, g.measureText(text).width + 48);
+    g.font = '700 42px Jua, "Segoe UI", "Segoe UI Emoji", sans-serif';
+    const w = Math.min(494, g.measureText(text).width + 52);
     const x0 = (512 - w) / 2;
     /* 둥근 상자 + 꼬리 */
-    const r = 20, y0 = 6, h = 82;
+    const r = 22, y0 = 6, h = 84;
     g.beginPath();
     g.moveTo(x0 + r, y0);
     g.arcTo(x0 + w, y0, x0 + w, y0 + h, r);
@@ -1314,22 +1340,22 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
     g.arcTo(x0, y0 + h, x0, y0, r);
     g.arcTo(x0, y0, x0 + w, y0, r);
     g.closePath();
-    g.fillStyle = 'rgba(255,255,255,0.95)';
-    g.strokeStyle = 'rgba(70,80,125,0.9)';
-    g.lineWidth = 4;
+    g.fillStyle = 'rgba(24, 29, 47, 0.92)';
+    g.strokeStyle = 'rgba(255, 226, 122, 0.95)';
+    g.lineWidth = 5;
     g.fill();
     g.stroke();
     g.beginPath();
-    g.moveTo(240, y0 + h - 2);
-    g.lineTo(272, y0 + h - 2);
-    g.lineTo(256, y0 + h + 26);
+    g.moveTo(240, y0 + h + 1);
+    g.lineTo(272, y0 + h + 1);
+    g.lineTo(256, y0 + h + 27);
     g.closePath();
-    g.fillStyle = 'rgba(255,255,255,0.95)';
+    g.fillStyle = 'rgba(24, 29, 47, 0.92)';
     g.fill();
-    g.fillStyle = '#2c3352';
+    g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.fillText(text, 256, y0 + h / 2 + 2, w - 32);
+    g.fillText(text, 256, y0 + h / 2 + 2, w - 36);
     slot.tex.needsUpdate = true;
     slot.spr.position.set(wx(lx), 2.05, wz(ly));
     slot.ttl = slot.life = ttl;
@@ -1453,8 +1479,19 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
   }
 
   /* ---------- 별지기 뷰 ---------- */
+  /* 옷장에서 갈아입으면 뷰를 새로 짓는다 — 위치·방향은 이어받아 그 자리에서 변신한다 */
+  setChampLook(look) {
+    this.champLook = D.champLookOf(look);
+    if (this.champView) {
+      const old = this.champView;
+      this.scene.remove(old.holder);
+      this._champCarry = { pos: { ...old.pos }, dest: { ...old.dest }, faceY: old.faceY };
+      this.champView = null;               // 다음 sync가 새 모습으로 되살린다
+    }
+  }
+
   _makeChampView() {
-    const { group, refs } = makeChampion();
+    const { group, refs } = makeChampion(this.champLook);
     group.traverse(o => { if (o.isMesh) o.castShadow = true; });
     const holder = new THREE.Group();
     holder.add(group);
@@ -1467,10 +1504,10 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
     shadow.position.y = 0.05;
     holder.add(shadow);
 
-    /* 오각 링 — 별지기의 발밑에는 별이 그려져 있다 */
+    /* 오각 링 — 별지기의 발밑에는 별이 그려져 있다 (별빛 색을 따른다) */
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(0.5, 0.62, 5),
-      new THREE.MeshBasicMaterial({ color: 0xffe27a, transparent: true, opacity: 0.8, depthWrite: false })
+      new THREE.MeshBasicMaterial({ color: refs.starColor || 0xffe27a, transparent: true, opacity: 0.8, depthWrite: false })
     );
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.07;
@@ -1493,13 +1530,17 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
     bar.visible = false;
     holder.add(bar);
 
-    holder.position.set(wx(D.CHAMP_HOME.x), 0, wz(D.CHAMP_HOME.y));
+    /* 옷을 갈아입은 직후라면 서 있던 자리를 이어받는다 */
+    const carry = this._champCarry;
+    this._champCarry = null;
+    const pos = carry ? carry.pos : { x: D.CHAMP_HOME.x, y: D.CHAMP_HOME.y };
+    holder.position.set(wx(pos.x), 0, wz(pos.y));
     this.scene.add(holder);
     return {
       holder, model: group, refs, ring, bar, barFg: fg, barW,
-      pos: { x: D.CHAMP_HOME.x, y: D.CHAMP_HOME.y },
-      dest: { x: D.CHAMP_HOME.x, y: D.CHAMP_HOME.y },
-      faceY: Math.PI, targetFaceY: Math.PI,
+      pos: { ...pos },
+      dest: carry ? { ...carry.dest } : { ...pos },
+      faceY: carry ? carry.faceY : Math.PI, targetFaceY: carry ? carry.faceY : Math.PI,
       walkPhase: 0, attackT: 0, koT: 0, ko: false, phase: 'prep',
       wanderT: 1.2, chatWith: null, chatCd: 3, chatSeq: null,
     };
@@ -1620,6 +1661,7 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
     v.refs.star.position.set(Math.cos(sa) * 0.45, (v.ko ? 0.5 : 1.2) + Math.sin(t * 3.1) * 0.08, Math.sin(sa) * 0.45);
     v.refs.star.rotation.y = t * 3;
     v.refs.emblem.rotation.y = t * 2;
+    if (v.refs.staffOrb) v.refs.staffOrb.scale.setScalar(1 + Math.sin(t * 5) * 0.15);
 
     /* 공격 스윙 */
     if (v.attackT > 0) {
@@ -2128,6 +2170,31 @@ diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEd
         case 'champWave':
           if (ev.perfect) this.burst(0, 2.5, -4.3, 0xffe27a, 26, 4, { grav: 2 });
           break;
+        case 'feast': {
+          /* 승급한 용사의 모델을 새 등급으로 다시 짓는다 (망토 색·왕관이 바뀐다) */
+          const hv = this.heroViews.get(ev.heroId);
+          if (hv) { this.scene.remove(hv.holder); this.heroViews.delete(ev.heroId); }
+          /* 잔치 — 승급한 용사 자리(벤치면 광장)에서 색색 폭죽 + 빛기둥 */
+          const fx = ev.pad >= 0 ? wx(D.PADS[ev.pad].x) : 0;
+          const fz = ev.pad >= 0 ? wz(D.PADS[ev.pad].y) : 2.6;
+          this._lightPillar(fx, fz, ev.to);
+          this._shockRing(fx, fz, 2.2, 0xffd93d, 0.7);
+          const cols = [0xffd93d, 0x7fd45e, 0x6eb5ff, 0xff8ac2];
+          for (let k = 0; k < 4; k++) {
+            this.burst(fx + (Math.random() - 0.5) * 1.6, 1 + Math.random(), fz + (Math.random() - 0.5) * 1.6,
+              cols[k], 14, 4, { grav: 3 });
+          }
+          if (this.champView) {
+            this.showBubble(this.champView.pos.x, this.champView.pos.y, '잔치다~!! 🎉', 2.4);
+            /* 별지기도 잔치 자리로 달려간다 (준비 단계 배회 목적지 변경) */
+            this.champView.dest = ev.pad >= 0
+              ? { x: D.PADS[ev.pad].x + 30, y: D.PADS[ev.pad].y + 16 }
+              : { x: 350, y: 300 };
+            this.champView.wanderT = 4;
+          }
+          this.addShake(0.25);
+          break;
+        }
       }
     }
   }

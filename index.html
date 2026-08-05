@@ -52,9 +52,9 @@
       <div id="comboChip" class="hidden"></div>
       <!-- 별지기 칩: 초상 · 레벨 · 체력/경험치 · 마법 버튼 -->
       <div id="champChip">
-        <div id="champFace" title="별지기 루나">🌠</div>
+        <button id="champFace" title="옷장 열기 — 이름과 모습을 바꿔요!">🌠</button>
         <div class="champ-mid">
-          <div class="champ-name"><b>루나</b> <span id="champLv" class="champ-lv">Lv 1</span><span id="champKoTag" class="champ-ko hidden">😵 쓰러짐</span></div>
+          <div class="champ-name"><b id="champName">루나</b> <span id="champLv" class="champ-lv">Lv 1</span><span id="champKoTag" class="champ-ko hidden">😵 쓰러짐</span></div>
           <div class="champ-hp"><div id="champHpFill"></div></div>
           <div class="champ-xp" title="경험치"><div id="champXpFill"></div></div>
         </div>
@@ -96,9 +96,9 @@
       <p>⌨️ <b>Space</b> 웨이브 · <b>S</b> 소환 · <b>C</b> 조합 · <b>Tab</b> 벤치 · <b>F</b> 배치된 용사 ·
         <b>←→</b> 발판 · <b>Enter</b> 배치/이동/교환 · <b>R</b> 회수 · <b>X</b> 판매 ·
         <b>3~6</b> 학년 · <b>7~9</b> 성 · <b>M</b> 음소거 · <b>Esc</b> 취소</p>
-      <p>🌠 <b>별지기 루나</b> — 길을 지키는 기사예요. <b>A</b> 별똥별(무료·쿨다운) · <b>E</b> 은하수(처치로 충전) ·
+      <p>🌠 <b>별지기</b> — 길을 지키는 기사예요. <b>A</b> 별똥별(무료·쿨다운) · <b>E</b> 은하수(처치로 충전) ·
         <b>V</b> 별자리(스킬). 쓰러지면 그 웨이브엔 마법을 못 쓰고, 다음 준비 때 다시 일어나요.
-        성이 무피해로 버티면(완벽 방어) ✨별조각 +1!</p>
+        성이 무피해로 버티면(완벽 방어) ✨별조각 +1! 왼쪽 아래 <b>초상을 누르면 옷장</b> — 이름·머리·옷·무기를 바꿔요.</p>
       <p>💾 <b>저장</b> 웨이브가 끝날 때마다 <b>자동 저장</b>돼요 — 다시 열면 이어하기 메뉴가 떠요 ·
         💾 버튼으로 파일 저장(준비 중에만), 📂로 불러오기 ·
         <b>여러 명 판매</b>는 벤치 아래 💰 버튼!</p>
@@ -251,10 +251,30 @@
   </div>
 </div>
 
+<!-- ===== 별지기의 옷장 (꾸미기) ===== -->
+<div id="closetModal" class="modal hidden">
+  <div class="modal-card closet">
+    <h2>🪞 별지기의 옷장</h2>
+    <div class="closet-top">
+      <div id="closetPreview"><span class="closet-emoji">🌠</span></div>
+      <div class="closet-namebox">
+        <label for="closetName">이름</label>
+        <input id="closetName" maxlength="8" placeholder="루나" autocomplete="off">
+        <p class="closet-note">이름과 모습은 이 기기에 저장돼요.<br>다음 판에도 그대로 이어져요!</p>
+      </div>
+    </div>
+    <div id="closetRows"></div>
+    <div class="rowbtns">
+      <button id="closetSave" class="big amber">이걸로 입을래! (저장)</button>
+      <button id="closetClose">닫기 (Esc)</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== 별지기 별자리 (스킬트리) ===== -->
 <div id="skillModal" class="modal hidden">
   <div class="modal-card skill">
-    <h2>✨ 루나의 별자리</h2>
+    <h2 id="skillTitle">✨ 별지기의 별자리</h2>
     <p class="skill-desc">레벨 업으로 얻은 <b>스킬 포인트 <span id="skillPts">0</span>개</b>로 별을 잇습니다.<br>
       같은 별자리의 별을 먼저 밝혀야 다음 별이 열려요!</p>
     <div id="skillCols"></div>

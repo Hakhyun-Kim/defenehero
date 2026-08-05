@@ -174,6 +174,9 @@ export function nextPrepAction(state, P, rng = Math.random) {
   const plan = castlePlan(state, P);
   if (plan.length) return { type: 'castle', key: plan[0] };
 
+  /* ⑤ 잔치 — 할 일이 다 끝났고 골드가 남으면 */
+  if (wantsFeast(state, P)) return { type: 'feast' };
+
   return null;
 }
 
@@ -181,4 +184,14 @@ export function nextPrepAction(state, P, rng = Math.random) {
 export function midWaveAction(state, P) {
   if (!P.midWave) return null;
   return wantsSummon(state, P) ? { type: 'summon' } : null;
+}
+
+/* ---------- 잔치 ----------
+ * 성 관리까지 하는 프로필(고수)만, 잔치 값을 내고도 여유가 남을 때. */
+export function wantsFeast(state, P) {
+  if (P.useCastle !== true || state.phase !== 'prep') return false;
+  if (state.feastWave === state.wave) return false;
+  const cost = D.feastCost(state.wave);
+  if (state.gold < cost + 600) return false;
+  return [...state.bench, ...state.field].some(h => h.tier < D.maxTierOf(h.cls));
 }

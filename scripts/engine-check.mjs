@@ -329,5 +329,34 @@ function padIndexSane(st, label) {
   ok('준비 단계 마법 잠금', !r.ok && r.reason === 'phase');
 }
 
+/* ---------- ⑦ 잔치: 랜덤 승급 · 준비마다 한 번 · 저장해도 리롤 불가 ---------- */
+{
+  const st = fresh();
+  put(st, 'knight', 0, 0);
+  put(st, 'archer', 1, null);
+  const goldBefore = st.gold;
+  const r = E.holdFeast(st);
+  ok('잔치: 하나가 승급한다', r.ok && r.hero.tier === r.from + 1 && st.feasts === 1);
+  ok('잔치: 골드가 나간다', st.gold === goldBefore - r.cost);
+  ok('잔치: 배치는 유지된다', st.field.length === 1);
+  const r2 = E.holdFeast(st);
+  ok('잔치: 준비마다 한 번', !r2.ok && r2.reason === 'done');
+  /* 저장 → 불러오기: 같은 웨이브에선 여전히 못 연다 */
+  const back = E.deserialize(JSON.parse(JSON.stringify(E.serialize(st))));
+  ok('잔치: 불러와도 리롤 불가', !E.holdFeast(back).ok);
+  /* 웨이브를 치르면 다시 열린다 */
+  E.startWave(st);
+  st.spawnQueue = [];
+  st.enemies = [];
+  E.tick(st, 0.05);
+  st.gold = 99999;
+  ok('잔치: 다음 준비에 다시 열린다', E.holdFeast(st).ok);
+  /* 전원 신화면 잔치를 열 수 없다 */
+  const st2 = fresh();
+  put(st2, 'knight', 4, null);
+  const r3 = E.holdFeast(st2);
+  ok('잔치: 전원 신화면 없다', !r3.ok && r3.reason === 'none');
+}
+
 console.log(failed ? `\n❌ 불변식 ${failed}건 실패` : '\n✅ 엔진 불변식 모두 통과');
 process.exit(failed ? 1 : 0);

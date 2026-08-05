@@ -174,8 +174,12 @@ export const demo = {
         A.castle(act.key);
         break;
       case 'skill':
-        this.say(`✨ 루나의 별자리를 잇습니다 — [${act.skill.name}]`);
+        this.say(`✨ 별지기의 별자리를 잇습니다 — [${act.skill.name}]`);
         A.skill(act.key);
+        break;
+      case 'feast':
+        this.say('🎉 남는 골드로 잔치를 벌입니다 — 누가 승급할까요?');
+        A.feast();
         break;
     }
   },

@@ -382,4 +382,9 @@ export const SFX = {
     noise(0.1, 0.75, 0.08, 420, 0.4); },
   levelUp()    { flowTone([523, 659, 784, 1047], 0, 0.35, 'triangle', 0.1, { filterSweep: [2600, 7000] });
     tone(2093, 0.3, 0.2, 'sine', 0.05); },
+  feast()      { /* 잔치 팡파르 + 왁자지껄 */
+    flowTone([392, 523, 659, 784], 0, 0.3, 'square', 0.08, { filterSweep: [1800, 5200] });
+    flowTone([784, 988, 1319], 0.22, 0.3, 'triangle', 0.07);
+    noise(0.1, 0.5, 0.05, 900, 0.4);
+    tone(1568, 0.5, 0.2, 'sine', 0.06); },
 };

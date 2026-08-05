@@ -29,6 +29,15 @@ export const RECIPE_COST_MUL = 1.25;
 export const combineCost = (resultTier, isRecipe) =>
   Math.round(COMBINE_COST[resultTier] * (isRecipe ? RECIPE_COST_MUL : 1));
 
+/* ---------- 잔치 ----------
+ * 돈 소비 콘텐츠: 준비 단계에 한 번, 골드를 태워 잔치를 벌이면 용사 하나가 랜덤 승급한다.
+ * 같은 등급업을 조합으로 하면 더 싸고 원하는 용사를 고를 수 있다 — 잔치는 수학 관문을
+ * 우회하는 지름길이 아니라, 넘치는 골드를 태우는 사치이자 복권이다.
+ * 낮은 등급일수록 잘 뽑힌다: 잔치는 막내부터 챙긴다. */
+export const feastCost = (w) => 300 + w * 35;
+export const feastTierWeight = (tier) => 1 / (1 + tier * tier);
+export const feastChampXp = (w) => 15 + w * 2;
+
 /* ---------- 메타 진행 ---------- */
 export const shardReward = (wave, bossKills) => Math.max(1, (wave - 1) * 2 + bossKills * 5);
 export const META_UPGRADES = {
