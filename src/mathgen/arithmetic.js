@@ -505,13 +505,18 @@ const G6 = [
   },
   {
     id: 'ratio', min: 3, sec: 46, label: '비례배분', make: (o) => {
-      const a = ri(2, at(o, 5, 7)), b = ri(2, at(o, 5, 7));
+      /* 질문과 답은 한 몸이어야 한다. 예전엔 질문은 첫 수(a) 기준으로 "많이/적게"를
+       * 골랐는데 답은 무조건 Math.max 라서, a < b 인 판마다 정답이 뒤바뀌었다
+       * (49를 2:5로 나누면 "적게 받는 쪽"은 14인데 35라고 채점했다). */
+      const a = ri(2, at(o, 5, 7));
+      let b = ri(2, at(o, 5, 7));
+      if (b === a) b = a + 1;              // 같으면 "많이/적게 받는 쪽"이 성립하지 않는다
       const unit = ri(4, at(o, 12, 20));
       const total = (a + b) * unit;
       return {
         text: `골드 ${total}개를 용사 둘이 ${a} : ${b} 로 나눠 가져요.\n${a > b ? '많이' : '적게'} 받는 쪽은 몇 개일까요?`,
-        answer: Math.max(a, b) * unit,
-        hint: `전체를 ${a + b}묶음으로 봐요. 한 묶음 = ${total} ÷ ${a + b} = ${unit}. 거기에 ${Math.max(a, b)}을 곱해요.`,
+        answer: a * unit,
+        hint: `전체를 ${a + b}묶음으로 봐요. 한 묶음 = ${total} ÷ ${a + b} = ${unit}. 거기에 ${a}를 곱해요.`,
       };
     },
   },
