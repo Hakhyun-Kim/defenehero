@@ -690,17 +690,56 @@ export class Renderer3D {
     if (this.composer) this.composer.setSize(w, h);
   }
 
+  /* 잔디 → 모래 경계선.
+   * 평면 모서리를 그대로 쓰면 성 뒤에 자로 그은 직선이 깔려 단번에 가짜로 보인다.
+   * 바다의 물가 선과 같은 수법으로 푼다: 월드 x 로 노이즈를 뽑아 경계를 흔들고,
+   * 선 너머 픽셀은 discard 해서 밑에 깔린 모래(y=-0.34)가 드러나게 한다.
+   * discard 는 블렌딩이 아니라서 투명 정렬 문제도, 그림자 문제도 안 생긴다. */
+  _grassShoreEdge(mat) {
+    mat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vShoreW;')
+        .replace('#include <begin_vertex>',
+          '#include <begin_vertex>\nvShoreW = (modelMatrix * vec4(position, 1.0)).xz;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', /* glsl */`#include <common>
+varying vec2 vShoreW;
+float shoreHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float shoreNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(shoreHash(i), shoreHash(i + vec2(1, 0)), f.x),
+             mix(shoreHash(i + vec2(0, 1)), shoreHash(i + vec2(1, 1)), f.x), f.y);
+}`)
+        .replace('#include <map_fragment>', /* glsl */`
+/* 큰 굽이 + 잔 톱니 두 옥타브. 바다 쪽(-)으로는 혀처럼 길게 뻗고 뭍 쪽(+)은
+ * 짧게만 문다 — 뭍 쪽으로 너무 파이면 물가 잔디잎(z ≥ SHORE_Z+0.8)이
+ * 모래 위에 뜬 채 남는다. 진폭: 바다 쪽 -1.35 / 뭍 쪽 +0.74 */
+float shoreW = (shoreNoise(vec2(vShoreW.x * 0.33, 3.0)) - 0.5) * 2.0
+             + (shoreNoise(vec2(vShoreW.x * 1.31, 17.0)) - 0.5) * 0.7;
+shoreW *= shoreW > 0.0 ? 0.55 : 1.0;
+float shoreEdge = ${(SHORE_Z - 0.15).toFixed(2)} + shoreW;
+if (vShoreW.y < shoreEdge) discard;
+#include <map_fragment>
+/* 잔디(y=-0.08)와 모래(y=-0.34) 사이 단차에는 옆면이 없다 — 끝단을 살짝
+ * 어둡게 눌러 얕은 턱의 그림자처럼 보이게 한다 */
+diffuseColor.rgb *= 1.0 - 0.26 * (1.0 - smoothstep(0.0, 0.8, vShoreW.y - shoreEdge));`);
+    };
+  }
+
   /* ---------- 지형: 잔디 + 세 갈래 길 + 발판 ---------- */
   _buildTerrain() {
     /* 땅은 물가(SHORE_Z)에서 끝난다 — 그 너머는 바다(nature.js).
      * 바다를 안 만드는 모드에서는 땅이 그대로 화면 끝까지 이어져야 한다.
      * 안 그러면 성 뒤에 배경색이 뚫린 구멍이 생긴다. */
-    const farZ = this.decor ? SHORE_Z : -20;
+    /* 장식 모드에서는 평면을 물가 너머까지 깔아 둔다 — 실제 끝단은 셰이더가
+     * 노이즈 곡선으로 잘라 내므로(_grassShoreEdge), 기하는 곡선이 가장 깊이
+     * 파고드는 곳(-1.35)보다 더 바다 쪽까지 나가 있어야 한다. */
+    const farZ = this.decor ? SHORE_Z - 2.6 : -20;
     const landDepth = 20 - farZ;
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(74, landDepth),
-      new THREE.MeshLambertMaterial({ map: grassTexture(), color: 0xd2e3c2 })
-    );
+    const groundMat = new THREE.MeshLambertMaterial({ map: grassTexture(), color: 0xd2e3c2 });
+    if (this.decor) this._grassShoreEdge(groundMat);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(74, landDepth), groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(0, -0.08, farZ + landDepth / 2);
     ground.receiveShadow = true;
