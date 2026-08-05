@@ -597,7 +597,6 @@ button { font-family: inherit; }
 }
 .big.blue  { background: linear-gradient(180deg, #4da3ff, #2478e0); box-shadow: 0 3px 0 #1a5cb0; }
 .big.amber { background: linear-gradient(180deg, #ffc24d, #ff9800); box-shadow: 0 3px 0 #c76a00; }
-.big.green { background: linear-gradient(180deg, #7bc96f, #43a047); box-shadow: 0 3px 0 #2d7a31; margin-bottom: 8px; }
 .big:active { transform: translateY(2px); box-shadow: none; }
 .big:disabled { background: #c5cedb; box-shadow: none; cursor: not-allowed; }
 
@@ -761,7 +760,6 @@ button { font-family: inherit; }
   border-radius: 999px;
   padding: 1px 7px;
 }
-.tt-head .tt-lv { font-size: 10px; color: #ffd93d; }
 .tt-range { margin-bottom: 6px; }
 .tt-rlabel {
   display: inline-block;
@@ -816,7 +814,6 @@ button { font-family: inherit; }
 }
 /* 용사 패널에서도 같은 마크업 재사용 */
 #hpInfo #tooltip, #hpInfo .tt-head { color: var(--ink); }
-#hpInfo .tt-head .tt-lv { color: #c98a00; }
 #hpInfo b { color: #23304a; }
 #hpInfo .tt-rnum { color: #6a7a94; }
 #hpInfo .tt-rows { border-color: #e3e9f2; }
@@ -919,8 +916,6 @@ button { font-family: inherit; }
   white-space: nowrap;
 }
 .combine-row button:disabled { background: #c5cedb; cursor: not-allowed; }
-.tier-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-
 .combine-sub {
   font-size: 12px;
   font-weight: 800;

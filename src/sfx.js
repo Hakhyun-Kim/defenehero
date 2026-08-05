@@ -225,7 +225,6 @@ export function toggleAll() {
 }
 export const isSfxMuted = () => sfxMuted;
 export const isMusicMuted = () => musicMuted;
-export const isMuted = () => musicMuted;      // 하위 호환(BGM 기준)
 
 /* ---------- 빈도 제한 ---------- */
 const last = {};

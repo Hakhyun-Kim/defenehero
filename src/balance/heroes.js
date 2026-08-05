@@ -127,10 +127,6 @@ export const RECIPES = CLASS_KEYS
     gen: CLASSES[k].mythic ? 3 : 2,
   }));
 
-export function findRecipe(clsA, clsB) {
-  return RECIPES.find(r => (r.a === clsA && r.b === clsB) || (r.a === clsB && r.b === clsA)) || null;
-}
-
 /* 전설 등급 특수능력: 수치가 아니라 "행동"이 바뀐다 */
 export const LEGEND_ABILITIES = {
   knight:       { name: '회전베기',   desc: '사거리 안 모든 적을 한 번에 벤다! 치명타 40%·3배' },

@@ -27,7 +27,6 @@ export const HINT_GOLD = 30;          // 힌트 기본값 (아래 hintCost가 �
  *   어려운 문제는 도움을 싸게 판다 — 끝까지 풀게 하는 게 목적이지
  *   못 풀게 만드는 게 목적이 아니다. (두 번 틀리면 아예 공짜: FREE_HINT_AFTER) */
 export const hintCost = (lv) => [0, 30, 30, 20, 15, 10, 10][clampLv(lv)];
-export const HINT_STEPS = 2;
 
 /* ---------- 수학 난이도 (조합 난이도와 1:1로 묶인다) ----------
  * 핵심 규칙: **만들기 어려운 용사일수록 문제도 어렵고 시간도 빠듯하다.**

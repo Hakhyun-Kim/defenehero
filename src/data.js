@@ -1,13 +1,13 @@
 /* =====================================================
  * 게임 데이터 / 밸런스 정의 — 배럴(barrel)
  *
- * 실제 내용은 src/balance/ 아래 6개 파일로 나뉘어 있다.
+ * 실제 내용은 src/balance/ 아래 7개 파일로 나뉘어 있다.
  * 이 파일은 경로와 이름을 그대로 유지하기 위한 재수출 지점일 뿐이다.
  *
  * ▸ 왜 이 파일이 남아 있나
- *   engine.js · render3d.js · ui.js · main.js 와 scripts/ 의 봇·진단 5종이
- *   전부 `import * as D from './data.js'` 형태로 이 경로를 보고 있다.
- *   배럴을 남겨두면 그 8개 파일이 한 줄도 바뀌지 않고,
+ *   engine/ · gfx/ · ui.js · main.js 와 scripts/ 의 봇·진단 전부가
+ *   `import * as D from '(../)data.js'` 형태로 이 경로를 보고 있다.
+ *   배럴을 남겨두면 그 파일들이 한 줄도 바뀌지 않고,
  *   원본(defenehero)과의 cherry-pick / merge 충돌면이 최소화된다.
  *
  * ▸ 어디를 고쳐야 하나

@@ -36,7 +36,7 @@ BGM은 코드 진행(화성) · 패드 · 아르페지오 · 베이스 · 드럼
 ## 배경 — 바닷가 성, 그리고 저물어 가는 하루
 
 이미지 파일도 **0개**입니다. 배경은 전부 셰이더로 만듭니다 —
-실제 3D 자연은 [`src/nature.js`](src/nature.js), 그려 넣은 하늘은 [`src/sky.js`](src/sky.js).
+실제 3D 자연은 [`src/gfx/nature.js`](src/gfx/nature.js), 그려 넣은 하늘은 [`src/gfx/sky.js`](src/gfx/sky.js).
 
 | | |
 |---|---|
@@ -495,25 +495,43 @@ src/balance/
   castle.js           성 · 포탑
   economy.js          골드 · 조합 비용 · 메타 진행
   mathgate.js         수학 관문 규칙 (난이도 뽑기 · 시간 · 환급 · 적응형 보정)
+  champion.js         별지기 수치 (성장 · 마법 · 스킬트리 · 옷장)
 src/math.js           ── 배럴: 문제 생성기 디스패처 (경로 유지)
 src/mathgen/
   arithmetic.js       학년별(3~6) × 난이도(1~6) 산술 문제 생성기 (유형별 이름·기준 시간 포함)
   tactical.js         "지금 이 판"을 묻는 전술 문제 생성기 (엔진 값을 그대로 읽어 온다)
-src/engine.js         순수 게임 로직 (렌더링 없음 — 봇과 공유)
-src/render3d.js       Three.js 3D 렌더러 (절차 생성 성/지형, 파티클, 블룸)
-src/nature.js         자연 배경 셰이더 (바람 잔디 · 바닷가 · 시간대 · 반딧불이)
-src/sky.js            하늘 밴드 셰이더 (별 · 은하수 · 달 위상 · 거대 행성 · 구름)
+src/engine.js         ── 배럴: 순수 게임 로직 (렌더링 없음 — 봇과 공유)
+src/engine/
+  state.js            상태 생성 · 저장/불러오기
+  champion.js         별지기 능력치 · 경험치 · 스킬
+  roster.js           소환 · 조합 · 배치 · 판매 · 잔치
+  economy.js          성 업그레이드 · 수학 환급/재도전/힌트
+  combat.js           웨이브 생성 · 전투 틱 · 별똥별/은하수
+src/gfx/
+  renderer.js         Three.js 렌더러 본체 (뷰 동기화 · 이벤트→연출 · 프레임)
+  world.js            지형 · 성 (렌더러 믹스인)
+  fx.js               파티클 · 데미지 숫자 · 말풍선 · 충격파 (렌더러 믹스인)
+  units3d.js          용사 13종 + 별지기 3D 모델 · 초상 렌더
+  common.js           좌표 변환 · 재질 · 절차 생성 텍스처
+  nature.js           자연 배경 셰이더 (바람 잔디 · 바닷가 · 시간대 · 반딧불이)
+  sky.js              하늘 밴드 셰이더 (별 · 은하수 · 달 위상 · 거대 행성 · 구름)
+src/app/
+  store.js            기기 저장소 (별조각 · 축복 · 자동저장 · 별지기 꾸미기)
+  mathflow.js         수학 관문 흐름 (난이도 뽑기 · 제한 시간 · 재도전 · 힌트 · 환급)
 src/sfx.js            효과음 합성 (Web Audio, 음원 파일 0개)
 src/music.js          절차 생성 BGM (준비/전투/보스 트랙, 웨이브 템포)
+src/story.js          이야기 비트 · 별지기 수다
+src/bot.js            자동 플레이 판단 (밸런스 봇과 데모가 공유)
+src/demo.js           데모 모드 (봇의 판단을 사람 조작 경로로 흘린다)
 src/ui.js             DOM 패널/모달
-src/main.js           컨트롤러 (고정 타임스텝 루프, 이벤트→사운드/이펙트)
+src/main.js           컨트롤러 (고정 타임스텝 루프, 이벤트→사운드/이펙트 배선)
 scripts/balance-bot.mjs        난이도 시뮬레이션 봇
 scripts/balance-baseline.json  밸런스 회귀 기준선
 ```
 
-밸런스 수치는 `src/balance/` 안에서만 고친다. `src/data.js`와 `src/math.js`는
-경로를 지키기 위한 재수출 지점이라 손대지 않는다 — 덕분에 engine·render3d·ui·main과
-scripts/ 전체가 이 구조 변경에 한 줄도 영향받지 않았다.
+밸런스 수치는 `src/balance/` 안에서만 고친다. `src/data.js`·`src/math.js`·`src/engine.js`는
+경로를 지키기 위한 재수출 지점이다 — 소비자는 배럴 하나만 import 하므로 내부 구조를
+바꿔도 나머지 코드가 영향받지 않는다. 개발 규약과 아키텍처 상세는 [CLAUDE.md](CLAUDE.md) 참고.
 
 > 이 구조는 성인·Steam 타깃 포크인 **[asymptote](https://github.com/Hakhyun-Kim/asymptote)** 와
 > 공유하는 베이스다. 두 저장소는 히스토리를 공유하며, 양방향으로 코드를 주고받을 수 있다.

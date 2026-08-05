@@ -72,24 +72,8 @@ export function placeAll(state, sloppy = 0) {
   }
 }
 
-/* ---------- 조합 선택 ----------
- * 높은 등급 우선, 동급이면 특수 레시피 우선.
- * 게임(main.js)과 봇이 같은 함수를 봐야 판단이 갈라지지 않는다. */
-export function chooseCombo(state) {
-  /* 잠긴 조합은 후보에서 뺀다 — 안 그러면 봇이 같은 관문을 무한히 다시 연다 */
-  const combos = E.listCombos(state).filter(c => c.affordable && !c.locked);
-  if (!combos.length) return null;
-  return combos.sort((a, b) =>
-    b.resultTier - a.resultTier ||
-    (b.kind === 'recipe' ? 1 : 0) - (a.kind === 'recipe' ? 1 : 0)
-  )[0];
-}
-
-export function comboToAction(c) {
-  return c.kind === 'rankup'
-    ? { kind: 'rankup', cls: c.cls, tier: String(c.tier) }
-    : { kind: 'recipe', result: c.result };
-}
+/* 조합 선택 — 게임(main.js)과 같은 판단을 쓴다 (E.bestCombo) */
+export const chooseCombo = E.bestCombo;
 
 /* ---------- 성 관리 ----------
  * 엔진을 부르지 않고 "무엇을 할지" 키만 돌려준다. */
@@ -161,7 +145,7 @@ export function nextPrepAction(state, P, rng = Math.random) {
   /* ② 조합 — 할 수 있으면 한다 (확률은 프로필이 정한다) */
   const combo = chooseCombo(state);
   if (combo && rng() < P.combineChance) {
-    return { type: 'combine', action: comboToAction(combo), combo };
+    return { type: 'combine', action: E.comboToAction(combo), combo };
   }
 
   /* ③ 배치 — 벤치에 남은 용사를 좋은 자리에 */
