@@ -11,7 +11,10 @@ import { SFX, toggleSfx, toggleMusic, toggleAll, isSfxMuted, isMusicMuted, force
 import { music } from './music.js';
 import * as Story from './story.js';
 import { demo } from './demo.js';
-import { store, heroName } from './app/store.js';
+import {
+  store, heroName,
+  codex, mathLog, earned, codexAddHero, codexAddKill, mathAdd, flushRecords, markDirty,
+} from './app/store.js';
 import { createMathFlow } from './app/mathflow.js';
 
 registerDucker((amt, dur) => music.duck(amt, dur));
@@ -75,13 +78,64 @@ const flow = createMathFlow({
   refreshAll: (...a) => refreshAll(...a),
   playStory: (...a) => playStory(...a),
   playReveal: (...a) => playReveal(...a),
+  /* 수학 성장 기록 — 데모(봇)의 풀이는 아이의 기록이 아니다 */
+  onMathDone: (g, label, ok, clean) => {
+    if (demo.active) return;
+    mathAdd(g, label, ok, clean);
+    checkAchievements();
+  },
+  onHeroBorn: (hero) => recordHeroBorn(hero),
 });
 
-function newGame(difficulty, opts = {}) {
-  gameOverToken++;                 // 게임오버 연출 예약이 새 판을 덮지 않게
-  state = E.createGame({ difficulty, metaLevels: store.meta });
-  state.bench.push(E.makeHero(state, 'knight', 0));
-  state.bench.push(E.makeHero(state, 'archer', 0));
+/* ---------- 도감 · 업적 ----------
+ * 조건은 전부 값 비교라 아무 때나 다시 평가해도 싸다. 언제 부르는지가 전부다:
+ * 용사 탄생 · 수학 풀이 · 웨이브 종료 · 레벨 업 · 게임 오버 · 승리.
+ * 데모(봇)가 딴 업적은 업적이 아니므로 데모 중엔 기록도 평가도 멈춘다. */
+function recordHeroBorn(hero) {
+  if (demo.active || !hero) return;
+  codexAddHero(hero.cls, hero.tier);
+  checkAchievements();
+}
+
+function checkAchievements() {
+  if (demo.active) return;
+  const bestStored = Math.max(0, ...Object.keys(D.DIFFICULTIES).map(d => store.best(d)));
+  const ctx = {
+    state, codex, mathLog,
+    /* 진행 중엔 "치른 웨이브"(wave-1)도 인정 — 기록 갱신은 게임 오버 때라 늦다 */
+    bestWave: Math.max(bestStored, state ? state.wave - 1 : 0),
+    victories: store.victories,
+    trialClears: store.trialClears,
+  };
+  for (const a of D.ACHIEVEMENTS) {
+    if (earned[a.key]) continue;
+    let ok = false;
+    try { ok = !!a.check(ctx); } catch { ok = false; }
+    if (!ok) continue;
+    earned[a.key] = 1;
+    markDirty();
+    store.shards = store.shards + a.shards;
+    SFX.shard();
+    ui.toast(`🏅 업적 달성! [${a.emoji} ${a.name}] ✨별조각 +${a.shards}`, 'good');
+    if (a.unlocks) {
+      const A = D.CHAMP_WARDROBE[a.unlocks.axis];
+      ui.toast(`🪞 옷장이 열렸어요! ${A.emoji} ${A.name}: ${A.options[a.unlocks.key].name}`, 'good');
+    }
+    ui.pingBook();
+  }
+}
+
+/* 옷장 잠금 — 업적으로 열린다. 단 지금 입고 있는 옷은 잠그지 않는다
+ * (해금 기능이 나중에 생겼으므로, 이미 입은 옷이 잠기면 뺏는 셈이 된다) */
+function closetLock(axis, key) {
+  const lock = D.WARDROBE_LOCKS[axis] && D.WARDROBE_LOCKS[axis][key];
+  if (!lock || earned[lock.key]) return null;
+  if (D.champLookOf(store.champCfg.look)[axis] === key) return null;
+  return lock;
+}
+
+/* 새 판 공통 리셋 — 새 게임·불러오기·별의 시련이 같은 정리를 밟는다 */
+function resetSession() {
   selBench = null;
   selHero = null;
   flow.resetStreak();
@@ -90,11 +144,46 @@ function newGame(difficulty, opts = {}) {
   sellSel.clear();
   renderer.setPlacementMode(false);
   renderer.setSelectedHero(null);
+  renderer.setHover(null);
+}
+
+/* 시작 용사 두 명 — 빈 벤치는 "뭘 해야 하지"가 된다. 도감도 여기서 첫 칸이 채워진다 */
+function giveStarters() {
+  for (const cls of ['knight', 'archer']) {
+    const h = E.makeHero(state, cls, 0);
+    state.bench.push(h);
+    recordHeroBorn(h);
+  }
+}
+
+function newGame(difficulty, opts = {}) {
+  gameOverToken++;                 // 게임오버 연출 예약이 새 판을 덮지 않게
+  state = E.createGame({ difficulty, metaLevels: store.meta });
+  giveStarters();
+  resetSession();
   refreshAll();
   ui.hideOver();
   music.setWave(1);
   /* 이어하기 메뉴를 띄울 때는 프롤로그를 잠시 미룬다 — 메뉴 위에 이야기가 겹치면 안 된다 */
   if (!opts.holdStory) playStory('prologue', () => playStory('champIntro'));
+}
+
+/* ---------- 별의 시련 — 승리 후 다음 회차 ----------
+ * 별지기의 성장은 그대로, 용사·골드·성은 처음부터, 몬스터는 회차만큼 세게. */
+function startTrial() {
+  if (!state || state.phase === 'over') return;
+  gameOverToken++;
+  state = E.nextLoop(state);
+  giveStarters();
+  resetSession();
+  ui.hideVictory();
+  refreshAll();
+  music.setWave(1);
+  SFX.waveStart();
+  const run = (state.loop || 0) + 1;
+  ui.toast(`🌟 별의 시련 ${run}회차! 몬스터 체력 ×${D.loopHpMul(state.loop).toFixed(2)} — ${heroName()}의 성장은 그대로예요`, 'good');
+  autoSave();                      // 시련의 첫 준비 단계가 곧 이어하기 지점
+  checkAchievements();
 }
 
 /* 판매 모드에 들어가면 배치/이동 선택은 모두 풀어 한 번에 한 가지만 하게 한다 */
@@ -235,15 +324,18 @@ let closetDraft = null;
 function openCloset() {
   const cfg = store.champCfg;
   closetDraft = { look: D.champLookOf(cfg.look) };
-  ui.renderCloset(closetDraft.look, D.champNameOf(cfg.name));
+  ui.renderCloset(closetDraft.look, D.champNameOf(cfg.name), closetLock);
   ui.setClosetPreview(champPortrait(closetDraft.look));
   ui.showCloset();
   SFX.tap();
 }
 function pickCloset(axis, key) {
   if (!closetDraft || !D.CHAMP_WARDROBE[axis] || !D.CHAMP_WARDROBE[axis].options[key]) return;
+  /* 잠긴 옷 — 버튼은 눌리지 않지만(disabled) 다른 경로도 막아 둔다 */
+  const lock = closetLock(axis, key);
+  if (lock) { ui.toast(`🔒 업적 [${lock.emoji} ${lock.name}]을 달성하면 열려요 — ${lock.desc}`, 'bad'); return; }
   closetDraft.look = { ...closetDraft.look, [axis]: key };
-  ui.renderCloset(closetDraft.look, ui.readClosetName());
+  ui.renderCloset(closetDraft.look, ui.readClosetName(), closetLock);
   ui.setClosetPreview(champPortrait(closetDraft.look));
   SFX.tap();
 }
@@ -275,6 +367,7 @@ function doFeast() {
     return;
   }
   SFX.feast();
+  recordHeroBorn(r.hero);              // 잔치 승급도 도감의 새 칸이 될 수 있다
   const C = D.CLASSES[r.hero.cls];
   ui.toast(`🎉 잔치! ${C.emoji} ${C.name}가 신나게 먹고 ${D.TIERS[r.hero.tier].name}(으)로 승급! (💰-${r.cost})`, 'good');
   if (r.hero.tier >= 3) ui.flashCombine(r.hero.tier);
@@ -292,6 +385,7 @@ function doSummon() {
     return;
   }
   SFX.summon(r.hero.tier);
+  recordHeroBorn(r.hero);
   const C = D.CLASSES[r.hero.cls], T = D.TIERS[r.hero.tier];
   /* 등급이 높을수록 화려하게 */
   renderer.summonBurst(r.hero.tier);
@@ -436,15 +530,7 @@ function loadGame(data) {
     ui.setGradeActive(grade);
   }
   store.diff = state.difficulty;
-  selBench = null;
-  selHero = null;
-  flow.resetStreak();
-  overHandled = false;
-  sellMode = false;
-  sellSel.clear();
-  renderer.setPlacementMode(false);
-  renderer.setSelectedHero(null);
-  renderer.setHover(null);
+  resetSession();
   ui.hideOver();
   refreshAll();
   music.setWave(state.wave);
@@ -476,14 +562,17 @@ function autoSave() {
   data.grade = grade;
   data.savedAt = Date.now();
   pendingAutosave = data;
-  idle(flushAutosave);
+  idle(() => { flushAutosave(); flushRecords(); });
 }
-window.addEventListener('pagehide', flushAutosave);
+window.addEventListener('pagehide', () => { flushAutosave(); flushRecords(); });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') flushAutosave();
+  if (document.visibilityState === 'hidden') { flushAutosave(); flushRecords(); }
 });
 
 function handleEvents(events) {
+  /* 승리(서른 번째 아침)가 낀 배치에서는 waveEnd의 이야기 예약을 승리 쪽이 가져간다 —
+   * 둘이 따로 w30 이야기를 걸면 모달이 겹친다 */
+  const hasVictory = events.some(e => e.type === 'victory');
   for (const ev of events) {
     switch (ev.type) {
       case 'enemyHit':
@@ -492,6 +581,7 @@ function handleEvents(events) {
         break;
       case 'block': SFX.block(ev.x); break;
       case 'kill':
+        if (!demo.active) codexAddKill(ev.etype);   // 몬스터 도감 — 봇의 사냥은 세지 않는다
         if (ev.boss) {
           SFX.bossDown(true);
           ui.toast(`🎉 대보스 ${ev.name}를 물리쳤어요!! 💰${ev.gold}`, 'good');
@@ -533,14 +623,36 @@ function handleEvents(events) {
         SFX.waveClear();
         ui.toast(`🎉 ${ev.wave}웨이브 클리어! 보너스 💰${ev.bonus}`, 'good');
         autoSave();                      // 매 웨이브가 이어하기 지점이 된다
+        checkAchievements();
         refreshAll();
         /* 클리어 토스트/효과음과 겹치지 않게 살짝 늦춘다. 준비 단계라 시뮬레이션 손실은 없다 */
-        {
+        if (!hasVictory) {
           const key = Story.beatForWave(ev.wave);
           if (key) setTimeout(() => playStory(key), 700);
         }
         break;
       case 'gameOver': onGameOver(); break;
+
+      /* ---------- 서른 번째 아침 ----------
+       * 엔진은 알렸고, 여기서 갚는다: 별조각·기록·연출·다음 회차 제안.
+       * w30 이야기를 먼저 보여 주고(2회차부터는 이미 봐서 건너뜀) 승리 화면을 연다. */
+      case 'victory': {
+        store.victories = store.victories + 1;
+        if ((ev.loop || 0) >= 1) store.trialClears = store.trialClears + 1;
+        store.shards = store.shards + ev.shards;
+        checkAchievements();
+        flushRecords();
+        const vLoop = ev.loop || 0, vShards = ev.shards;
+        setTimeout(() => playStory('w30', () => {
+          if (state.phase === 'over') return;      // 그 사이 함락됐다면(있을 수 없지만) 겹치지 않게
+          SFX.shard();
+          ui.flashScreen('mythic');
+          renderer.celebrate(0xffd93d, true);
+          ui.showVictory({ loop: vLoop, shards: vShards, state });
+          ui.updateHud(state, store.shards, store.best(state.difficulty));
+        }), 700);
+        break;
+      }
 
       /* ---------- 별지기 ---------- */
       case 'champHurt': SFX.heroHurt(ev.x); break;
@@ -551,6 +663,7 @@ function handleEvents(events) {
       case 'champLevel':
         SFX.levelUp();
         ui.toast(`🌠 ${heroName()} 레벨 업! Lv ${ev.level} — 스킬 포인트 +1 (V키로 별자리를 이어요)`, 'good');
+        checkAchievements();
         break;
       case 'ultReady':
         SFX.shard();
@@ -583,6 +696,8 @@ function onGameOver() {
   pendingAutosave = null;              // 쓰기 대기 중이던 스냅샷도 되살아나면 안 된다
   store.autosave = null;               // 함락된 판은 이어하기에서 지운다
   store.shards = store.shards + state.shardsEarned;
+  checkAchievements();
+  flushRecords();                      // 게임 오버는 확실한 저장 시점 — 도감·수학 기록을 남긴다
   const best = store.best(state.difficulty);
   if (state.wave > best) store.setBest(state.difficulty, state.wave);
   /* 900ms 연출 대기 중에 사용자가 Enter로 새 게임을 시작할 수 있다.
@@ -796,6 +911,19 @@ const handlers = {
     ui.showMeta();
     SFX.tap();
   },
+  /* --- 도감 · 기록 --- */
+  onBookOpen() {
+    ui.renderBook({ state, codex, mathLog, earned });
+    ui.showBook();
+    SFX.tap();
+  },
+  /* --- 서른 번째 아침 --- */
+  onTrial() { SFX.tap(); startTrial(); },
+  onVictoryContinue() {
+    ui.hideVictory();
+    SFX.tap();
+    ui.toast('▶ 끝없는 밤을 계속 지켜요 — 몬스터는 계속 세져요!', 'good');
+  },
   onMetaBuy(key) {
     const M = D.META_UPGRADES[key];
     const levels = store.meta;
@@ -936,7 +1064,7 @@ document.addEventListener('click', (ev) => {
 
 /* 한글 IME 상태에서도 단축키가 통하도록 매핑 */
 const KO = { 'ㄴ': 's', 'ㅔ': 'p', 'ㅊ': 'c', 'ㅂ': 'q', 'ㄱ': 'r', 'ㅌ': 'x', 'ㅗ': 'h', 'ㅡ': 'm', 'ㄹ': 'f',
-             'ㅁ': 'a', 'ㄷ': 'e', 'ㅍ': 'v' };
+             'ㅁ': 'a', 'ㄷ': 'e', 'ㅍ': 'v', 'ㅠ': 'b' };
 
 document.addEventListener('keydown', (ev) => {
   let key = ev.key;
@@ -960,6 +1088,18 @@ document.addEventListener('keydown', (ev) => {
   if (ui.isStoryOpen()) {
     if (key === 'Escape' || key === 'Enter' || key === ' ') { ev.preventDefault(); closeStory(); }
     return;                       // 나머지 키는 삼킨다 — 뒤에서 웨이브가 몰래 시작되면 안 된다
+  }
+
+  /* --- 서른 번째 아침 (승리) — Enter/Esc = 계속 지키기. 시련은 마우스로만(실수 방지) --- */
+  if (ui.isVictoryOpen()) {
+    if (key === 'Escape' || key === 'Enter' || key === ' ') { ev.preventDefault(); handlers.onVictoryContinue(); }
+    return;
+  }
+
+  /* --- 도감 · 기록 --- */
+  if (ui.isBookOpen()) {
+    if (key === 'Escape' || key === 'Enter' || lower === 'b') { ev.preventDefault(); ui.hideBook(); }
+    return;
   }
 
   /* --- 수학 모달 --- */
@@ -1071,6 +1211,7 @@ document.addEventListener('keydown', (ev) => {
     case 'a': doSpell(); return;
     case 'e': doUlt(); return;
     case 'v': openSkills(); return;
+    case 'b': handlers.onBookOpen(); return;
     case 's': doSummon(); return;
     case 'c': {
       const combo = E.bestCombo(state);
@@ -1109,9 +1250,9 @@ document.addEventListener('keydown', (ev) => {
 /* ---------- 게임 루프 ---------- */
 function isPaused() {
   /* 이야기는 준비 단계에만 뜨므로 멈출 게 없지만, 전설 연출은 전투 중에도 뜬다.
-   * 별자리(스킬)·옷장도 멈춘다 — 열어 놓고 고민할 시간을 준다 */
+   * 별자리(스킬)·옷장·도감·승리 화면도 멈춘다 — 열어 놓고 고민할 시간을 준다 */
   return ui.isMathOpen() || ui.isMetaOpen() || ui.isSkillOpen() || ui.isClosetOpen()
-    || ui.isRevealOpen() || state.phase === 'over';
+    || ui.isRevealOpen() || ui.isBookOpen() || ui.isVictoryOpen() || state.phase === 'over';
 }
 
 const STEP = 1 / 60;          // 고정 시뮬레이션 타임스텝
@@ -1318,6 +1459,7 @@ window.__game = {
   E, D, renderer, ui, MathGen, SFX, demo,
   env: { isMobile, decor: useDecor, quality: renderer.quality },
   sfxCore: { getAc, getMaster, isSfxMuted, isMusicMuted },
+  records: { codex, mathLog, earned },
   refresh: refreshAll,
   selectHero(id) { selHero = id; renderer.setSelectedHero(id); ui.renderHeroPanel(state, id); },
   gold(n) { state.gold += n; refreshAll(); },

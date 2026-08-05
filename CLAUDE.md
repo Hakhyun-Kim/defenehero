@@ -47,14 +47,14 @@ story.js              내러티브 텍스트 (이야기 비트 · 별지기 수�
 | `src/engine/roster.js` | 소환·조합(listCombos/bestCombo)·배치·판매·잔치 |
 | `src/engine/economy.js` | 성 업그레이드 · 수학 환급/재도전/힌트 회계 |
 | `src/engine/combat.js` | 웨이브 생성 · `tick(state, dt)` 전투 시뮬 · 별똥별/은하수 |
-| `src/app/store.js` | localStorage (별조각·축복·자동저장·별지기 꾸미기) |
+| `src/app/store.js` | localStorage (별조각·축복·자동저장·꾸미기) + 누적 기록(도감 `codex`·수학 `mathLog`·업적 `earned` — 메모리 캐시, `flushRecords()`로 지연 저장) |
 | `src/app/mathflow.js` | **수학 관문 흐름** — 난이도 뽑기·제한 시간·재도전·힌트·환급. `createMathFlow(ctx)` 팩토리로 main이 조립 |
 | `src/gfx/renderer.js` | Renderer3D 본체 (씬·뷰 동기화·이벤트→연출·프레임) |
 | `src/gfx/world.js` `fx.js` | Renderer3D에 **프로토타입 믹스인**으로 붙는 지형/성 · 이펙트 |
 | `src/gfx/units3d.js` | 용사 13종+별지기 3D 모델 · 오프스크린 초상 렌더 |
 | `src/gfx/common.js` | 좌표 변환(wx/wz) · 재질 · 절차 생성 텍스처 |
 | `src/gfx/nature.js` `sky.js` | 배경 셰이더 (잔디·바다·반딧불이 / 하늘 밴드) |
-| `src/balance/` | **밸런스 수치는 여기서만 고친다** (field·heroes·enemies·castle·economy·mathgate·champion) |
+| `src/balance/` | **밸런스 수치는 여기서만 고친다** (field·heroes·enemies·castle·economy·mathgate·champion·achievements) |
 | `scripts/` | Node에서 engine을 직접 import 하는 검증/봇 (그래서 engine에 DOM이 없어야 한다) |
 
 ## 핵심 데이터 흐름
@@ -68,6 +68,11 @@ story.js              내러티브 텍스트 (이야기 비트 · 별지기 수�
    pending과 listCombos 항목은 `E.comboKey()`로 같은 문자열이 나와야 한다(잠금 키).
 3. **렌더 동기화**: `renderer.sync(state)`가 매 프레임 상태→뷰를 맞추고(id 기반 Map),
    `renderer.frame(dt, state)`가 애니메이션을 돌린다.
+4. **판을 넘는 진행**: 30웨이브 클리어 → 엔진이 `victory` 이벤트 → main이 별조각 지급 +
+   승리 모달 → "별의 시련" 선택 시 `E.nextLoop(state)` (별지기 성장 유지 · 용사/골드/성 리셋 ·
+   `state.loop`+1 → 몬스터가 `loopHpMul` 배율로 세짐). 도감/수학 기록/업적은 store의
+   누적 기록에 쌓이고 `checkAchievements()`(main)가 달성을 평가한다 —
+   **데모(봇) 중에는 기록·업적이 전부 멈춘다** (`demo.active` 가드).
 
 ## 지켜야 할 규약 (어기면 조용히 깨진다)
 

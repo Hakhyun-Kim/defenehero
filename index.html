@@ -20,6 +20,7 @@
       <div class="top-right">
         <div class="record">🏆 <b id="bestWave">-</b>웨이브</div>
         <div class="record shard">✨ <b id="shards">0</b></div>
+        <button id="bookBtn" title="도감·업적·수학 기록 (B)">📖 도감<span id="bookDot" class="tabdot hidden"></span></button>
         <button id="metaBtn">🌟 별의 축복</button>
       </div>
     </header>
@@ -101,7 +102,7 @@
         <b>회수</b> 우클릭</p>
       <p>⌨️ <b>Space</b> 웨이브 · <b>S</b> 소환 · <b>C</b> 조합 · <b>Tab</b> 벤치 · <b>F</b> 배치된 용사 ·
         <b>←→</b> 발판 · <b>Enter</b> 배치/이동/교환 · <b>R</b> 회수 · <b>X</b> 판매 ·
-        <b>3~6</b> 학년 · <b>7~9</b> 성 · <b>M</b> 음소거 · <b>Esc</b> 취소</p>
+        <b>B</b> 도감 · <b>3~6</b> 학년 · <b>7~9</b> 성 · <b>M</b> 음소거 · <b>Esc</b> 취소</p>
       <p>🌠 <b>별지기</b> — 길을 지키는 기사예요. <b>A</b> 별똥별(무료·쿨다운) · <b>E</b> 은하수(처치로 충전) ·
         <b>V</b> 별자리(스킬). 쓰러지면 그 웨이브엔 마법을 못 쓰고, 다음 준비 때 다시 일어나요.
         성이 무피해로 버티면(완벽 방어) ✨별조각 +1! 왼쪽 아래 <b>초상을 누르면 옷장</b> — 이름·머리·옷·무기를 바꿔요.</p>
@@ -118,7 +119,7 @@
     <section class="card fixed" id="statCard">
       <div class="statrow">
         <div class="stat">💰 <b id="gold">150</b></div>
-        <div class="stat">🌊 <b id="waveNo">1</b>웨이브</div>
+        <div class="stat">🌊 <b id="waveNo">1</b>웨이브<span id="loopChip" class="loopchip hidden"></span></div>
         <div class="minibtns">
           <button id="speedBtn" title="게임 속도 (Q)">⏩ x1</button>
           <button id="sfxBtn" title="효과음 끄기/켜기">🔊</button>
@@ -244,6 +245,38 @@
       <button id="shareBtn">📸 기록 카드</button>
     </div>
     <button id="restartBtn" class="big amber">🔄 처음부터 다시 도전! (Enter)</button>
+  </div>
+</div>
+
+<!-- ===== 도감 · 기록 (용사 / 몬스터 / 업적 / 수학) ===== -->
+<div id="bookModal" class="modal hidden">
+  <div class="modal-card book">
+    <h2>📖 도감 · 기록</h2>
+    <div class="book-tabs" id="bookTabs">
+      <button data-btab="heroes" class="on">🧍 용사</button>
+      <button data-btab="enemies">👾 몬스터</button>
+      <button data-btab="ach">🏅 업적</button>
+      <button data-btab="math">🧮 수학</button>
+    </div>
+    <div id="bookBody" class="book-body"></div>
+    <button id="bookClose" class="big blue">닫기 (Esc)</button>
+  </div>
+</div>
+
+<!-- ===== 서른 번째 아침 (승리) ===== -->
+<div id="victoryModal" class="modal hidden">
+  <div class="modal-card victory">
+    <div class="victory-sun">🌅</div>
+    <h2 id="victoryTitle">서른 번째 아침</h2>
+    <div id="victoryStats" class="victory-stats"></div>
+    <div id="victoryShards" class="over-shards"></div>
+    <p class="victory-msg" id="victoryMsg">성은 무너지지 않았다. 셈이 맞았기 때문이다.</p>
+    <button id="victoryTrialBtn" class="big amber">🌟 별의 시련 — 더 강한 마왕군에 도전!</button>
+    <p class="victory-note">별지기의 성장은 그대로, 용사·골드·성은 처음부터 · 몬스터가 훨씬 세져요</p>
+    <div class="rowbtns">
+      <button id="victoryContinueBtn">▶ 계속 지키기 (Enter)</button>
+      <button id="victoryShareBtn">📸 기록 카드</button>
+    </div>
   </div>
 </div>
 

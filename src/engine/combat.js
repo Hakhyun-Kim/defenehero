@@ -106,8 +106,9 @@ function spawnEnemy(state, type, events, presetRoute) {
    * 등급을 여러 단계로 쪼개는 대신 보통/특별 두 가지로만 나눠 한눈에 읽히게 했다. */
   const elite = !E.boss && !E.midBoss && state.rng() < D.eliteChance(w);
   const press = state.mythicPress || 0;
+  const loop = state.loop || 0;          // 별의 시련 — 회차만큼 세지고, 그만큼 더 준다
   const hp = Math.round(E.hp * D.hpScale(w) * state.diff.hpMul * rampMul
-    * (elite ? D.ELITE.hpMul : 1) * D.mythicHpMul(press));
+    * (elite ? D.ELITE.hpMul : 1) * D.mythicHpMul(press) * D.loopHpMul(loop));
   /* 대보스는 지름길로 돌진 */
   const route = E.boss ? D.BOSS_ROUTE : (presetRoute != null ? presetRoute : pickRoute(state));
   const start = D.routePoint(route, 0);
@@ -119,8 +120,8 @@ function spawnEnemy(state, type, events, presetRoute) {
     x: start.x, y: start.y,
     spd: E.spd * (0.92 + state.rng() * 0.16),
     gold: Math.round(E.gold * D.enemyGoldScale(w) * state.diff.goldMul
-      * (elite ? D.ELITE.goldMul : 1) * D.mythicGoldMul(press)),
-    castleDmg: E.castleDmg,
+      * (elite ? D.ELITE.goldMul : 1) * D.mythicGoldMul(press) * D.loopGoldMul(loop)),
+    castleDmg: E.castleDmg * D.loopCastleDmgMul(loop),
     size: E.size * (elite ? D.ELITE.sizeMul : 1), boss: !!E.boss, midBoss: !!E.midBoss,
     elite,
     name: elite ? `${D.ELITE.name} ${E.name}` : E.name,
@@ -703,6 +704,14 @@ function endWave(state, events) {
   }
   /* 포기·실패로 잠갔던 조합을 푼다 — 벌은 "이번엔 못 한다"까지지 영구 박탈이 아니다 */
   if (state.mathLocked) state.mathLocked.clear();
+  /* 서른 번째 아침 — 30웨이브를 버텨 냈다. 회차당 한 번만 울린다(웨이브는 되돌아가지 않으므로).
+   * 엔진은 알리기만 한다: 별조각 지급·연출·다음 회차 시작은 main의 몫이다. */
+  if (state.wave === D.VICTORY_WAVE) {
+    events.push({
+      type: 'victory', wave: state.wave, loop: state.loop || 0,
+      shards: D.victoryShards(state.loop || 0),
+    });
+  }
   state.wave++;
   state.phase = 'prep';
   state.pendingWave = buildWave(state);

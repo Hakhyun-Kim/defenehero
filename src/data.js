@@ -1,7 +1,7 @@
 /* =====================================================
  * 게임 데이터 / 밸런스 정의 — 배럴(barrel)
  *
- * 실제 내용은 src/balance/ 아래 7개 파일로 나뉘어 있다.
+ * 실제 내용은 src/balance/ 아래 8개 파일로 나뉘어 있다.
  * 이 파일은 경로와 이름을 그대로 유지하기 위한 재수출 지점일 뿐이다.
  *
  * ▸ 왜 이 파일이 남아 있나
@@ -26,3 +26,4 @@ export * from './balance/castle.js';
 export * from './balance/economy.js';
 export * from './balance/mathgate.js';
 export * from './balance/champion.js';
+export * from './balance/achievements.js';

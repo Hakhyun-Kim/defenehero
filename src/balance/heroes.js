@@ -26,6 +26,9 @@ export const MAX_TIER = 4;
  * 신화 용사(검성/대마도사/수호천사)의 정점 자리는 그대로다 — 기본 수치가
  * 두 배쯤 높아서, 같은 신화 등급이라도 급이 다르다. */
 export const maxTierOf = () => MAX_TIER;
+/* 태어날 수 있는 최저 등급 — 도감 칸의 하한.
+ * 특수는 레시피 결과라 1부터(재료 0등급 짝 → 결과 1), 신화는 특수 짝이라 2부터. */
+export const minTierOf = (cls) => CLASSES[cls].mythic ? 2 : CLASSES[cls].special ? 1 : 0;
 
 /* 직업 정의 — 기본 4종(소환으로만 등장) + 특수 6종(레시피 조합으로만 탄생)
  * atk: melee(근접 즉시) | arrow(화살 투사체) | orb(구슬 투사체)

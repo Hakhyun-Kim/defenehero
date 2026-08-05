@@ -5,7 +5,8 @@
  * 여기에 제한 시간 · 연승 · 난이도 뽑기(환급 배수)를 얹어 긴장감을 만든다.
  *
  * main.js가 createMathFlow(ctx)로 조립한다.
- *   ctx = { getState, getGrade, ui, renderer, store, refreshAll, playStory, playReveal }
+ *   ctx = { getState, getGrade, ui, renderer, store, refreshAll, playStory, playReveal,
+ *           onMathDone?, onHeroBorn? }   ← 수학 성장 기록·도감·업적 훅 (main이 데모 여부를 거른다)
  * getState/getGrade가 함수인 이유: 새 게임/불러오기가 state를 통째로 갈아끼운다.
  * ===================================================== */
 import * as D from '../data.js';
@@ -244,6 +245,7 @@ export function createMathFlow(ctx) {
     const state = ctx.getState();
     state.timeOuts++;
     E.applyMathResult(state, false);
+    if (ctx.onMathDone) ctx.onMathDone(modal.grade, modal.prob.label, false, false);
     SFX.timeOut();
     ui.flashHit();
     afterMiss(`⏰ 시간 초과! 정답은 ${modal.prob.answer} 이에요.`);
@@ -255,6 +257,9 @@ export function createMathFlow(ctx) {
     modal.tries = (modal.tries || 0) + 1;
     const ok = MathGen.check(value, modal.prob.answer, modal.prob.kind);
     E.applyMathResult(state, ok);
+    if (ctx.onMathDone) {
+      ctx.onMathDone(modal.grade, modal.prob.label, ok, ok && modal.tries === 1 && !modal.usedHint);
+    }
     if (ok) {
       const clean = modal.tries === 1 && !modal.usedHint;
       E.recordMathOutcome(state, clean);       // 적응형 난이도의 원재료
@@ -279,6 +284,7 @@ export function createMathFlow(ctx) {
         }
         if (r.ok) {
           SFX.combine();
+          if (ctx.onHeroBorn) ctx.onHeroBorn(r.hero);
           const C = D.CLASSES[r.hero.cls];
           let msg = `🎉 정답! ${D.TIERS[r.hero.tier].name} ${C.name} ${C.emoji} 탄생! (💰-${r.cost})`;
           if (r.lucky) {

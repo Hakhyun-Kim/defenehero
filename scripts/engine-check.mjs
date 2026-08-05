@@ -358,5 +358,59 @@ function padIndexSane(st, label) {
   ok('잔치: 전원 신화면 없다', !r3.ok && r3.reason === 'none');
 }
 
+/* ---------- ⑧ 서른 번째 아침 · 별의 시련 (회차) ---------- */
+{
+  /* 30웨이브를 클리어하면 victory 이벤트가 정확히 한 번 나온다 */
+  const st = fresh();
+  st.wave = 30;
+  E.startWave(st);
+  st.spawnQueue = [];
+  st.enemies = [];
+  const evs = E.tick(st, 0.05);
+  const vics = evs.filter(e => e.type === 'victory');
+  ok('승리: 30웨이브 클리어에 victory 이벤트', vics.length === 1 && vics[0].wave === 30);
+  ok('승리: 별조각 보상이 실려 있다', vics.length === 1 && vics[0].shards >= 1);
+  ok('승리 후에도 게임은 계속된다', st.phase === 'prep' && st.wave === 31);
+  /* 29·31웨이브 클리어에는 없다 */
+  const st2 = fresh();
+  st2.wave = 29;
+  E.startWave(st2); st2.spawnQueue = []; st2.enemies = [];
+  const evs2 = E.tick(st2, 0.05);
+  ok('승리: 다른 웨이브에는 없다', !evs2.some(e => e.type === 'victory'));
+}
+{
+  /* 별의 시련: 별지기는 이어지고 나머지는 리셋, 적은 세진다 */
+  const st = fresh();
+  put(st, 'knight', 3, 0);
+  st.wave = 31;
+  st.champ.level = 12;
+  st.champ.sp = 3;
+  st.champ.skills = { blade1: 2 };
+  st.seenStory = new Set(['w30']);
+  const next = E.nextLoop(st);
+  ok('시련: 회차가 오른다', next.loop === 1);
+  ok('시련: 별지기 성장 유지', next.champ.level === 12 && next.champ.sp === 3 && next.champ.skills.blade1 === 2);
+  ok('시련: 용사는 리셋', next.bench.length === 0 && next.field.length === 0);
+  ok('시련: 웨이브·성 리셋', next.wave === 1 && next.castleHp === next.castleMax);
+  ok('시련: 본 이야기는 다시 안 본다', next.seenStory.has('w30'));
+  ok('시련: 은하수는 0부터', next.champ.ult === 0);
+  /* 적 체력·골드가 회차 배율만큼 오른다 */
+  ok('시련: 체력 배율 단조 증가', D.loopHpMul(1) > D.loopHpMul(0) && D.loopHpMul(2) > D.loopHpMul(1));
+  E.startWave(next);
+  next.waveT = 999;                       // 스폰 큐를 전부 쏟는다
+  const evs = E.tick(next, 0.001);
+  const spawned = next.enemies.find(e => e.type === 'goblin');
+  const base = D.ENEMY_TYPES.goblin;
+  if (spawned) {
+    const minHp = Math.round(base.hp * D.hpScale(1) * next.diff.hpMul * D.loopHpMul(1)) - 1;
+    ok('시련: 스폰 몬스터가 실제로 세다', spawned.hp >= minHp, );
+  } else {
+    ok('시련: 스폰 몬스터가 실제로 세다', false, '고블린이 스폰되지 않음');
+  }
+  /* 저장 → 불러오기가 회차를 기억한다 */
+  const back = E.deserialize(JSON.parse(JSON.stringify(E.serialize(next))));
+  ok('시련: 저장/불러오기가 회차 유지', back.loop === 1);
+}
+
 console.log(failed ? `\n❌ 불변식 ${failed}건 실패` : '\n✅ 엔진 불변식 모두 통과');
 process.exit(failed ? 1 : 0);

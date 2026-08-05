@@ -20,6 +20,8 @@ export function createGame(opts = {}) {
     rng, ri: riFor(rng), pick: pickFor(rng),
     difficulty: opts.difficulty || 'normal', diff,
     meta,
+    /* 별의 시련 회차 — 0 = 첫 여정. 몬스터 체력·골드가 회차만큼 강해진다 (enemies.js) */
+    loop: Math.max(0, Math.min(99, Math.round(opts.loop || 0))),
     dmgMul: D.META_UPGRADES.heroDmg.apply(meta.heroDmg),
     mathMul: D.META_UPGRADES.mathBonus.apply(meta.mathBonus),
 
@@ -66,6 +68,34 @@ export function createGame(opts = {}) {
   return state;
 }
 
+/* ---------- 별의 시련 — 승리 후 다음 회차 ----------
+ * 30웨이브를 클리어한 판에서 부른다. 별지기의 성장(레벨·경험치·스킬)은 이어지고
+ * 용사·골드·성·웨이브는 처음으로 돌아간다. 적은 회차만큼 세진다(enemies.loopHpMul).
+ * 은하수 충전은 0부터 — 이월되면 새 회차 첫 웨이브가 공짜로 지워진다.
+ * 본 이야기·연출 기록도 들고 간다: 회차마다 같은 막간 이야기를 또 보면 스킵 게임이 된다. */
+export function nextLoop(state) {
+  const next = createGame({
+    difficulty: state.difficulty,
+    metaLevels: state.meta,
+    rng: state.rng === Math.random ? undefined : state.rng,
+    loop: (state.loop || 0) + 1,
+  });
+  const c = state.champ, n = next.champ;
+  if (c && n) {
+    n.level = c.level;
+    n.xp = c.xp;
+    n.sp = c.sp;
+    n.skills = { ...c.skills };
+    n.maxHp = champStats(next).maxHp;
+    n.hp = n.maxHp;
+  }
+  next.seenStory = new Set(state.seenStory || []);
+  next.revealed = new Set(state.revealed || []);
+  /* 적응형 난이도는 판이 아니라 아이의 것 — 이어 간다 */
+  next.mathWindow = [...(state.mathWindow || [])];
+  return next;
+}
+
 /* ---------- 저장 / 불러오기 ----------
  * 저장은 "준비 단계 스냅샷"이다. 전투 중의 몬스터·투사체는 서로를 참조하는
  * 객체 그래프라 직렬화가 잘 깨지고, 전투 도중 복원을 허용하면 반쯤 이긴
@@ -88,6 +118,7 @@ export function serialize(state) {
     game: 'defenehero', v: SAVE_VERSION,
     difficulty: state.difficulty,
     meta: { ...state.meta },
+    loop: state.loop || 0,               // 별의 시련 회차 — 이어하기가 회차를 잊으면 안 된다
     wave: state.wave,
     gold: state.gold,
     feastWave: state.feastWave,          // 이번 준비에 잔치를 했는가 — 불러와도 다시 못 연다
@@ -121,7 +152,7 @@ export function deserialize(data, opts = {}) {
     (Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : dflt);
   const difficulty = D.DIFFICULTIES[data.difficulty] ? data.difficulty : 'normal';
   const meta = (data.meta && typeof data.meta === 'object') ? data.meta : {};
-  const state = createGame({ difficulty, metaLevels: meta, rng: opts.rng });
+  const state = createGame({ difficulty, metaLevels: meta, rng: opts.rng, loop: data.loop });
 
   state.wave = clamp(data.wave, 1, 999, 1);
   state.gold = clamp(data.gold, 0, 1e9, state.gold);

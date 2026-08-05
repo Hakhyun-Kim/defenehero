@@ -38,14 +38,16 @@ const press = (ctx) => mythicCount(ctx);
 export function enemyHp(ctx, type) {
   const E = D.ENEMY_TYPES[type];
   const ramp = E.midBoss ? D.midBossRamp(ctx.wave) : 1;
-  return Math.round(E.hp * D.hpScale(ctx.wave) * ctx.diff.hpMul * ramp * D.mythicHpMul(press(ctx)));
+  return Math.round(E.hp * D.hpScale(ctx.wave) * ctx.diff.hpMul * ramp
+    * D.mythicHpMul(press(ctx)) * D.loopHpMul(ctx.loop));
 }
 export function enemyGold(ctx, type) {
   const E = D.ENEMY_TYPES[type];
-  return Math.round(E.gold * D.enemyGoldScale(ctx.wave) * ctx.diff.goldMul * D.mythicGoldMul(press(ctx)));
+  return Math.round(E.gold * D.enemyGoldScale(ctx.wave) * ctx.diff.goldMul
+    * D.mythicGoldMul(press(ctx)) * D.loopGoldMul(ctx.loop));
 }
 export function enemyCastleDmg(ctx, type) {
-  return Math.round(D.ENEMY_TYPES[type].castleDmg * D.castleDmgScale(ctx.wave));
+  return Math.round(D.ENEMY_TYPES[type].castleDmg * D.loopCastleDmgMul(ctx.loop) * D.castleDmgScale(ctx.wave));
 }
 
 const label = (type) => `${D.ENEMY_TYPES[type].emoji} ${D.ENEMY_TYPES[type].name}`;

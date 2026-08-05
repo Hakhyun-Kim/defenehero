@@ -107,6 +107,9 @@ export class UI {
       'startModal', 'continueInfo', 'continueBtn', 'newGameBtn',
       'overModal', 'overStats', 'overShards', 'restartBtn', 'shareBtn', 'overMetaBtn',
       'metaModal', 'metaShards', 'metaRows', 'metaClose', 'tooltip',
+      'bookBtn', 'bookDot', 'bookModal', 'bookTabs', 'bookBody', 'bookClose',
+      'victoryModal', 'victoryTitle', 'victoryStats', 'victoryShards', 'victoryMsg',
+      'victoryTrialBtn', 'victoryContinueBtn', 'victoryShareBtn', 'loopChip',
       'revealCard', 'rarityFlash',
       'tabs', 'heroDot', 'combineDot', 'helpBtn', 'helpBox',
       'champChip', 'champFace', 'champName', 'champLv', 'champKoTag', 'champHpFill', 'champXpFill',
@@ -173,6 +176,20 @@ export class UI {
     el.metaBtn.addEventListener('click', h.onMetaOpen);
     el.overMetaBtn.addEventListener('click', h.onMetaOpen);
     el.metaClose.addEventListener('click', () => this.hideMeta());
+    /* 도감·기록 */
+    el.bookBtn.addEventListener('click', () => h.onBookOpen());
+    el.bookClose.addEventListener('click', () => this.hideBook());
+    el.bookTabs.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => {
+        this._bookTab = b.dataset.btab;
+        el.bookTabs.querySelectorAll('button').forEach(v => v.classList.toggle('on', v === b));
+        this._renderBookBody();
+      });
+    });
+    /* 서른 번째 아침 (승리) */
+    el.victoryTrialBtn.addEventListener('click', () => h.onTrial());
+    el.victoryContinueBtn.addEventListener('click', () => h.onVictoryContinue());
+    el.victoryShareBtn.addEventListener('click', h.onShare);
     el.restartBtn.addEventListener('click', h.onRestart);
     el.shareBtn.addEventListener('click', h.onShare);
     el.recallBtn.addEventListener('click', () => h.onRecall());
@@ -308,6 +325,14 @@ export class UI {
     const el = this.el;
     el.gold.textContent = state.gold;
     el.waveNo.textContent = state.wave;
+    /* 별의 시련 회차 — 1회차(첫 여정)에는 조용히 숨긴다 */
+    const loop = state.loop || 0;
+    if (this._loopN !== loop) {
+      this._loopN = loop;
+      el.loopChip.classList.toggle('hidden', !loop);
+      el.loopChip.textContent = loop ? `🌟${loop + 1}회차` : '';
+      el.loopChip.title = loop ? `별의 시련 ${loop + 1}회차 — 몬스터 체력 ×${D.loopHpMul(loop).toFixed(2)}` : '';
+    }
     el.shards.textContent = shards;
     el.bestWave.textContent = best || '-';
     el.castleText.textContent = `${state.castleHp} / ${state.castleMax}`;
@@ -818,6 +843,148 @@ export class UI {
   showMeta() { this.el.metaModal.classList.remove('hidden'); }
   hideMeta() { this.el.metaModal.classList.add('hidden'); }
 
+  /* ---------- 도감 · 기록 ----------
+   * 데이터는 열 때 main이 통째로 넘긴다(renderBook). 탭 전환은 넘겨받은 데이터로
+   * 다시 그리기만 한다 — 게임이 멈춰 있는 동안 값이 변하지 않으므로 안전하다. */
+  renderBook(data) {
+    this._bookData = data;
+    if (!this._bookTab) this._bookTab = 'heroes';
+    this.el.bookTabs.querySelectorAll('button').forEach(b =>
+      b.classList.toggle('on', b.dataset.btab === this._bookTab));
+    this._renderBookBody();
+  }
+  _renderBookBody() {
+    const d = this._bookData;
+    if (!d) return;
+    const tab = this._bookTab || 'heroes';
+    let html = '';
+    if (tab === 'heroes') html = this._bookHeroes(d);
+    else if (tab === 'enemies') html = this._bookEnemies(d);
+    else if (tab === 'ach') html = this._bookAch(d);
+    else html = this._bookMath(d);
+    this.el.bookBody.innerHTML = html;
+  }
+
+  _bookHeroes(d) {
+    const filled = Object.keys(d.codex.heroes).filter(k => d.codex.heroes[k] > 0).length;
+    let html = `<div class="book-progress">채운 칸 <b>${filled}</b> / ${D.CODEX_HERO_CELLS}
+      <span class="cnt">용사를 만들면 칸이 채워져요 — 소환·조합·잔치 모두!</span></div>`;
+    for (const cls of D.CLASS_KEYS) {
+      const C = D.CLASSES[cls];
+      const min = D.minTierOf(cls);
+      const known = Object.keys(d.codex.heroes).some(k => k.startsWith(cls + ':') && d.codex.heroes[k] > 0);
+      let cells = '';
+      for (let t = min; t <= D.MAX_TIER; t++) {
+        const n = d.codex.heroes[`${cls}:${t}`] || 0;
+        cells += n > 0
+          ? `<span class="bkcell on" style="background:${D.TIERS[t].color}" title="${D.TIERS[t].name} ${C.name} — ${n}번 만들었어요">${D.TIERS[t].name[0]}</span>`
+          : `<span class="bkcell" title="${D.TIERS[t].name} ${C.name} — 아직 못 만들었어요">?</span>`;
+      }
+      const tag = C.mythic ? '<span class="bktag mythic">신화</span>'
+        : C.special ? '<span class="bktag sp">특수</span>' : '';
+      html += `<div class="book-row${known ? '' : ' unknown'}">
+        <span class="bkemoji">${known ? C.emoji : '❓'}</span>
+        <span class="bkname">${known ? C.name : '???'}${tag}</span>
+        <span class="bkcells">${cells}</span>
+      </div>`;
+    }
+    return html;
+  }
+
+  _bookEnemies(d) {
+    const types = Object.keys(D.ENEMY_TYPES);
+    const met = types.filter(t => (d.codex.kills[t] || 0) > 0).length;
+    let html = `<div class="book-progress">물리친 종류 <b>${met}</b> / ${types.length}
+      <span class="cnt">한 번이라도 물리치면 도감에 실려요</span></div>`;
+    for (const t of types) {
+      const E2 = D.ENEMY_TYPES[t];
+      const n = d.codex.kills[t] || 0;
+      const tag = E2.boss ? '<span class="bktag boss">대보스</span>'
+        : E2.midBoss ? '<span class="bktag mid">중간보스</span>' : '';
+      html += n > 0
+        ? `<div class="book-row"><span class="bkemoji">${E2.emoji}</span>
+            <span class="bkname">${E2.name}${tag}</span>
+            <span class="bkkills">⚔️ ${n.toLocaleString()}마리</span></div>`
+        : `<div class="book-row unknown"><span class="bkemoji">❓</span>
+            <span class="bkname">???${tag}</span>
+            <span class="bkkills">아직 못 만났어요</span></div>`;
+    }
+    return html;
+  }
+
+  _bookAch(d) {
+    const done = D.ACHIEVEMENTS.filter(a => d.earned[a.key]).length;
+    let html = `<div class="book-progress">달성 <b>${done}</b> / ${D.ACHIEVEMENTS.length}
+      <span class="cnt">달성하면 ✨별조각을 받아요 — 🪞 표시는 옷장이 열려요!</span></div>`;
+    for (const a of D.ACHIEVEMENTS) {
+      const got = !!d.earned[a.key];
+      const wardrobe = a.unlocks
+        ? `<span class="bkunlock">🪞 ${D.CHAMP_WARDROBE[a.unlocks.axis].name}: ${D.CHAMP_WARDROBE[a.unlocks.axis].options[a.unlocks.key].name}</span>`
+        : '';
+      html += `<div class="book-row ach${got ? ' done' : ''}">
+        <span class="bkemoji">${a.emoji}</span>
+        <div class="bkach">
+          <div class="bkname">${a.name} ${got ? '<span class="bkdone">✓ 달성!</span>' : ''}</div>
+          <div class="bkdesc">${a.desc}</div>
+        </div>
+        <span class="bkreward">✨${a.shards}${wardrobe}</span>
+      </div>`;
+    }
+    return html;
+  }
+
+  _bookMath(d) {
+    const m = d.mathLog;
+    const rate = m.total ? Math.round((m.correct / m.total) * 100) : 0;
+    const cleanRate = m.total ? Math.round((m.clean / m.total) * 100) : 0;
+    let html = `<div class="mathsum">
+      <div class="msbox"><b>${m.total.toLocaleString()}</b><span>푼 문제</span></div>
+      <div class="msbox"><b>${rate}%</b><span>정답률</span></div>
+      <div class="msbox"><b>${cleanRate}%</b><span>한 번에!</span></div>
+    </div>`;
+    const rows = Object.entries(m.types).sort((a, b) => b[1].t - a[1].t);
+    if (!rows.length) {
+      html += `<div class="combine-empty">아직 기록이 없어요 — 조합할 때 수학 문제를 풀면 쌓여요!</div>`;
+      return html;
+    }
+    html += `<div class="book-progress">유형별 기록 <span class="cnt">많이 푼 순서 · 막대 = 정답률</span></div>`;
+    for (const [key, v] of rows.slice(0, 30)) {
+      const [g, label] = key.split('|');
+      const acc = v.t ? Math.round((v.c / v.t) * 100) : 0;
+      html += `<div class="mathrow" title="${v.t}문제 · 정답 ${v.c} · 한 번에 ${v.cl}">
+        <span class="mrgrade">${g}학년</span>
+        <span class="mrname">${label}</span>
+        <span class="mrbar"><i style="width:${acc}%"></i></span>
+        <span class="mrnum">${acc}% · ${v.t}문제</span>
+      </div>`;
+    }
+    return html;
+  }
+
+  showBook() { this.el.bookModal.classList.remove('hidden'); this.el.bookDot.classList.add('hidden'); }
+  hideBook() { this.el.bookModal.classList.add('hidden'); }
+  isBookOpen() { return !this.el.bookModal.classList.contains('hidden'); }
+  /* 새 업적을 딴 순간 도감 버튼에 점을 찍는다 — 열면 사라진다 */
+  pingBook() { if (!this.isBookOpen()) this.el.bookDot.classList.remove('hidden'); }
+
+  /* ---------- 서른 번째 아침 (승리) ---------- */
+  showVictory({ loop, shards, state }) {
+    const el = this.el;
+    const run = (loop || 0) + 1;
+    el.victoryTitle.textContent = run > 1 ? `서른 번째 아침 — ${run}번째 여정` : '🌅 서른 번째 아침';
+    el.victoryStats.innerHTML =
+      `🌊 <b>30웨이브</b>를 지켜냈어요! (${D.DIFFICULTIES[state.difficulty].name}${run > 1 ? ` · ${run}회차` : ''})<br>
+       👾 물리친 몬스터 <b>${state.kills}</b> · 🌌 신화 <b>${state.mythicsMade}</b> ·
+       🧮 수학 <b>${state.solved}문제 중 ${state.correct}개</b><br>
+       🌠 별지기 <b>Lv ${state.champ ? state.champ.level : 1}</b> — 다음 여정에도 그대로 함께해요`;
+    el.victoryShards.textContent = `✨ 별조각 +${shards} 획득!`;
+    el.victoryTrialBtn.textContent = `🌟 별의 시련 — ${run + 1}회차 도전!`;
+    el.victoryModal.classList.remove('hidden');
+    setTimeout(() => el.victoryContinueBtn.focus(), 30);
+  }
+  hideVictory() { this.el.victoryModal.classList.add('hidden'); }
+  isVictoryOpen() { return !this.el.victoryModal.classList.contains('hidden'); }
+
   /* ---------- 별지기 칩 ----------
    * 매 프레임 불리므로 "값이 바뀔 때만" DOM을 만진다 (comboChip과 같은 규칙). */
   setChampFace(url) {
@@ -924,20 +1091,26 @@ export class UI {
     this.el.champName.textContent = name;
     this.el.skillTitle.textContent = `✨ ${name}의 별자리`;
   }
-  renderCloset(look, name) {
+  /* isLocked(axis, key) → 잠근 업적 정의 또는 falsy. 잠긴 옷은 업적 이름을 알려 주며 잠긴 채 보여 준다 —
+   * 숨기면 "열 게 있다"는 것 자체를 모른다. */
+  renderCloset(look, name, isLocked = null) {
     this.el.closetName.value = name;
     let html = '';
     for (const [axis, A] of Object.entries(D.CHAMP_WARDROBE)) {
       html += `<div class="closet-axis"><span class="claxis">${A.emoji} ${A.name}</span><div class="clopts">`;
       for (const [key, O] of Object.entries(A.options)) {
+        const lock = isLocked && isLocked(axis, key);
         const sw = O.color != null
           ? `<span class="clswatch" style="background:#${O.color.toString(16).padStart(6, '0')}"></span>` : '';
-        html += `<button class="clopt${look[axis] === key ? ' on' : ''}" data-axis="${axis}" data-key="${key}">${sw}${O.name}</button>`;
+        html += lock
+          ? `<button class="clopt locked" disabled
+              title="업적 [${lock.emoji} ${lock.name}]을 달성하면 열려요 — ${lock.desc}">${sw}🔒 ${O.name}</button>`
+          : `<button class="clopt${look[axis] === key ? ' on' : ''}" data-axis="${axis}" data-key="${key}">${sw}${O.name}</button>`;
       }
       html += `</div></div>`;
     }
     this.el.closetRows.innerHTML = html;
-    this.el.closetRows.querySelectorAll('button').forEach(b => {
+    this.el.closetRows.querySelectorAll('button[data-axis]').forEach(b => {
       b.addEventListener('click', () => this.h.onClosetPick(b.dataset.axis, b.dataset.key));
     });
   }

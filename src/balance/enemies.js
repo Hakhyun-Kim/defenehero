@@ -96,3 +96,15 @@ export const isBossWave = (w) => w % 5 === 0;
 export const MYTHIC_PRESSURE_CAP = 4;
 export const mythicHpMul = (n) => 1 + 0.12 * Math.min(MYTHIC_PRESSURE_CAP, Math.max(0, n));
 export const mythicGoldMul = (n) => 1 + 0.10 * Math.min(MYTHIC_PRESSURE_CAP, Math.max(0, n));
+
+/* ---------- 별의 시련 (회차) ----------
+ * 30웨이브(서른 번째 아침)를 클리어하면 다음 회차를 시작할 수 있다.
+ * 별지기의 성장은 그대로 이어지고, 용사·골드·성은 처음으로 돌아간다 —
+ * 그래서 적은 회차마다 계단식으로 세져야 "같은 판의 재탕"이 되지 않는다.
+ * 골드도 같이 올라간다: 신화의 압력과 같은 원리로, 벌이 아니라 판돈이다. */
+export const VICTORY_WAVE = 30;
+export const loopHpMul = (n) => Math.pow(1.45, Math.max(0, n || 0));
+export const loopGoldMul = (n) => Math.pow(1.12, Math.max(0, n || 0));
+export const loopCastleDmgMul = (n) => Math.pow(1.15, Math.max(0, n || 0));
+/* 서른 번째 아침의 보상 — 회차가 깊을수록 크게 */
+export const victoryShards = (loop) => 30 + (loop || 0) * 20;

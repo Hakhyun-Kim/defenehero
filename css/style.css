@@ -2039,3 +2039,188 @@ body.demo-on #scene3d { box-shadow: inset 0 0 0 3px rgba(255, 123, 123, 0.55); }
   /* 별지기 마법 버튼이 작아서 옆 발판을 누르려다 자꾸 눌린다 */
   #champChip { left: 6px; bottom: 6px; }
 }
+
+/* ===== 도감 · 기록 (📖) ===== */
+#bookBtn {
+  position: relative;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-weight: 800;
+  font-size: 13px;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(180deg, #5aa7e8, #2f6fc8);
+  box-shadow: 0 2px 0 #1e4e96;
+  font-family: inherit;
+}
+#bookBtn:active { transform: translateY(2px); box-shadow: none; }
+
+.modal-card.book { width: 560px; text-align: left; }
+.modal-card.book h2 { text-align: center; }
+.book-tabs { display: flex; gap: 6px; margin: 12px 0 10px; }
+.book-tabs button {
+  flex: 1;
+  border: 1px solid #cdd6e2;
+  background: #f2f6fa;
+  border-radius: 10px;
+  padding: 7px 4px;
+  font-family: inherit;
+  font-weight: 800;
+  font-size: 13px;
+  color: #5b6a84;
+  cursor: pointer;
+}
+.book-tabs button.on { background: #2f6fc8; border-color: #2f6fc8; color: #fff; }
+.book-body {
+  max-height: min(58vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-bottom: 12px;
+  padding-right: 4px;
+}
+.book-progress {
+  font-size: 13.5px;
+  background: #f0f5fb;
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+.book-progress .cnt { color: #7a86a0; font-size: 12px; margin-left: 6px; }
+.book-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #eef2f8;
+  font-size: 14px;
+}
+.book-row.unknown { color: #a5aec2; }
+.book-row.unknown .bkemoji { filter: grayscale(1); opacity: 0.6; }
+.bkemoji { font-size: 22px; width: 30px; text-align: center; flex-shrink: 0; }
+.bkname { font-weight: 800; min-width: 86px; }
+.bktag {
+  font-size: 10px;
+  font-weight: 800;
+  border-radius: 6px;
+  padding: 1px 6px;
+  margin-left: 5px;
+  vertical-align: 2px;
+  color: #fff;
+}
+.bktag.sp { background: #a855f7; }
+.bktag.mythic { background: #ff4d9d; }
+.bktag.mid { background: #ff9a3d; }
+.bktag.boss { background: #e14b4b; }
+.bkcells { margin-left: auto; display: flex; gap: 4px; }
+.bkcell {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+  background: #dfe5ef;
+}
+.bkcell:not(.on) { color: #a5aec2; }
+.bkkills { margin-left: auto; font-size: 13px; color: #5b6a84; font-weight: 700; }
+
+/* 업적 줄 */
+.book-row.ach { align-items: flex-start; }
+.book-row.ach .bkemoji { margin-top: 2px; }
+.book-row.ach:not(.done) { opacity: 0.72; }
+.book-row.ach.done { background: #f2fbf3; border-radius: 10px; }
+.bkach { flex: 1; min-width: 0; }
+.bkach .bkname { min-width: 0; }
+.bkdesc { font-size: 12px; color: #7a86a0; }
+.bkdone { color: #2c9e4b; font-size: 12px; margin-left: 4px; }
+.bkreward {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: #b8860b;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.bkunlock { font-size: 11px; color: #8a5fd6; font-weight: 700; }
+
+/* 수학 성장 */
+.mathsum { display: flex; gap: 8px; margin-bottom: 10px; }
+.msbox {
+  flex: 1;
+  background: #f0f5fb;
+  border-radius: 12px;
+  padding: 10px 6px;
+  text-align: center;
+}
+.msbox b { display: block; font-size: 22px; color: #2f6fc8; }
+.msbox span { font-size: 11.5px; color: #7a86a0; }
+.mathrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid #eef2f8;
+  font-size: 13px;
+}
+.mrgrade { flex-shrink: 0; font-weight: 800; color: #7a86a0; font-size: 11.5px; width: 40px; }
+.mrname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.mrbar {
+  flex-shrink: 0;
+  width: 110px;
+  height: 9px;
+  border-radius: 999px;
+  background: #e7ecf4;
+  overflow: hidden;
+}
+.mrbar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, #7fd45e, #3fae57); }
+.mrnum { flex-shrink: 0; font-size: 11.5px; color: #7a86a0; width: 86px; text-align: right; }
+
+/* ===== 서른 번째 아침 (승리) ===== */
+.modal-card.victory {
+  width: 470px;
+  background: linear-gradient(180deg, #fff9e8, #ffffff 55%);
+  border: 2px solid #ffd76e;
+}
+.victory-sun { font-size: 46px; animation: vicsun 2.4s ease-in-out infinite; }
+@keyframes vicsun { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .victory-sun { animation: none; } }
+.modal-card.victory h2 { font-size: 24px; color: #b8860b; }
+.victory-stats {
+  background: #fdf6e4;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  font-size: 14px;
+  line-height: 1.9;
+  text-align: left;
+}
+.victory-msg { font-size: 13px; color: #7a86a0; margin: 8px 0 12px; }
+.victory-note { font-size: 12px; color: #a08a4e; margin: 6px 0 10px; }
+
+/* 회차 칩 (HUD) */
+.loopchip {
+  margin-left: 6px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(180deg, #ffb64e, #e8892f);
+  border-radius: 999px;
+  padding: 2px 8px;
+  vertical-align: 2px;
+}
+.loopchip.hidden { display: none; }
+
+/* 옷장 잠금 */
+.clopt.locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: #eef1f6;
+  color: #8a94ac;
+}
