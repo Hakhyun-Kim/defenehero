@@ -1,10 +1,16 @@
 /* =====================================================
  * GameAnalytics 통합 모듈
  * =====================================================
- * 대시보드(https://gameanalytics.com)에서 발급받은 Game Key와 Secret Key를 아래 세팅하십시오.
- * 키를 세팅하지 않아도 테스트 모드로 콘솔 로깅되며 게임이 멈추지 않습니다.
+ * 키는 GitHub Secrets(GA_GAME_KEY / GA_SECRET_KEY)에 두고 CI가 analytics.config.js 로 주입한다.
+ * 로컬 config 는 키를 비워 둔다 — 채우면 커밋 대상인 dist/game.js 에 키가 박힌다.
+ * 키가 없어도 테스트 모드로 콘솔 로깅되며 게임이 멈추지 않습니다.
  * ===================================================== */
-import GameAnalytics from 'gameanalytics';
+// default export 는 gaCommand — 문자열 명령을 받는 *함수*라서 .configureBuild 같은 메서드가 없다.
+// 이걸 객체로 착각해 쓰면 첫 호출에서 TypeError 가 나고, catch 에 잡혀 조용히 수집이 꺼진다
+// (에러는 콘솔에만 남고 게임은 멀쩡히 돌아가서 알아채기 어렵다). enum 은 클래스가 아니라
+// 네임스페이스에 붙어 있으므로 GameAnalytics.EGA* 가 아니라 여기서 함께 꺼내 쓴다.
+import { gameanalytics } from 'gameanalytics';
+const { GameAnalytics, EGAProgressionStatus, EGAErrorSeverity } = gameanalytics;
 import { GA_CONFIG } from './analytics.config.js';
 
 export { GA_CONFIG };
@@ -31,7 +37,7 @@ export const Analytics = {
         initialized = true;
         console.log('[Analytics] GameAnalytics initialized successfully!');
       } else {
-        console.warn('[Analytics] GameAnalytics Key가 설정되지 않았습니다. src/analytics.js 의 GA_CONFIG 에 키를 입력하면 실제 데이터가 전송됩니다.');
+        console.warn('[Analytics] Key 없음 — 콘솔 로깅만 합니다. 실제 수집은 CI 빌드(GitHub Secrets)에서 이뤄집니다.');
       }
     } catch (e) {
       console.error('[Analytics] Failed to initialize GameAnalytics:', e);
@@ -45,7 +51,7 @@ export const Analytics = {
     console.log(`[Analytics Event] GameStart - diff:${difficulty}, loop:${loop}`);
     if (initialized) {
       GameAnalytics.addProgressionEvent(
-        GameAnalytics.EGAProgressionStatus.Start,
+        EGAProgressionStatus.Start,
         `Difficulty_${difficulty}`,
         `Loop_${loop}`
       );
@@ -59,7 +65,7 @@ export const Analytics = {
     console.log(`[Analytics Event] WaveStart - Wave_${wave}`);
     if (initialized) {
       GameAnalytics.addProgressionEvent(
-        GameAnalytics.EGAProgressionStatus.Start,
+        EGAProgressionStatus.Start,
         `Difficulty_${difficulty}`,
         `Wave_${wave}`
       );
@@ -73,7 +79,7 @@ export const Analytics = {
     console.log(`[Analytics Event] WaveComplete - Wave_${wave}, score:${score}`);
     if (initialized) {
       GameAnalytics.addProgressionEvent(
-        GameAnalytics.EGAProgressionStatus.Complete,
+        EGAProgressionStatus.Complete,
         `Difficulty_${difficulty}`,
         `Wave_${wave}`,
         null,
@@ -89,7 +95,7 @@ export const Analytics = {
     console.log(`[Analytics Event] GameFail - Wave_${wave}, score:${score}`);
     if (initialized) {
       GameAnalytics.addProgressionEvent(
-        GameAnalytics.EGAProgressionStatus.Fail,
+        EGAProgressionStatus.Fail,
         `Difficulty_${difficulty}`,
         `Wave_${wave}`,
         null,
@@ -105,7 +111,7 @@ export const Analytics = {
     console.log(`[Analytics Event] GameVictory - diff:${difficulty}, loop:${loop}, shards:${shards}`);
     if (initialized) {
       GameAnalytics.addProgressionEvent(
-        GameAnalytics.EGAProgressionStatus.Complete,
+        EGAProgressionStatus.Complete,
         `Difficulty_${difficulty}`,
         `Victory_Loop_${loop}`,
         null,
@@ -152,12 +158,12 @@ export const Analytics = {
   trackError(severity, message) {
     if (initialized) {
       const gaSeverity = {
-        debug: GameAnalytics.EGAErrorSeverity.Debug,
-        info: GameAnalytics.EGAErrorSeverity.Info,
-        warning: GameAnalytics.EGAErrorSeverity.Warning,
-        error: GameAnalytics.EGAErrorSeverity.Error,
-        critical: GameAnalytics.EGAErrorSeverity.Critical,
-      }[severity] || GameAnalytics.EGAErrorSeverity.Error;
+        debug: EGAErrorSeverity.Debug,
+        info: EGAErrorSeverity.Info,
+        warning: EGAErrorSeverity.Warning,
+        error: EGAErrorSeverity.Error,
+        critical: EGAErrorSeverity.Critical,
+      }[severity] || EGAErrorSeverity.Error;
 
       GameAnalytics.addErrorEvent(gaSeverity, message);
     }
