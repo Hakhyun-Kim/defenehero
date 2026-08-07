@@ -9,13 +9,17 @@
   --card: #ffffff;
 }
 
-html, body { height: 100%; }
+html, body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden !important;
+}
 body {
   font-family: "Jua", "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
-  /* 폰트 미로딩(오프라인) 시에도 위 시스템 폰트로 자연스럽게 대체된다 */
   background: linear-gradient(180deg, #bfe3ff 0%, #dff3ff 45%, #e8f7dd 100%);
   color: var(--ink);
-  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
   touch-action: manipulation;
   -webkit-user-select: none;
   user-select: none;
@@ -25,33 +29,61 @@ input, textarea {
   user-select: text;
 }
 
-/* ===== 화면 한 판에 담기 =====
- * 전에는 오른쪽 패널이 세로로 계속 자라 페이지가 화면 두 배 길이가 됐다.
- * 이제 화면 높이에 맞춰 두 열을 잡고, 넘치는 목록만 그 안에서 스크롤한다.
- * (좁은 화면에서는 아래 미디어 쿼리가 다시 한 줄 세로 배치로 되돌린다) */
+/* ===== 화면 전체 3D 백드롭 + 플로팅 HUD 레이아웃 ===== */
 .wrap {
-  display: flex;
-  gap: 12px;
-  max-width: 1320px;
-  height: calc(100dvh - 20px);
-  margin: 0 auto;
-  align-items: stretch;
+  position: relative;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 .left {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+  position: absolute;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  z-index: 1;
+  margin: 0;
+  padding: 0;
 }
-.right {
-  width: 340px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  max-height: none;
   min-height: 0;
+  box-shadow: none;
 }
-/* 위쪽 고정 카드는 줄어들지 않고, 탭 내용만 남는 높이를 먹고 스크롤한다 */
+#scene3d {
+  width: 100%;
+  height: 100%;
+  background: #bfe3ff;
+}
+
+.right {
+  position: absolute;
+  top: max(48px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  width: 280px;
+  z-index: 20;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.right .fixed, .right .card, .right .tabs, .right .tabbody {
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 14px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
 .right .fixed { flex: 0 0 auto; }
 .tabbody {
   flex: 1;
@@ -60,24 +92,43 @@ input, textarea {
   overscroll-behavior: contain;
 }
 
-/* ===== 상단 ===== */
+/* ===== 플로팅 상단 HUD ===== */
 .topbar {
+  position: absolute;
+  top: max(6px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  right: max(8px, env(safe-area-inset-right));
+  z-index: 20;
+  pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
-.topbar h1 { font-size: 25px; letter-spacing: -0.5px; }
-.top-right { display: flex; gap: 8px; align-items: center; }
-.record {
-  background: #fff7d6;
-  border: 2px solid #f2cf5b;
-  border-radius: 999px;
+.topbar h1 {
+  font-size: 16px;
+  letter-spacing: -0.3px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   padding: 4px 12px;
-  font-size: 13px;
-  white-space: nowrap;
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+  pointer-events: auto;
+  border: 1px solid rgba(255,255,255,0.6);
 }
-.record.shard { background: #efe6ff; border-color: #c4a8f0; }
+.top-right { display: flex; gap: 6px; align-items: center; pointer-events: auto; }
+.record {
+  background: rgba(255, 247, 214, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1.5px solid #f2cf5b;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.record.shard { background: rgba(239, 230, 255, 0.92); border-color: #c4a8f0; }
 #metaBtn {
   border: none;
   border-radius: 999px;
@@ -91,9 +142,76 @@ input, textarea {
   font-family: inherit;
 }
 #metaBtn:active { transform: translateY(2px); box-shadow: none; }
+#optBtn {
+  border: none;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-weight: 800;
+  font-size: 13px;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(180deg, #64748b, #475569);
+  box-shadow: 0 2px 0 #334155;
+  font-family: inherit;
+}
+#optBtn:active { transform: translateY(2px); box-shadow: none; }
 
-/* ===== 성 체력바 (잔상 포함) ===== */
-.castlebar-wrap { margin-bottom: 8px; }
+.modal-card.opt {
+  width: 460px;
+  max-width: 92vw;
+  text-align: left;
+}
+.opt-section {
+  margin-bottom: 12px;
+  background: #f8fafc;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+.opt-section h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #334155;
+}
+.opt-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.opt-row button {
+  flex: 1;
+  min-width: 80px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  font-family: inherit;
+}
+.opt-row button:active {
+  transform: translateY(1px);
+}
+
+/* ===== 성 체력바 (플로팅 오버레이) ===== */
+.castlebar-wrap {
+  position: absolute;
+  top: calc(max(6px, env(safe-area-inset-top)) + 36px);
+  left: max(8px, env(safe-area-inset-left));
+  width: 220px;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 4px 10px;
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  margin-bottom: 0;
+  pointer-events: auto;
+}
 .castlebar-label {
   font-weight: 700;
   font-size: 14px;
@@ -535,27 +653,31 @@ input, textarea {
   cursor: help;
 }
 
-/* ===== 오른쪽 패널 탭 ===== */
-.tabs { display: flex; gap: 6px; flex: 0 0 auto; }
+/* ===== 오른쪽 패널 탭 (소환 · 조합 · 성 · 용사) ===== */
+.tabs { display: flex; gap: 4px; flex: 0 0 auto; margin-bottom: 2px; }
 .tabs button {
   flex: 1;
   position: relative;
-  border: 2px solid #cdd6e2;
-  border-bottom: none;
-  background: #e9eff7;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-radius: 10px 10px 0 0;
-  padding: 7px 0 8px;
+  padding: 8px 0 7px;
   cursor: pointer;
   font-weight: 800;
-  font-size: 13px;
-  color: #5a6a84;
+  font-size: 12.5px;
+  color: #475569;
+  font-family: inherit;
+  transition: all 0.15s ease;
+  white-space: nowrap;
 }
 .tabs button.on {
-  background: #fff;
-  border-color: #2478e0;
-  color: #1a5cb0;
-  margin-bottom: -2px;
-  padding-bottom: 10px;
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+  transform: translateY(-1px);
 }
 .tabdot {
   position: absolute;
@@ -1121,35 +1243,38 @@ button { font-family: inherit; }
 .modal-card {
   background: #fff;
   border-radius: 18px;
-  padding: 22px;
-  width: 430px;
-  max-width: 100%;
+  padding: 16px 20px;
+  width: 440px;
+  max-width: 92vw;
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  box-sizing: border-box;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
   text-align: center;
   animation: modalin 0.25s cubic-bezier(0.2, 1.4, 0.4, 1);
 }
 @keyframes modalin { from { transform: scale(0.85); opacity: 0; } }
-.modal-card h2 { font-size: 20px; margin-bottom: 6px; }
+.modal-card h2 { font-size: 18px; margin-bottom: 4px; }
 .mgrade {
   display: inline-block;
   background: #e3f0ff;
   color: #1a5cb0;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   border-radius: 999px;
-  padding: 3px 12px;
-  margin-bottom: 12px;
+  padding: 2px 10px;
+  margin-bottom: 8px;
 }
 .mproblem {
   /* 손글씨풍 Gaegu — 숫자·수식이 또렷하고 아이들 눈에 친근하다 */
   font-family: "Gaegu", "Jua", system-ui, sans-serif;
-  font-size: 27px;
+  font-size: 22px;
   font-weight: 800;
-  line-height: 1.5;
+  line-height: 1.4;
   background: #f5f8fc;
   border-radius: 12px;
-  padding: 18px 14px;
-  margin-bottom: 14px;
+  padding: 12px 10px;
+  margin-bottom: 10px;
   word-break: keep-all;
   white-space: pre-line;
 }
@@ -1273,8 +1398,8 @@ button { font-family: inherit; }
 
 .hidden { display: none !important; }
 
-/* ===== 좁은 화면 ===== */
-@media (max-width: 920px) {
+/* ===== 좁은 세로 화면 ===== */
+@media (max-width: 920px) and (orientation: portrait) {
   .wrap { flex-direction: column; }
   .right { width: 100%; }
 }
@@ -1510,25 +1635,16 @@ button { font-family: inherit; }
 }
 .modal-card.lv6 .mproblem { background: #fff0f3; }
 
-/* ===== 좁거나 낮은 화면 =====
- * 두 열이 들어갈 폭이 안 되거나 세로가 너무 짧으면, 한 줄로 쌓고 페이지 스크롤을 되살린다.
- * (전장은 다시 16:10 비율로 고정 — 낮은 화면에서 납작해지지 않게) */
-@media (max-width: 1080px) {
+/* ===== 좁은 세로 화면 =====
+ * 두 열이 들어갈 폭이 안 되거나 세로 화면이면 한 줄로 쌓는다. */
+@media (max-width: 1080px) and (orientation: portrait) {
   body { padding: 8px; }
   .wrap { flex-direction: column; height: auto; }
-  /* 두 열의 상자를 없애 손자들을 .wrap 의 직접 자식으로 만든다.
-   * 그래야 order 로 왼쪽/오른쪽 것을 섞어 쌓을 수 있다 — DOM 은 그대로 두고. */
   .left, .right { display: contents; }
   .stage { flex: none; min-height: 0; max-height: none; }
   #scene3d { height: auto; aspect-ratio: 16 / 10; }
   .tabbody { overflow: visible; }
 
-  /* ---- 폰 순서: 소환·벤치를 전장 바로 밑으로 ----
-   * 원래는 전장(y121~355)과 벤치(y620~695) 사이에 골드·설정·난이도가 끼어
-   * 265px 떨어져 있었다. 폰에서는 둘을 동시에 볼 수 없으니
-   * "카드 고르고 → 발판 누르기"가 스크롤 왕복이 됐다. */
-  /* .placebar 를 보이게 하는 건 파일 끝에서 한다 —
-   * 기본 규칙(.placebar{display:none})이 여기보다 뒤에 있어서 여기서 켜면 덮인다 */
   .topbar        { order: 1; }
   .castlebar-wrap { order: 2; }
   .stage         { order: 3; }
@@ -1539,6 +1655,19 @@ button { font-family: inherit; }
   .tabbody       { order: 8; }
   .under-row     { order: 9; }
   #helpBox       { order: 10; }
+}
+
+/* ===== 모바일 가로 화면 (SensorLandscape 최적화) ===== */
+@media (orientation: landscape) and (max-height: 560px) {
+  body { padding: 4px max(8px, env(safe-area-inset-right)) 4px max(8px, env(safe-area-inset-left)); }
+  .wrap { flex-direction: row; height: calc(100dvh - 8px); gap: 8px; }
+  .left { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .right { width: 270px; flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; }
+  .topbar { margin-bottom: 3px; }
+  .topbar h1 { font-size: 16px; }
+  .castlebar-wrap { margin-bottom: 3px; }
+  .stage { flex: 1; min-height: 0; }
+  #summonBtn { padding: 8px; font-size: 14px; }
 }
 /* 세로가 짧은 노트북: 두 열은 유지하고 전장만 더 납작하게 (넓은 건 안 잘린다) */
 @media (min-width: 1081px) and (max-height: 660px) {
@@ -1991,26 +2120,34 @@ body.demo-on #scene3d { box-shadow: inset 0 0 0 3px rgba(255, 123, 123, 0.55); }
  * 순간 전장이 줄고 캔버스가 다시 잡히면서 화면이 한 번 튄다. 게다가 거기서는
  * 벤치가 바로 옆에 보이니 안내가 필요하지도 않다. */
 .placebar {
-  display: none;
+  display: flex;
+  position: absolute;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-top: 6px;
-  padding: 5px 10px;
-  border-radius: 12px;
-  font-size: 14px;
-  /* 평소에는 조용한 안내, 배치 중에는 초록으로 깨어난다 */
-  background: #f2f4f8;
-  border: 2px solid #dbe2ec;
-  box-shadow: 0 3px 0 #cdd6e2;
-  color: #6b7688;
-  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+  gap: 12px;
+  margin-top: 0;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  color: #f1f5f9;
+  pointer-events: auto;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 .placebar.on {
-  background: linear-gradient(180deg, #eafbef, #d6f5e0);
-  border-color: #6fd08c;
-  box-shadow: 0 3px 0 #4fae6c;
-  color: #14532d;
+  background: rgba(22, 101, 52, 0.92);
+  border-color: #4ade80;
+  color: #ffffff;
+  box-shadow: 0 6px 24px rgba(34, 197, 94, 0.4);
 }
 #placeBarText { font-weight: 700; }
 /* 취소는 배치 중에만 — 평소엔 자리만 지키고 안 보인다 */
@@ -2230,4 +2367,28 @@ body.demo-on #scene3d { box-shadow: inset 0 0 0 3px rgba(255, 123, 123, 0.55); }
   cursor: not-allowed;
   background: #eef1f6;
   color: #8a94ac;
+}
+
+/* ===== 모바일 가로 화면 수학 모달 높이 최적화 ===== */
+@media (max-height: 500px) {
+  .modal { padding: 4px; }
+  .modal-card {
+    padding: 10px 14px;
+    max-height: calc(100dvh - 8px);
+    border-radius: 12px;
+  }
+  .modal-card h2 { font-size: 16px; margin-bottom: 2px; }
+  .mgrade { font-size: 11px; padding: 2px 8px; margin-bottom: 4px; }
+  .mproblem {
+    font-size: 19px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+  }
+  .mrow { margin-bottom: 6px; }
+  .mrow input {
+    font-size: 20px;
+    padding: 6px 10px;
+  }
+  .mrow .big { padding: 6px 14px; font-size: 13px; }
+  .mfeedback { min-height: 18px; font-size: 13px; margin-bottom: 4px; }
 }

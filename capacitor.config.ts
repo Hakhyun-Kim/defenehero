@@ -9,6 +9,12 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
   },
   backgroundColor: '#bfe3ff',
+  plugins: {
+    SplashScreen: {
+      launchShowDuration: 500,
+      launchAutoHide: true,
+    },
+  },
 };
 
 export default config;

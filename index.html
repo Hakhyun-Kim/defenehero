@@ -22,6 +22,7 @@
         <div class="record shard">✨ <b id="shards">0</b></div>
         <button id="bookBtn" title="도감·업적·수학 기록 (B)">📖 도감<span id="bookDot" class="tabdot hidden"></span></button>
         <button id="metaBtn">🌟 별의 축복</button>
+        <button id="optBtn" title="게임 설정 (⚙️)">⚙️ 설정</button>
       </div>
     </header>
 
@@ -81,111 +82,68 @@
       <div id="toasts"></div>
     </div>
 
-    <!-- 배치 중 안내 — 전장 "아래"에 둔다. 전장 위에 얹으면 하필 발판을 가린다. -->
+    <!-- 배치 중 안내 -->
     <div id="placeBar" class="placebar">
       <span id="placeBarText">🎲 용사를 소환하고, 카드를 눌러 배치하세요</span>
       <button id="placeBarCancel">✕ 취소</button>
     </div>
-
-    <div class="under-row">
-      <div class="difficulty" id="diffRow">
-        <span class="dlabel">난이도</span>
-        <button data-d="easy">🌱 쉬움</button>
-        <button data-d="normal" class="on">⚔️ 보통</button>
-        <button data-d="hard">🔥 어려움</button>
-      </div>
-      <button id="helpBtn" class="helpbtn">❓ 조작법</button>
-    </div>
-    <div id="helpBox" class="helpbox hidden">
-      <p>🖱 <b>배치</b> 벤치 카드 클릭 → 길 옆 <b>돌 발판</b> 클릭(🟦 찬 자리를 누르면 그 용사와 <b>교환</b>) ·
-        <b>이동/교환</b> 배치된 용사를 클릭하고 갈 곳(빈 발판 🟩 / 다른 용사 🟦)을 클릭 ·
-        <b>회수</b> 우클릭</p>
-      <p>⌨️ <b>Space</b> 웨이브 · <b>S</b> 소환 · <b>C</b> 조합 · <b>Tab</b> 벤치 · <b>F</b> 배치된 용사 ·
-        <b>←→</b> 발판 · <b>Enter</b> 배치/이동/교환 · <b>R</b> 회수 · <b>X</b> 판매 ·
-        <b>B</b> 도감 · <b>3~6</b> 학년 · <b>7~9</b> 성 · <b>M</b> 음소거 · <b>Esc</b> 취소</p>
-      <p>🌠 <b>별지기</b> — 길을 지키는 기사예요. <b>A</b> 별똥별(무료·쿨다운) · <b>E</b> 은하수(처치로 충전) ·
-        <b>V</b> 별자리(스킬). 쓰러지면 그 웨이브엔 마법을 못 쓰고, 다음 준비 때 다시 일어나요.
-        성이 무피해로 버티면(완벽 방어) ✨별조각 +1! 왼쪽 아래 <b>초상을 누르면 옷장</b> — 이름·머리·옷·무기를 바꿔요.</p>
-      <p>💾 <b>저장</b> 웨이브가 끝날 때마다 <b>자동 저장</b>돼요 — 다시 열면 이어하기 메뉴가 떠요 ·
-        💾 버튼으로 파일 저장(준비 중에만), 📂로 불러오기 ·
-        <b>여러 명 판매</b>는 벤치 아래 💰 버튼!</p>
-      <p>💡 몬스터는 세 갈래 길로 와요(가운데는 보스 지름길!). 갈림길 옆 발판이 명당이에요.</p>
-    </div>
   </div>
 
-  <!-- ===== 오른쪽: 용사/수학/성 관리 ===== -->
-  <aside class="right">
+    <!-- ===== 오른쪽: 용사/수학/성 관리 ===== -->
+    <aside class="right">
 
-    <section class="card fixed" id="statCard">
-      <div class="statrow">
-        <div class="stat">💰 <b id="gold">150</b></div>
-        <div class="stat">🌊 <b id="waveNo">1</b>웨이브<span id="loopChip" class="loopchip hidden"></span></div>
-        <div class="minibtns">
-          <button id="speedBtn" title="게임 속도 (Q)">⏩ x1</button>
-          <button id="sfxBtn" title="효과음 끄기/켜기">🔊</button>
-          <button id="bgmBtn" title="배경음악 끄기/켜기 (M: 전체)">🎵</button>
-          <button id="saveBtn" title="이번 판을 파일로 저장해요 (준비 단계에서)">💾</button>
-          <button id="loadBtn" title="저장 파일을 불러와 이어서 해요">📂</button>
-          <button id="demoBtn" title="AI가 대신 플레이하는 걸 구경해요 (D)">🎬 데모</button>
-          <input type="file" id="loadFile" accept=".json,application/json" class="hidden">
-        </div>
-      </div>
-      <div class="gradebar">
-        <span class="glabel" title="조합할 때 나올 문제의 학년">🧮 문제</span>
-        <div class="grades" id="grades">
-          <button data-g="3" class="on">3학년</button>
-          <button data-g="4">4학년</button>
-          <button data-g="5">5학년</button>
-          <button data-g="6">6학년</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="card fixed" id="benchCard">
-      <button id="summonBtn" class="big amber">🎲 용사 소환 (💰 50 · S)</button>
-      <div id="benchHint" class="benchhint hidden">🟩 빈 발판 = 배치 · 🟦 찬 발판 = 자리 교환 · ←→ 고르고 Enter</div>
-      <div id="bench" class="bench"></div>
-      <div class="sellbar">
-        <button id="sellModeBtn" title="여러 용사를 골라 한 번에 팔아요">💰 여러 명 판매</button>
-        <span id="sellInfo" class="sellinfo hidden"></span>
-        <button id="sellAllBtn" class="hidden">전체 선택</button>
-        <button id="sellGoBtn" class="hidden">팔기</button>
-      </div>
-    </section>
-
-    <!-- 탭: 한 번에 하나만 보여 세로 길이를 줄인다 -->
-    <div class="tabs" id="tabs">
-      <button data-tab="combine" class="on">⚗️ 조합<span id="combineDot" class="tabdot hidden"></span></button>
-      <button data-tab="castle">🏰 성</button>
-      <button data-tab="hero">🧍 용사<span id="heroDot" class="tabdot hidden"></span></button>
-    </div>
-
-    <div class="tabbody">
-      <section class="card pane" data-pane="combine">
-        <h2>⚗️ 용사 조합 <span class="sub">같은 등급 2명 + 수학 문제!</span></h2>
-        <div id="combineRows"></div>
-      </section>
-
-      <section class="card pane hidden" data-pane="castle">
-        <h2>🏰 성 관리 <span class="sub">골드로 성을 강화해요</span></h2>
-        <div id="castleRows"></div>
-      </section>
-
-      <section class="card pane hidden" data-pane="hero" id="heroPanel">
-        <h2 id="hpTitle">🧍 선택한 용사</h2>
-        <div id="hpInfo"></div>
-        <div id="moveHint" class="movehint hidden">
-          🎯 갈 곳을 클릭하면 이동! <b>다른 용사를 클릭하면 🔀 자리 교환</b>이에요.<br>
-          끌어다 놓아도 되고, <b>←→</b>로 발판을 고르고 <b>Enter</b>도 돼요.
-        </div>
-        <div class="rowbtns">
-          <button id="recallBtn">↩ 벤치로 회수</button>
-          <button id="sellBtn">💰 판매</button>
+      <section class="card fixed" id="statCard">
+        <div class="statrow">
+          <div class="stat">💰 <b id="gold">150</b></div>
+          <div class="stat">🌊 <b id="waveNo">1</b>웨이브<span id="loopChip" class="loopchip hidden"></span></div>
         </div>
       </section>
-    </div>
 
-  </aside>
+      <!-- 탭: 소환 · 조합 · 성 · 용사 -->
+      <div class="tabs" id="tabs">
+        <button data-tab="summon" class="on">🎲 소환</button>
+        <button data-tab="combine">⚗️ 조합<span id="combineDot" class="tabdot hidden"></span></button>
+        <button data-tab="castle">🏰 성</button>
+        <button data-tab="hero">🧍 용사<span id="heroDot" class="tabdot hidden"></span></button>
+      </div>
+
+      <div class="tabbody">
+        <section class="card pane" data-pane="summon" id="benchCard">
+          <button id="summonBtn" class="big amber">🎲 용사 소환 (💰 50 · S)</button>
+          <div id="benchHint" class="benchhint hidden">🟩 빈 발판 = 배치 · 🟦 찬 발판 = 자리 교환</div>
+          <div id="bench" class="bench"></div>
+          <div class="sellbar">
+            <button id="sellModeBtn" title="여러 용사를 골라 한 번에 팔아요">💰 여러 명 판매</button>
+            <span id="sellInfo" class="sellinfo hidden"></span>
+            <button id="sellAllBtn" class="hidden">전체 선택</button>
+            <button id="sellGoBtn" class="hidden">팔기</button>
+          </div>
+        </section>
+
+        <section class="card pane hidden" data-pane="combine">
+          <h2>⚗️ 용사 조합 <span class="sub">같은 등급 2명 + 수학 문제!</span></h2>
+          <div id="combineRows"></div>
+        </section>
+
+        <section class="card pane hidden" data-pane="castle">
+          <h2>🏰 성 관리 <span class="sub">골드로 성을 강화해요</span></h2>
+          <div id="castleRows"></div>
+        </section>
+
+        <section class="card pane hidden" data-pane="hero" id="heroPanel">
+          <h2 id="hpTitle">🧍 선택한 용사</h2>
+          <div id="hpInfo"></div>
+          <div id="moveHint" class="movehint hidden">
+            🎯 갈 곳을 클릭하면 이동! <b>다른 용사를 클릭하면 🔀 자리 교환</b>이에요.
+          </div>
+          <div class="rowbtns">
+            <button id="recallBtn">↩ 벤치로 회수</button>
+            <button id="sellBtn">💰 판매</button>
+          </div>
+        </section>
+      </div>
+
+    </aside>
 </div>
 
 <!-- ===== 수학 문제 모달 ===== -->
@@ -341,6 +299,61 @@
     <div class="reveal-name" id="revealName">검성</div>
     <div class="reveal-desc" id="revealDesc"></div>
     <div class="reveal-hint">아무 키나 눌러 계속</div>
+  </div>
+</div>
+
+<!-- ===== 게임 설정 모달 ===== -->
+<div id="optModal" class="modal hidden">
+  <div class="modal-card opt">
+    <h2>⚙️ 게임 설정</h2>
+    
+    <div class="opt-section">
+      <h3>🧮 수학 문제 학년</h3>
+      <div class="gradebar">
+        <div class="grades" id="grades">
+          <button data-g="3" class="on">3학년</button>
+          <button data-g="4">4학년</button>
+          <button data-g="5">5학년</button>
+          <button data-g="6">6학년</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="opt-section">
+      <h3>🔊 사운드 및 속도</h3>
+      <div class="opt-row">
+        <button id="speedBtn" title="게임 속도 (Q)">⏩ x1</button>
+        <button id="sfxBtn" title="효과음 끄기/켜기">🔊 효과음</button>
+        <button id="bgmBtn" title="배경음악 끄기/켜기 (M: 전체)">🎵 배경음</button>
+      </div>
+    </div>
+
+    <div class="opt-section">
+      <h3>🌱 게임 난이도</h3>
+      <div class="difficulty" id="diffRow">
+        <button data-d="easy">🌱 쉬움</button>
+        <button data-d="normal" class="on">⚔️ 보통</button>
+        <button data-d="hard">🔥 어려움</button>
+      </div>
+    </div>
+
+    <div class="opt-section">
+      <h3>💾 데이터 관리 &amp; 데모</h3>
+      <div class="opt-row">
+        <button id="saveBtn" title="이번 판을 파일로 저장해요">💾 저장</button>
+        <button id="loadBtn" title="저장 파일을 불러와 이어서 해요">📂 불러오기</button>
+        <button id="demoBtn" title="AI 구경하기 (D)">🎬 데모</button>
+        <button id="helpBtn" class="helpbtn">❓ 조작법</button>
+        <input type="file" id="loadFile" accept=".json,application/json" class="hidden">
+      </div>
+    </div>
+
+    <div id="helpBox" class="helpbox hidden">
+      <p>🖱 <b>배치</b> 벤치 카드 클릭 → 길 옆 <b>돌 발판</b> 클릭</p>
+      <p>💾 <b>저장</b> 웨이브 끝날 때마다 자동 저장</p>
+    </div>
+
+    <button id="optClose" class="big blue" style="margin-top: 14px; width: 100%;">닫기 (Esc)</button>
   </div>
 </div>
 

@@ -16,6 +16,7 @@ import {
   codex, mathLog, earned, codexAddHero, codexAddKill, mathAdd, flushRecords, markDirty,
 } from './app/store.js';
 import { createMathFlow } from './app/mathflow.js';
+import { SplashScreen } from '@capacitor/splash-screen';
 import Analytics from './analytics.js';
 
 registerDucker((amt, dur) => music.duck(amt, dur));
@@ -23,6 +24,14 @@ registerDucker((amt, dur) => music.duck(amt, dur));
 /* ---------- 초기화 ---------- */
 const ui = new UI();
 Analytics.init();
+if (typeof window !== 'undefined') {
+  const hideSplash = () => { SplashScreen.hide().catch(() => {}); };
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', () => setTimeout(hideSplash, 300));
+  } else {
+    setTimeout(hideSplash, 300);
+  }
+}
 /* URL로 강제 지정 가능: ?gfx=high|lite|min (min은 테스트/초저사양용) */
 const urlParams = new URLSearchParams(location.search);
 const urlGfx = urlParams.get('gfx');
@@ -444,6 +453,7 @@ function selectField(hero) {
   ui.renderHeroPanel(state, selHero);
   if (hero) { ui.showHeroTab(); SFX.tap(); }
   else ui.restoreTab();
+  resetAutoDeselectTimer();
 }
 
 const padFx = (h, color) =>
@@ -743,7 +753,7 @@ const handlers = {
       ui.toast(`${C.emoji} ${C.name}를 뽑으려면 💰${D.SUMMON_COST}이 필요해요 — 몬스터를 잡아 모아요 ⚔️`, 'bad');
       return;
     }
-    ui.showTab('bench');
+    ui.showTab('summon');
     ui.toast(`${C.emoji} ${C.name}를 노려요! S키(또는 소환 버튼)로 뽑아 보세요`, '');
     doSummon();
   },
@@ -788,6 +798,7 @@ const handlers = {
     }
     ui.renderBench(state, selBench);
     ui.renderHeroPanel(state, selHero);
+    resetAutoDeselectTimer();
   },
   /* 배치된 용사를 고른 뒤 —
    *   빈 발판 클릭    → 회수 없이 이동
@@ -1035,7 +1046,24 @@ function syncPlaceBar() {
   ui.setPlacing(label, label || '');
 }
 
+let autoDeselectTimer = null;
+function resetAutoDeselectTimer() {
+  if (autoDeselectTimer) {
+    clearTimeout(autoDeselectTimer);
+    autoDeselectTimer = null;
+  }
+  if (selHero != null || selBench != null) {
+    autoDeselectTimer = setTimeout(() => {
+      deselectAll();
+    }, 5000);
+  }
+}
+
 function deselectAll() {
+  if (autoDeselectTimer) {
+    clearTimeout(autoDeselectTimer);
+    autoDeselectTimer = null;
+  }
   selBench = null;
   selHero = null;
   kbPad = null;
@@ -1211,6 +1239,7 @@ document.addEventListener('keydown', (ev) => {
       return;
     }
     case 'Escape':
+      if (ui.el.optModal && !ui.el.optModal.classList.contains('hidden')) { ui.hideOpt(); return; }
       if (sellMode) { setSellMode(false); return; }
       deselectAll();
       return;

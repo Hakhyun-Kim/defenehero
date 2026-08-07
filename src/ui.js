@@ -108,6 +108,7 @@ export class UI {
       'overModal', 'overStats', 'overShards', 'restartBtn', 'shareBtn', 'overMetaBtn',
       'metaModal', 'metaShards', 'metaRows', 'metaClose', 'tooltip',
       'bookBtn', 'bookDot', 'bookModal', 'bookTabs', 'bookBody', 'bookClose',
+      'optBtn', 'optModal', 'optClose',
       'victoryModal', 'victoryTitle', 'victoryStats', 'victoryShards', 'victoryMsg',
       'victoryTrialBtn', 'victoryContinueBtn', 'victoryShareBtn', 'loopChip',
       'revealCard', 'rarityFlash',
@@ -119,9 +120,12 @@ export class UI {
     ].forEach(id => this.el[id] = $(id));
     this._lastKnow = -1;
     this._lastProbSig = '';
-    this._tab = 'combine';
+    this._tab = 'summon';
     this._tabBefore = null;
   }
+
+  showOpt() { if (this.el.optModal) this.el.optModal.classList.remove('hidden'); }
+  hideOpt() { if (this.el.optModal) this.el.optModal.classList.add('hidden'); }
 
   /* ---------- 오른쪽 패널 탭 ----------
    * 세 패널을 세로로 쌓으면 화면 두 배 길이가 된다 — 한 번에 하나만 보여 준다. */
@@ -160,7 +164,7 @@ export class UI {
   }
   restoreTab() {
     if (this._tab !== 'hero') return;
-    this.showTab(this._tabBefore || 'combine');
+    this.showTab(this._tabBefore || 'summon');
     this._tabBefore = null;
   }
 
@@ -176,6 +180,8 @@ export class UI {
     el.metaBtn.addEventListener('click', h.onMetaOpen);
     el.overMetaBtn.addEventListener('click', h.onMetaOpen);
     el.metaClose.addEventListener('click', () => this.hideMeta());
+    if (el.optBtn) el.optBtn.addEventListener('click', () => this.showOpt());
+    if (el.optClose) el.optClose.addEventListener('click', () => this.hideOpt());
     /* 도감·기록 */
     el.bookBtn.addEventListener('click', () => h.onBookOpen());
     el.bookClose.addEventListener('click', () => this.hideBook());
