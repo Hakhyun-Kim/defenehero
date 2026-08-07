@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      # GitHub Pages 가 main 루트를 그대로 서빙하므로, 커밋된 dist/game.js 가 곧 배포본이다.
+      # 소스만 고치고 빌드를 잊으면 사이트가 조용히 옛 코드로 남는다 — 그걸 여기서 잡는다.
+      - name: Verify committed bundle matches source
+        run: |
+          npm run build
+          if ! git diff --quiet -- dist/game.js; then
+            echo "::error::dist/game.js 가 소스와 어긋납니다. 로컬에서 'npm run build' 후 다시 커밋하세요."
+            git diff --stat -- dist/game.js
+            exit 1
+          fi
+          echo "dist/game.js 최신 상태 확인"
+
+      - name: Run Checks
+        run: npm run check
