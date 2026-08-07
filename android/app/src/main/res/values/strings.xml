@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">용사 수학 디펜스</string>
+    <string name="title_activity_main">용사 수학 디펜스</string>
+    <string name="package_name">com.metah.defenehero</string>
+    <string name="custom_url_scheme">com.metah.defenehero</string>
+</resources>

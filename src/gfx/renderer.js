@@ -146,15 +146,20 @@ export class Renderer3D {
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   }
 
+  _isMobileDevice() {
+    return this.padSlop > 2 || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+  }
+
   _targetDpr() {
     const d = window.devicePixelRatio || 1;
-    if (this.quality === 'high') return Math.min(d, 2);
-    if (this.quality === 'lite') return Math.min(d, 1.4);
+    const mobile = this._isMobileDevice();
+    if (this.quality === 'high') return Math.min(d, mobile ? 1.5 : 2);
+    if (this.quality === 'lite') return Math.min(d, mobile ? 1.2 : 1.4);
     return 0.6;
   }
 
   _setupComposer() {
-    if (this.quality !== 'high') { this.composer = null; return; }
+    if (this.quality !== 'high' || this._isMobileDevice()) { this.composer = null; return; }
     const size = new THREE.Vector2();
     this.renderer.getSize(size);
     this.composer = new EffectComposer(this.renderer);

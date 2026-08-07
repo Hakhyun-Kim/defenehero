@@ -16,11 +16,13 @@ import {
   codex, mathLog, earned, codexAddHero, codexAddKill, mathAdd, flushRecords, markDirty,
 } from './app/store.js';
 import { createMathFlow } from './app/mathflow.js';
+import Analytics from './analytics.js';
 
 registerDucker((amt, dur) => music.duck(amt, dur));
 
 /* ---------- 초기화 ---------- */
 const ui = new UI();
+Analytics.init();
 /* URL로 강제 지정 가능: ?gfx=high|lite|min (min은 테스트/초저사양용) */
 const urlParams = new URLSearchParams(location.search);
 const urlGfx = urlParams.get('gfx');
@@ -58,6 +60,18 @@ const renderer = new Renderer3D(ui.el.scene3d, {
   touch: isMobile,
 });
 
+/* Capacitor 안드로이드 뒤로가기 버튼 처리 */
+if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+  try {
+    window.Capacitor.Plugins.App.addListener('backButton', () => {
+      const openModals = document.querySelectorAll('.modal:not(.hidden)');
+      if (openModals.length > 0) {
+        openModals.forEach(m => m.classList.add('hidden'));
+      }
+    });
+  } catch (e) { /* 웹 환경 예외 무시 */ }
+}
+
 let state = null;
 let grade = 3;
 let gradeBeforeDemo = null;   // 데모가 프로필 학년으로 바꾸기 전의 값
@@ -83,6 +97,7 @@ const flow = createMathFlow({
     if (demo.active) return;
     mathAdd(g, label, ok, clean);
     checkAchievements();
+    Analytics.trackMathResult(g, label, ok, clean);
   },
   onHeroBorn: (hero) => recordHeroBorn(hero),
 });
@@ -159,6 +174,7 @@ function giveStarters() {
 function newGame(difficulty, opts = {}) {
   gameOverToken++;                 // 게임오버 연출 예약이 새 판을 덮지 않게
   state = E.createGame({ difficulty, metaLevels: store.meta });
+  Analytics.trackGameStart(difficulty, state.loop || 0);
   giveStarters();
   resetSession();
   refreshAll();
@@ -624,6 +640,7 @@ function handleEvents(events) {
         ui.toast(`🎉 ${ev.wave}웨이브 클리어! 보너스 💰${ev.bonus}`, 'good');
         autoSave();                      // 매 웨이브가 이어하기 지점이 된다
         checkAchievements();
+        Analytics.trackWaveComplete(ev.wave, state.difficulty, ev.bonus || 0);
         refreshAll();
         /* 클리어 토스트/효과음과 겹치지 않게 살짝 늦춘다. 준비 단계라 시뮬레이션 손실은 없다 */
         if (!hasVictory) {
@@ -642,6 +659,7 @@ function handleEvents(events) {
         store.shards = store.shards + ev.shards;
         checkAchievements();
         flushRecords();
+        Analytics.trackGameVictory(state.difficulty, ev.loop || 0, ev.shards || 0);
         const vLoop = ev.loop || 0, vShards = ev.shards;
         setTimeout(() => playStory('w30', () => {
           if (state.phase === 'over') return;      // 그 사이 함락됐다면(있을 수 없지만) 겹치지 않게
@@ -691,6 +709,7 @@ let gameOverToken = 0;
 function onGameOver() {
   if (overHandled) return;
   overHandled = true;
+  Analytics.trackGameFail(state.wave, state.difficulty, state.shardsEarned || 0);
   SFX.gameOver();
   music.stop();
   pendingAutosave = null;              // 쓰기 대기 중이던 스냅샷도 되살아나면 안 된다
@@ -1050,6 +1069,7 @@ function tryStartWave() {
   if (quip) setTimeout(() => ui.toast(`📣 ${quip}`), 260);
   const r = E.startWave(state);
   if (!r.ok) return;
+  Analytics.trackWaveStart(state.wave, state.difficulty);
   SFX.waveStart();
   music.setWave(state.wave);
   ui.toast(`🌊 ${state.wave}웨이브 시작! 몬스터를 막아요!`);

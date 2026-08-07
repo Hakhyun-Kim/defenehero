@@ -11,4 +11,7 @@ Thumbs.db
 .vscode/
 .idea/
 
+# 애널리틱스 비공개 키 설정
+src/analytics.config.js
+
 # dist/game.js 는 커밋합니다 (빌드 없이 index.html 더블클릭만으로 실행되도록)

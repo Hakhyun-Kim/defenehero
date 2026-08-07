@@ -15,7 +15,14 @@ body {
   /* 폰트 미로딩(오프라인) 시에도 위 시스템 폰트로 자연스럽게 대체된다 */
   background: linear-gradient(180deg, #bfe3ff 0%, #dff3ff 45%, #e8f7dd 100%);
   color: var(--ink);
-  padding: 10px;
+  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* ===== 화면 한 판에 담기 =====

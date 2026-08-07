@@ -49,6 +49,8 @@ story.js              내러티브 텍스트 (이야기 비트 · 별지기 수�
 | `src/engine/combat.js` | 웨이브 생성 · `tick(state, dt)` 전투 시뮬 · 별똥별/은하수 |
 | `src/app/store.js` | localStorage (별조각·축복·자동저장·꾸미기) + 누적 기록(도감 `codex`·수학 `mathLog`·업적 `earned` — 메모리 캐시, `flushRecords()`로 지연 저장) |
 | `src/app/mathflow.js` | **수학 관문 흐름** — 난이도 뽑기·제한 시간·재도전·힌트·환급. `createMathFlow(ctx)` 팩토리로 main이 조립 |
+| `src/analytics.js` | **데이터 분석** — GameAnalytics 래퍼 (프로그레션, 수학 결과, 커스텀 이벤트). `src/analytics.config.js`에서 키를 로드 |
+| `src/analytics.config.js` | **비공개 키 보관함** — 개인 GameKey/SecretKey 저장 (`.gitignore` 대상). 예시는 `analytics.config.example.js` |
 | `src/gfx/renderer.js` | Renderer3D 본체 (씬·뷰 동기화·이벤트→연출·프레임) |
 | `src/gfx/world.js` `fx.js` | Renderer3D에 **프로토타입 믹스인**으로 붙는 지형/성 · 이펙트 |
 | `src/gfx/units3d.js` | 용사 13종+별지기 3D 모델 · 오프스크린 초상 렌더 |
@@ -89,6 +91,7 @@ story.js              내러티브 텍스트 (이야기 비트 · 별지기 수�
 - **교환·이동은 공격 쿨다운을 유지한다** — 자리를 바꿔 쿨다운을 초기화하는 꼼수 방지.
 - **수학 관문의 골드 원칙**: 재도전·힌트를 사서 조합 골드가 모자라지는 일이 없어야 한다
   (사기 전에 조합 비용을 떼어 놓고 판단). "정답인데 골드 부족"이 최악의 결말.
+- **애널리틱스 키 보안**: 개인 GameKey/SecretKey는 절대 커밋하지 않는다 (`src/analytics.config.js`는 git-ignored). 대신 `src/analytics.config.example.js` 템플릿만 유지한다. 키가 설정되어 있지 않아도 SDK가 오류로 게임을 멈추지 않고 콘솔 로깅으로 대체해야 한다.
 - 주석은 **왜**를 적는다 — 무엇을 하는지는 코드가 말한다. 기존 주석의 설계 배경
   (실패했던 시도 포함)은 지우지 말 것.
 

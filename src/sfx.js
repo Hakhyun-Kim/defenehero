@@ -60,9 +60,20 @@ export function getAc() {
       sfxBus = ctx.createGain();
       sfxBus.gain.value = 1;
       sfxBus.connect(master);
+
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (!ctx) return;
+          if (document.visibilityState === 'hidden') {
+            if (ctx.state === 'running') ctx.suspend();
+          } else {
+            if (ctx.state === 'suspended') ctx.resume();
+          }
+        });
+      }
     } catch (e) { /* 오디오 미지원 */ }
   }
-  if (ctx && ctx.state === 'suspended') ctx.resume();
+  if (ctx && ctx.state === 'suspended' && document.visibilityState !== 'hidden') ctx.resume();
   return ctx;
 }
 export const getMaster = () => { getAc(); return master; };

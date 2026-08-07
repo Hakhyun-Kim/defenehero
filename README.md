@@ -291,13 +291,32 @@ URL 옵션: `?gfx=high|lite|min` 그래픽 강제, `?rafshim` 숨김 탭/자동�
    > 이번 웨이브 몬스터의 체력을 모두 더하면 10251이에요.
    > 지금 배치된 용사들의 초당 피해 합은 399. 정리하는 데 몇 초 걸릴까요? (올림) → **26**
 
-   문제를 푸는 일이 곧 **판을 읽는 일**이 됩니다 — 두 번째 문제는 수학이면서
-   동시에 "이 웨이브 감당되나?"라는 전술 판단이에요. 준비 단계에 용사가 배치돼
-   있어야 낼 수 있으니, 낼 수 없는 상황이면 조용히 평범한 계산 문제로 돌아갑니다.
+   src/main.js           컨트롤러 (고정 타임스텝 루프, 이벤트→사운드/이펙트 배선)
+   src/analytics.js      GameAnalytics 통합 모듈 (프로그레션 · 수학 풀이 추적)
+   src/analytics.config.js          비공개 개인 키 (git-ignored)
+   src/analytics.config.example.js  오픈소스 커밋용 키 템플릿
+   scripts/balance-bot.mjs        난이도 시뮬레이션 봇
+   scripts/balance-baseline.json  밸런스 회귀 기준선
 
-   **학년을 넘는 수는 내지 않습니다.** 전술 문제의 숫자는 판에서 그대로 읽어 오므로
-   웨이브가 깊어지면 커집니다 — 유형만 학년으로 막아 놨더니 3학년 관문에
-   `15420 ÷ 172` 가 나간 적이 있어요. 이제 각 문제가 "무슨 계산이 필요한가"를
+   ## 📊 데이터 분석 & 키 보안 (GameAnalytics)
+
+   유저 이탈률, 스테이지 진도, 수학 문제 유형별 정답률을 분석하여 게임 밸런스를 개선하기 위해 **GameAnalytics(AnalyticsIQ)**가 연동되어 있습니다.
+
+   - **수집 지표**: 게임 시작/실패/승리 (`ProgressionEvent`), 웨이브 클리어 (`Wave_1~30`), 수학 문제 정답/오답 (`Math:Grade_X:유형:결과`)
+   - **오픈소스 보안 키 관리**:
+     - 개인 `GameKey` 및 `SecretKey`는 [`src/analytics.config.js`](src/analytics.config.js)에 보관하며, [`.gitignore`](.gitignore)에 등록되어 GitHub 커밋에서 제외됩니다.
+     - 오픈소스 커밋용 예시 템플릿인 [`src/analytics.config.example.js`](src/analytics.config.example.js)가 제공되며, 최초 `npm run build` 실행 시 `analytics.config.js`가 없을 경우 자동으로 템플릿이 복사되어 빌드 에러 없이 실행됩니다.
+
+   밸런스 수치는 `src/balance/` 안에서만 고친다. `src/data.js`·`src/math.js`·`src/engine.js`는
+   경로를 지키기 위한 재수출 지점이다 — 소비자는 배럴 하나만 import 하므로 내부 구조를
+   바꿔도 나머지 코드가 영향받지 않는다. 개발 규약과 아키텍처 상세는 [CLAUDE.md](CLAUDE.md) 참고.
+
+   > 이 구조는 성인·Steam 타깃 포크인 **[asymptote](https://github.com/Hakhyun-Kim/asymptote)** 와
+   > 공유하는 베이스다. 두 저장소는 히스토리를 공유하며, 양방향으로 코드를 주고받을 수 있다.
+
+   콘솔 디버그: `__game.state`, `__game.gold(1000)`, `__game.jump(10)`, `__game.hurt(50)`
+
+   이제 각 문제가 "무슨 계산이 필요한가"를
    신고하고(`div`/`mul`), 학년 한도를 넘으면 그 문제를 버리고 다른 유형을 뽑습니다.
 
    | 학년 | 나누는 수 | 나뉘는 수 | 곱셈 (작은 인수) |
@@ -558,9 +577,21 @@ src/bot.js            자동 플레이 판단 (밸런스 봇과 데모가 공유
 src/demo.js           데모 모드 (봇의 판단을 사람 조작 경로로 흘린다)
 src/ui.js             DOM 패널/모달
 src/main.js           컨트롤러 (고정 타임스텝 루프, 이벤트→사운드/이펙트 배선)
+src/analytics.js      GameAnalytics 통합 모듈 (프로그레션 · 수학 풀이 추적)
+src/analytics.config.js          비공개 개인 키 (git-ignored)
+src/analytics.config.example.js  오픈소스 커밋용 키 템플릿
 scripts/balance-bot.mjs        난이도 시뮬레이션 봇
 scripts/balance-baseline.json  밸런스 회귀 기준선
 ```
+
+## 📊 데이터 분석 & 키 보안 (GameAnalytics)
+
+유저 이탈률, 스테이지 진도, 수학 문제 유형별 정답률을 분석하여 게임 밸런스를 개선하기 위해 **GameAnalytics(AnalyticsIQ)**가 연동되어 있습니다.
+
+- **수집 지표**: 게임 시작/실패/승리 (`ProgressionEvent`), 웨이브 클리어 (`Wave_1~30`), 수학 문제 정답/오답 (`Math:Grade_X:유형:결과`)
+- **오픈소스 보안 키 관리**:
+  - 개인 `GameKey` 및 `SecretKey`는 [`src/analytics.config.js`](src/analytics.config.js)에 보관하며, [`.gitignore`](.gitignore)에 등록되어 GitHub 커밋에서 제외됩니다.
+  - 오픈소스 커밋용 예시 템플릿인 [`src/analytics.config.example.js`](src/analytics.config.example.js)가 제공되며, 최초 `npm run build` 실행 시 `analytics.config.js`가 없을 경우 자동으로 템플릿이 복사되어 빌드 에러 없이 실행됩니다.
 
 밸런스 수치는 `src/balance/` 안에서만 고친다. `src/data.js`·`src/math.js`·`src/engine.js`는
 경로를 지키기 위한 재수출 지점이다 — 소비자는 배럴 하나만 import 하므로 내부 구조를

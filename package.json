@@ -5,7 +5,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "esbuild src/main.js --bundle --outfile=dist/game.js --format=iife --minify-whitespace",
+    "build": "node scripts/build-web.mjs",
     "watch": "esbuild src/main.js --bundle --outfile=dist/game.js --format=iife --watch",
     "balance": "node scripts/balance-bot.mjs",
     "serve": "node scripts/serve.mjs",
@@ -15,9 +15,17 @@
     "check": "npm run engine:check && npm run math:check && npm run balance:check"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/keyboard": "^8.0.5",
+    "@capacitor/status-bar": "^8.0.3",
+    "gameanalytics": "^5.0.0",
     "three": "^0.166.0"
   },
   "devDependencies": {
-    "esbuild": "^0.23.0"
+    "@capacitor/cli": "^8.5.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^7.0.2"
   }
 }
