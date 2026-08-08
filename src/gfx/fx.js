@@ -143,6 +143,11 @@ export const fxMethods = {
    * 밝은 대낮 화면 위에 흰 상자를 띄우면 묻힌다 — 토스트처럼 어두운 바탕 + 흰 글씨로,
    * 어느 시간대·어느 배경에서도 읽히게 한다. */
   showBubble(lx, ly, text, ttl = 2.4) {
+    this.showBubbleAt(wx(lx), wz(ly), text, ttl);
+  },
+
+  /* 월드 좌표판 — 뷰(용사 홀더)는 이미 월드 좌표라 논리 좌표로 되돌릴 길이 없다 */
+  showBubbleAt(x3, z3, text, ttl = 2.4) {
     if (!this.bubbles) this._buildBubbles();
     const slot = this.bubbles.find(b => b.ttl <= 0) || this.bubbles[0];
     const g = slot.c.getContext('2d');
@@ -176,7 +181,7 @@ export const fxMethods = {
     g.textBaseline = 'middle';
     g.fillText(text, 256, y0 + h / 2 + 2, w - 36);
     slot.tex.needsUpdate = true;
-    slot.spr.position.set(wx(lx), 2.05, wz(ly));
+    slot.spr.position.set(x3, 2.05, z3);
     slot.ttl = slot.life = ttl;
     slot.spr.material.opacity = 1;
     slot.spr.visible = true;
@@ -338,6 +343,108 @@ export const fxMethods = {
       p.mesh.scale.set(1 + k * 0.8, 1 + k * 0.4, 1 + k * 0.8);
       p.mesh.rotation.y += dt * 3;
       if (p.ttl <= 0) { this.scene.remove(p.mesh); this.pillars.splice(i, 1); }
+    }
+  },
+
+  /* ---------- 잔치 =====================================
+   * 승급 연출만 터뜨렸더니 "돈 내고 등급 하나 올렸다"로 끝났다 — 잔치라는 이름이
+   * 무색했다. 잔치는 승급한 한 명의 사건이 아니라 판 전체가 노는 시간이라,
+   * 몇 초 동안 파티 모드로 들어가서 다 같이 뛰고 떠들게 한다.
+   *
+   * 새 지오메트리는 만들지 않는다 — 색종이는 파티클 풀, 환호는 말풍선 풀을 돌려 쓴다.
+   * (파티클 320개 중 파티가 최대 100개쯤 물고 있게 잡았다 — 실측. 준비 단계라 전투가 쓸 일이 없다.) */
+  startFeastParty(x, z, starId, tier, lines) {
+    this._lightPillar(x, z, tier);
+    this._shockRing(x, z, 2.2, 0xffd93d, 0.7);
+    this._shockRing(x, z, 3.6, 0xffffff, 0.9);
+    this.burst(x, 1.2, z, 0xffd93d, 26, 4.4, { grav: 3 });
+    this.addShake(0.3);
+    this.party = {
+      t: 0, dur: 5.2, x, z, star: starId,
+      confT: 0, cheerT: 0.35, ringT: 1.1,
+      lines: lines || { star: ['만세!'], crowd: ['와아아!'] },
+      said: 0,
+    };
+  },
+
+  PARTY_COLORS: [0xffd93d, 0x7fd45e, 0x6eb5ff, 0xff8ac2, 0xffffff, 0xffa040],
+
+  _partyFrame(dt, t, state) {
+    const p = this.party;
+    if (!p) return;
+    p.t += dt;
+    /* 잔치가 끝나기 전에 웨이브를 시작할 수 있다. 그대로 두면 용사들이 춤추면서
+     * 활을 쏘고, 팔 각도를 파티가 붙잡고 있어서 공격 모션도 안 나온다. 파티가 진다. */
+    if (p.t >= p.dur || (state && state.phase !== 'prep')) {
+      /* 뛰던 높이를 남겨 두면 용사가 공중에 붕 뜬 채로 굳는다.
+       * (sync 가 매 프레임 y=0 으로 되돌리지만, 파티가 끝난 프레임을 놓칠 수 있다) */
+      for (const [, v] of this.heroViews) {
+        v.holder.position.y = 0;
+        v.model.rotation.z = 0;   // 기울기는 매 프레임 다시 쓰이지 않는다 — 여기서 펴 준다
+      }
+      this.party = null;
+      return;
+    }
+    const k = p.t / p.dur;
+    const fade = Math.min(1, (1 - k) * 3);          // 끝물에는 잦아든다
+
+    /* 색종이 비 — 전장 위 하늘에서 골고루 */
+    p.confT -= dt;
+    if (p.confT <= 0) {
+      p.confT = 0.07;
+      for (let i = 0; i < (fade > 0.4 ? 3 : 1); i++) {
+        const cx = (Math.random() - 0.5) * 22;
+        const cz = -6 + Math.random() * 13;
+        const col = this.PARTY_COLORS[Math.floor(Math.random() * this.PARTY_COLORS.length)];
+        /* up:0 = 위로 안 튀고 흩날리며 떨어진다 */
+        this.burst(cx, 8.5 + Math.random() * 2, cz, col, 1, 1.1, { grav: 2.6, ttl: 2.4, size: 0.85, up: 0 });
+      }
+    }
+
+    /* 잔치 자리에서 이따금 터지는 폭죽 + 바닥 링 */
+    p.ringT -= dt;
+    if (p.ringT <= 0 && fade > 0.35) {
+      p.ringT = 0.75;
+      const col = this.PARTY_COLORS[Math.floor(Math.random() * 4)];
+      this.burst(p.x + (Math.random() - 0.5) * 2.4, 1.4 + Math.random(), p.z + (Math.random() - 0.5) * 2.4,
+        col, 12, 3.8, { grav: 3 });
+      this._shockRing(p.x, p.z, 2.4, col, 0.6);
+    }
+
+    /* 다 같이 뛴다 — 박자는 같고 시작만 어긋나게 (한 몸처럼 뛰면 군무가 된다) */
+    for (const [id, v] of this.heroViews) {
+      const star = id === p.star;
+      const phase = id * 1.7;
+      const hop = Math.abs(Math.sin(t * (star ? 7.5 : 6) + phase));
+      v.holder.position.y = hop * (star ? 0.75 : 0.45) * fade;
+      /* 뛰면서 몸을 좌우로 흔든다 — 발이 붙어 있으면 뛰는 게 아니라 튀는 거다 */
+      v.model.rotation.y += Math.sin(t * 4.5 + phase) * 0.45 * fade;
+      v.model.rotation.z = Math.sin(t * 5.2 + phase) * 0.1 * fade;
+      /* 두 팔을 번쩍 — 공격 모션이 없는 준비 단계라 팔을 빌려 써도 안 겹친다 */
+      if (v.refs.armPivot) v.refs.armPivot.rotation.x = -1.5 * fade * (0.6 + hop * 0.4);
+      if (star && Math.random() < dt * 14) {
+        this.burst(v.holder.position.x, 1.5, v.holder.position.z, 0xffd93d, 1, 1.2,
+          { grav: -0.6, ttl: 0.6, size: 0.6 });
+      }
+    }
+
+    /* 돌아가며 한 마디씩 — 말풍선은 4칸뿐이라 한 번에 하나씩만 띄운다 */
+    p.cheerT -= dt;
+    if (p.cheerT <= 0 && p.t < p.dur - 0.6) {
+      p.cheerT = 0.85;
+      const views = [...this.heroViews.entries()];
+      /* 첫 마디는 주인공 몫 — 잔치의 이유가 누구인지부터 보여 준다.
+       * 다만 승급한 게 벤치 용사면 판 위에 본인이 없다. 그때 남의 입으로
+       * "나 승급했어!"가 나오면 누가 주인공인지 되레 헷갈린다 — 환호로 넘긴다. */
+      const starView = views.find(([id]) => id === p.star);
+      const pick = (p.said === 0 && starView) ? starView
+        : (views.length ? views[Math.floor(Math.random() * views.length)] : null);
+      if (pick) {
+        const pool = pick === starView && p.said === 0 ? p.lines.star : p.lines.crowd;
+        const text = pool[Math.floor(Math.random() * pool.length)];
+        this.showBubbleAt(pick[1].holder.position.x, pick[1].holder.position.z, text, 1.5);
+      }
+      p.said++;
     }
   },
 

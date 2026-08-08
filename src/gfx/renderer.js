@@ -10,7 +10,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import * as D from '../data.js';
-import { CHAMP_CHAT } from '../story.js';
+import { CHAMP_CHAT, FEAST_CHEERS } from '../story.js';
 import { S, wx, wz, emojiTexture, blobTexture } from './common.js';
 import { makeHumanHero, makeChampion } from './units3d.js';
 import { worldMethods } from './world.js';
@@ -942,25 +942,19 @@ export class Renderer3D {
           /* 승급한 용사의 모델을 새 등급으로 다시 짓는다 (망토 색·왕관이 바뀐다) */
           const hv = this.heroViews.get(ev.heroId);
           if (hv) { this.scene.remove(hv.holder); this.heroViews.delete(ev.heroId); }
-          /* 잔치 — 승급한 용사 자리(벤치면 광장)에서 색색 폭죽 + 빛기둥 */
+          /* 잔치 — 승급한 자리(벤치면 광장)에서 시작해 판 전체가 몇 초 동안 논다 */
           const fx = ev.pad >= 0 ? wx(D.PADS[ev.pad].x) : 0;
           const fz = ev.pad >= 0 ? wz(D.PADS[ev.pad].y) : 2.6;
-          this._lightPillar(fx, fz, ev.to);
-          this._shockRing(fx, fz, 2.2, 0xffd93d, 0.7);
-          const cols = [0xffd93d, 0x7fd45e, 0x6eb5ff, 0xff8ac2];
-          for (let k = 0; k < 4; k++) {
-            this.burst(fx + (Math.random() - 0.5) * 1.6, 1 + Math.random(), fz + (Math.random() - 0.5) * 1.6,
-              cols[k], 14, 4, { grav: 3 });
-          }
+          this.startFeastParty(fx, fz, ev.heroId, ev.to, FEAST_CHEERS);
           if (this.champView) {
-            this.showBubble(this.champView.pos.x, this.champView.pos.y, '잔치다~!! 🎉', 2.4);
+            this.showBubble(this.champView.pos.x, this.champView.pos.y,
+              CHAMP_CHAT.feast[Math.floor(Math.random() * CHAMP_CHAT.feast.length)], 2.4);
             /* 별지기도 잔치 자리로 달려간다 (준비 단계 배회 목적지 변경) */
             this.champView.dest = ev.pad >= 0
               ? { x: D.PADS[ev.pad].x + 30, y: D.PADS[ev.pad].y + 16 }
               : { x: 350, y: 300 };
             this.champView.wanderT = 4;
           }
-          this.addShake(0.25);
           break;
         }
       }
@@ -1032,6 +1026,10 @@ export class Renderer3D {
         v.refs.staffOrb.scale.setScalar(os);
       }
     }
+
+    /* 잔치 중이면 위 기본 동작 위에 파티 동작을 덮어쓴다 — 순서가 중요하다.
+     * (기본 루프가 rotation.y 를 매 프레임 새로 쓰므로, 흔들기는 그 뒤에 더해야 한다) */
+    if (this.party) this._partyFrame(dt, t, state);
 
     for (const [id, v] of this.enemyViews) {
       const bossHop = v.boss ? 4.2 : (v.midBoss ? 5.5 : 7);

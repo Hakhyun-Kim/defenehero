@@ -16,6 +16,7 @@ import {
   codex, mathLog, earned, codexAddHero, codexAddKill, mathAdd, flushRecords, markDirty,
 } from './app/store.js';
 import { createMathFlow } from './app/mathflow.js';
+import { useAppLayout, applyAppLayout } from './app/layout.js';
 import { SplashScreen } from '@capacitor/splash-screen';
 import Analytics from './analytics.js';
 
@@ -35,6 +36,15 @@ if (typeof window !== 'undefined') {
 /* URL로 강제 지정 가능: ?gfx=high|lite|min (min은 테스트/초저사양용) */
 const urlParams = new URLSearchParams(location.search);
 const urlGfx = urlParams.get('gfx');
+
+/* 손안 화면(앱 · 폰/태블릿 브라우저)에서만 설정 모달 + 4탭 배치로 접는다 —
+ * 넓은 화면은 예전 그대로 펼쳐 둔다.
+ * ui.bind() 전에 불러야 새로 만든 소환 탭 버튼에도 클릭이 붙는다. */
+const appLayout = useAppLayout(urlParams);
+if (appLayout) {
+  ui.defaultTab = applyAppLayout();
+  ui.showTab(ui.defaultTab);   // 벤치가 탭이 됐으니 첫 화면도 벤치로
+}
 /* 자동화로 열었거나 ?mute를 붙였으면 소리 없이 시작한다.
  * 검증을 돌릴 때마다 옆에서 효과음이 터지면 사람이 못 견딘다.
  * (설정을 저장하지 않으므로 사용자가 평소 쓰던 소리 설정은 그대로 남는다) */
@@ -753,7 +763,7 @@ const handlers = {
       ui.toast(`${C.emoji} ${C.name}를 뽑으려면 💰${D.SUMMON_COST}이 필요해요 — 몬스터를 잡아 모아요 ⚔️`, 'bad');
       return;
     }
-    ui.showTab('summon');
+    ui.focusBench();
     ui.toast(`${C.emoji} ${C.name}를 노려요! S키(또는 소환 버튼)로 뽑아 보세요`, '');
     doSummon();
   },
@@ -1046,12 +1056,17 @@ function syncPlaceBar() {
   ui.setPlacing(label, label || '');
 }
 
+/* 고른 채로 손을 뗀 지 5초면 선택을 푼다.
+ * 폰에서는 "취소"를 누를 자리가 마땅치 않아 고른 상태로 갇히기 쉬워서 넣은 안전장치인데,
+ * 마우스에서는 반대로 방해가 된다 — 카드를 고르고 발판을 고민하는 사이에 풀려 버린다.
+ * 그래서 손안 화면에서만 돈다. */
 let autoDeselectTimer = null;
 function resetAutoDeselectTimer() {
   if (autoDeselectTimer) {
     clearTimeout(autoDeselectTimer);
     autoDeselectTimer = null;
   }
+  if (!appLayout) return;
   if (selHero != null || selBench != null) {
     autoDeselectTimer = setTimeout(() => {
       deselectAll();

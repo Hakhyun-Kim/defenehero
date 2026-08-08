@@ -51,6 +51,7 @@ story.js              내러티브 텍스트 (이야기 비트 · 별지기 수�
 | `src/app/mathflow.js` | **수학 관문 흐름** — 난이도 뽑기·제한 시간·재도전·힌트·환급. `createMathFlow(ctx)` 팩토리로 main이 조립 |
 | `src/analytics.js` | **데이터 분석** — GameAnalytics 래퍼 (프로그레션, 수학 결과, 커스텀 이벤트). `src/analytics.config.js`에서 키를 로드 |
 | `src/analytics.config.js` | GameKey/SecretKey (**커밋됨** — 공개 전제 값). 수집 허용 위치는 `analytics.js`의 `COLLECT_HOSTS` |
+| `src/app/layout.js` | **앱 전용 레이아웃** — 앱에서만 컨트롤을 ⚙️ 설정 모달로 옮기고 벤치를 탭으로 만든다 |
 | `src/gfx/renderer.js` | Renderer3D 본체 (씬·뷰 동기화·이벤트→연출·프레임) |
 | `src/gfx/world.js` `fx.js` | Renderer3D에 **프로토타입 믹스인**으로 붙는 지형/성 · 이펙트 |
 | `src/gfx/units3d.js` | 용사 13종+별지기 3D 모델 · 오프스크린 초상 렌더 |
@@ -97,13 +98,25 @@ story.js              내러티브 텍스트 (이야기 비트 · 별지기 수�
   **키를 숨기거나 암호화하는 방식으로 fork를 막으려 하지 말 것** — fork는 복호화 코드까지 가져간다.
   안드로이드는 `Capacitor.isNativePlatform()`으로 가른다 (웹 빌드에도 `window.Capacitor` shim이 있어
   존재 여부로 판별하면 모든 브라우저가 통과한다). 키가 없어도 게임이 멈추지 않고 콘솔 로깅으로 대체한다.
+- **손안 화면 배치는 손안 화면에만** — 전체화면 3D + 떠 있는 HUD + ⚙️ 설정 모달은
+  `Capacitor.isNativePlatform()` **또는** 손가락 화면 + 짧은 변 ≤820px 일 때만 켠다
+  (`app/layout.js`의 `useAppLayout`). 터치 노트북·터치 모니터까지 접히면 안 되므로 크기로 거른다.
+  CSS는 예외 없이 `body.app-mobile` 스코프 안에, DOM 재배치는 `app/layout.js` 한 곳에.
+  스코프 없이 넣었다가 데스크톱 웹까지 같이 접힌 적이 있다.
+  **컨트롤을 복제하지 말 것** — 같은 id 가 둘이면 UI 가 잡은 쪽과 사용자가 누르는 쪽이 갈려서
+  눌러도 아무 일 없는 버튼이 생긴다. 복제 대신 원본 노드를 옮긴다. 검증: `?applayout=1`
+- **전체화면 배치는 가로 화면 설계다** — 앱은 `sensorLandscape` 로 잠겨 늘 가로지만 폰
+  브라우저는 세로로도 열린다. 폭 375px 에 280px 패널을 띄우면 전장에 95px 만 남는다.
+  세로는 `@media (orientation: portrait)` 로 예전처럼 한 줄로 쌓는다 — **회전할 때 DOM 을
+  도로 옮기지 말 것.** 옮긴 채로 두고 화면만 미디어 쿼리로 가르면 되돌릴 것이 없다.
+- **폰용 편의는 폰에서만** — 5초 자동 선택 해제 같은 것. 마우스에서는 고르고 고민하는 사이에 풀린다.
 - 주석은 **왜**를 적는다 — 무엇을 하는지는 코드가 말한다. 기존 주석의 설계 배경
   (실패했던 시도 포함)은 지우지 말 것.
 
 ## 커밋 메시지
 
-한국어 서술형 한 줄 — "무엇이 어떻게 되는가"를 문장으로.
-예: `폰에서 용사 배치를 손에 맞춘다`, `비례배분의 답이 질문을 따라간다`.
+영어로 작성한다. (Commit messages must be written in English.)
+예: `Fix champion placement on mobile touch`, `Match ratio answer options with question format`.
 
 ## 문서
 

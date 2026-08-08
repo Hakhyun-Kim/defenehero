@@ -120,7 +120,10 @@ export class UI {
     ].forEach(id => this.el[id] = $(id));
     this._lastKnow = -1;
     this._lastProbSig = '';
-    this._tab = 'summon';
+    /* 넓은 화면은 벤치가 늘 보여서 조합이 첫 화면, 손안 화면은 벤치가 탭이라 소환이 첫 화면.
+     * app/layout.js 가 손안 화면에서 이 값을 'summon' 으로 바꿔 준다. */
+    this.defaultTab = 'combine';
+    this._tab = this.defaultTab;
     this._tabBefore = null;
   }
 
@@ -164,8 +167,17 @@ export class UI {
   }
   restoreTab() {
     if (this._tab !== 'hero') return;
-    this.showTab(this._tabBefore || 'summon');
+    this.showTab(this._tabBefore || this.defaultTab);
     this._tabBefore = null;
+  }
+
+  /* 벤치로 시선을 옮긴다. 손안 화면에서는 소환 탭으로, 넓은 화면에서는 벤치가 이미 늘 보이니
+   * 화면 밖으로 밀렸을 때만 끌어온다. 예전에는 여기서 있지도 않은 탭 이름을
+   * showTab 에 넘겨서, 웹에서는 패널 세 개가 통째로 사라졌다. */
+  focusBench() {
+    if (this.el.tabs.querySelector('[data-tab="summon"]')) { this.showTab('summon'); return; }
+    const bench = document.getElementById('benchCard');
+    if (bench) bench.scrollIntoView({ block: 'nearest' });
   }
 
   bind(h) {
